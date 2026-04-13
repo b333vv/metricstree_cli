@@ -34,9 +34,11 @@ final class JavaMetricsCliApplication {
 
     int run(String[] args, PrintWriter stdout, PrintWriter stderr) {
         AnalyzeCommand analyzeCommand = new AnalyzeCommand(analyzer, jsonWriter, currentWorkingDirectorySupplier, stdout, stderr);
+        ValidateCommand validateCommand = new ValidateCommand(analyzer, currentWorkingDirectorySupplier, stdout, stderr);
         JavaMetricsCliCommand rootCommand = new JavaMetricsCliCommand(stdout);
         CommandLine commandLine = new CommandLine(rootCommand)
-                .addSubcommand("analyze", analyzeCommand);
+                .addSubcommand("analyze", analyzeCommand)
+                .addSubcommand("validate", validateCommand);
         commandLine.setExecutionExceptionHandler((exception, commandLine1, parseResult) -> {
             stderr.println("Analysis failed: " + exception.getMessage());
             stderr.flush();
