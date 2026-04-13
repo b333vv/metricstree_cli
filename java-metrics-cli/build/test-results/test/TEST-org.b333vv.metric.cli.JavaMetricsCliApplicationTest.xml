@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-04-13T16:21:18" hostname="MacBook-Air.local" time="0.231">
+  <properties/>
+  <testcase name="analyzeShouldSupportMixedInputRepeatedClasspathAndMetricSelection()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.136"/>
+  <testcase name="analyzeShouldReturnValidationErrorForUnknownMetricCode()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.02"/>
+  <testcase name="analyzeShouldEmitFacadeLikeJsonIncludingDiagnosticsAndEmptyMetricMaps()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.02"/>
+  <testcase name="analyzeShouldDefaultProjectNameFromCurrentWorkingDirectory()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.013"/>
+  <testcase name="analyzeShouldWriteJsonToOutputFileWithoutDuplicatingStdout()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.014"/>
+  <testcase name="analyzeShouldMapSingleSourceRootToAnalysisRequest()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.006"/>
+  <testcase name="analyzeShouldMapSingleSourceFileToAnalysisRequest()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.009"/>
+  <testcase name="analyzeShouldReturnValidationErrorWhenNoSourcesAreProvided()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

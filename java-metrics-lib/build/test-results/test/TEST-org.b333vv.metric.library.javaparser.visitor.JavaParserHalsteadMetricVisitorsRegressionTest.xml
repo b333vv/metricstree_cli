@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="org.b333vv.metric.library.javaparser.visitor.JavaParserHalsteadMetricVisitorsRegressionTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-04-13T16:21:20" hostname="MacBook-Air.local" time="0.002">
+  <properties/>
+  <testcase name="classHalsteadProducesExpectedMetricSetAndVolume()" classname="org.b333vv.metric.library.javaparser.visitor.JavaParserHalsteadMetricVisitorsRegressionTest" time="0.001"/>
+  <testcase name="methodHalsteadProducesExpectedMetricSetAndVolume()" classname="org.b333vv.metric.library.javaparser.visitor.JavaParserHalsteadMetricVisitorsRegressionTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
