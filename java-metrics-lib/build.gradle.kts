@@ -22,3 +22,10 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 }
+
+tasks.register<JavaExec>("benchmark") {
+    group = "performance"
+    description = "Run performance benchmark"
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("org.b333vv.metric.library.javaparser.PerformanceRunner")
+}

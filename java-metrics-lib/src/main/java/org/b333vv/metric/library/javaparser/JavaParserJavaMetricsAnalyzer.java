@@ -2,6 +2,7 @@ package org.b333vv.metric.library.javaparser;
 
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParseResult;
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
@@ -252,31 +253,57 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         return List.copyOf(sourceFiles);
     }
 
+    private static final int PARALLELISM = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+
     private List<ParsedSourceUnit> parseSourceFiles(List<Path> sourceFiles, List<AnalysisDiagnostic> diagnostics) {
-        JavaParser javaParser = new JavaParser(EnhancedJavaParserContextBuilder.createParserConfiguration());
-        List<ParsedSourceUnit> parsedSourceUnits = new ArrayList<>();
-        for (Path sourceFile : sourceFiles) {
-            try {
-                ParseResult<CompilationUnit> parseResult = javaParser.parse(sourceFile);
-                if (parseResult.getResult().isPresent()) {
-                    parsedSourceUnits.add(new ParsedSourceUnit(sourceFile, parseResult.getResult().orElseThrow()));
-                }
+        ParserConfiguration parserConfig = EnhancedJavaParserContextBuilder.createParserConfiguration();
+
+        var customParallelism = new java.util.concurrent.ForkJoinPool(PARALLELISM);
+        List<ParsedSourceUnit> parsedSourceUnits = customParallelism.submit(() ->
+                sourceFiles.parallelStream()
+                        .map(sourceFile -> parseSingleFile(sourceFile, parserConfig, diagnostics))
+                        .filter(java.util.Optional::isPresent)
+                        .map(java.util.Optional::get)
+                        .toList()
+        ).join();
+
+        return parsedSourceUnits;
+    }
+
+    private java.util.Optional<ParsedSourceUnit> parseSingleFile(Path sourceFile, ParserConfiguration parserConfig, List<AnalysisDiagnostic> diagnostics) {
+        try {
+            JavaParser javaParser = new JavaParser(parserConfig);
+            ParseResult<CompilationUnit> parseResult = javaParser.parse(sourceFile);
+            if (parseResult.getResult().isPresent()) {
                 if (!parseResult.isSuccessful()) {
-                    diagnostics.add(new AnalysisDiagnostic(
-                            "PARSE_PROBLEM",
-                            AnalysisSeverity.WARNING,
-                            "Parser reported problems for " + sourceFile + ": " + parseResult.getProblems(),
-                            new SourceLocation(sourceFile, 1, 1)));
+                    synchronized (diagnostics) {
+                        diagnostics.add(new AnalysisDiagnostic(
+                                "PARSE_PROBLEM",
+                                AnalysisSeverity.WARNING,
+                                "Parser reported problems for " + sourceFile + ": " + parseResult.getProblems(),
+                                new SourceLocation(sourceFile, 1, 1)));
+                    }
                 }
-            } catch (IOException exception) {
+                return java.util.Optional.of(new ParsedSourceUnit(sourceFile, parseResult.getResult().orElseThrow()));
+            }
+            synchronized (diagnostics) {
+                diagnostics.add(new AnalysisDiagnostic(
+                        "PARSE_FAILED",
+                        AnalysisSeverity.ERROR,
+                        "Failed to parse " + sourceFile + ": no result",
+                        new SourceLocation(sourceFile, 1, 1)));
+            }
+            return java.util.Optional.empty();
+        } catch (IOException exception) {
+            synchronized (diagnostics) {
                 diagnostics.add(new AnalysisDiagnostic(
                         "PARSE_FAILED",
                         AnalysisSeverity.ERROR,
                         "Failed to parse " + sourceFile + ": " + exception.getMessage(),
                         new SourceLocation(sourceFile, 1, 1)));
             }
+            return java.util.Optional.empty();
         }
-        return parsedSourceUnits;
     }
 
     private Map<String, Path> buildSourcePathIndex(List<ParsedSourceUnit> parsedSourceUnits) {
@@ -300,61 +327,71 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 .sorted(Comparator.comparing(this::classSortKey))
                 .toList();
 
-        List<AnalyzedClass> analyzedClasses = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration classDeclaration : sortedClassDeclarations) {
-            String qualifiedName = classDeclaration.getFullyQualifiedName().orElseGet(() -> fallbackQualifiedName(classDeclaration));
-            Path sourcePath = sourcePathByQualifiedName.getOrDefault(
-                    qualifiedName,
-                    sourcePathByQualifiedName.getOrDefault(fallbackQualifiedName(classDeclaration), Path.of(".")));
-            Map<MetricCode, Value> classMetrics = new EnumMap<>(MetricCode.class);
-            Consumer<MetricResult> classMetricCollector = result -> classMetrics.put(result.code(), result.value());
+        var customParallelism = new java.util.concurrent.ForkJoinPool(PARALLELISM);
+        List<AnalyzedClass> analyzedClasses = customParallelism.submit(() ->
+                sortedClassDeclarations.parallelStream()
+                        .map(classDeclaration -> analyzeSingleClass(classDeclaration, allClassDeclarations, sourcePathByQualifiedName, metricSelection))
+                        .toList()
+        ).join();
 
-            for (JavaParserClassMetricVisitor visitor : classVisitors) {
-                visitor.visit(classDeclaration, classMetricCollector);
-            }
-            new JavaParserNumberOfChildrenMetricVisitor(allClassDeclarations).visit(classDeclaration, classMetricCollector);
-            new JavaParserForeignDataProvidersMetricVisitor(allClassDeclarations).visit(classDeclaration, classMetricCollector);
-
-            List<AnalyzedMethod> analyzedMethods = new ArrayList<>();
-            List<MethodDeclaration> sortedMethods = classDeclaration.getMethods().stream()
-                    .sorted(Comparator.comparing(this::methodSignature))
-                    .toList();
-            for (MethodDeclaration methodDeclaration : sortedMethods) {
-                Map<MetricCode, Value> methodMetrics = new EnumMap<>(MetricCode.class);
-                Consumer<MetricResult> methodMetricCollector = result -> methodMetrics.put(result.code(), result.value());
-                for (JavaParserMethodMetricVisitor visitor : methodVisitors) {
-                    visitor.visit(methodDeclaration, methodMetricCollector);
-                }
-                addDerivedMethodMetrics(methodMetrics);
-                analyzedMethods.add(buildMethodReport(methodDeclaration, sourcePath, methodMetrics, metricSelection));
-            }
-
-            addDerivedClassMetrics(classMetrics, analyzedMethods);
-            String packageName = classDeclaration.findCompilationUnit()
-                    .flatMap(CompilationUnit::getPackageDeclaration)
-                    .map(packageDeclaration -> packageDeclaration.getNameAsString())
-                    .orElse("");
-            analyzedClasses.add(new AnalyzedClass(
-                    packageName,
-                    classDeclaration.getNameAsString(),
-                    qualifiedName,
-                    sourcePath,
-                    toSourceLocation(classDeclaration, sourcePath),
-                    filterMetrics(classMetrics, metricSelection),
-                    classMetrics,
-                    analyzedMethods,
-                    collectDependencySnapshot(classDeclaration),
-                    collectDirectSuperTypes(classDeclaration),
-                    collectDeclaredMethods(classDeclaration),
-                    collectDeclaredFields(classDeclaration),
-                    classDeclaration.isInterface(),
-                    classDeclaration.isAbstract(),
-                    classDeclaration.isStatic(),
-                    classDeclaration.isPublic(),
-                    classDeclaration.isProtected(),
-                    classDeclaration.isPrivate()));
-        }
         return analyzedClasses;
+    }
+
+    private AnalyzedClass analyzeSingleClass(
+            ClassOrInterfaceDeclaration classDeclaration,
+            List<ClassOrInterfaceDeclaration> allClassDeclarations,
+            Map<String, Path> sourcePathByQualifiedName,
+            MetricSelection metricSelection) {
+        String qualifiedName = classDeclaration.getFullyQualifiedName().orElseGet(() -> fallbackQualifiedName(classDeclaration));
+        Path sourcePath = sourcePathByQualifiedName.getOrDefault(
+                qualifiedName,
+                sourcePathByQualifiedName.getOrDefault(fallbackQualifiedName(classDeclaration), Path.of(".")));
+        Map<MetricCode, Value> classMetrics = new EnumMap<>(MetricCode.class);
+        Consumer<MetricResult> classMetricCollector = result -> classMetrics.put(result.code(), result.value());
+
+        for (JavaParserClassMetricVisitor visitor : classVisitors) {
+            visitor.visit(classDeclaration, classMetricCollector);
+        }
+        new JavaParserNumberOfChildrenMetricVisitor(allClassDeclarations).visit(classDeclaration, classMetricCollector);
+        new JavaParserForeignDataProvidersMetricVisitor(allClassDeclarations).visit(classDeclaration, classMetricCollector);
+
+        List<AnalyzedMethod> analyzedMethods = classDeclaration.getMethods().stream()
+                .sorted(Comparator.comparing(this::methodSignature))
+                .map(methodDeclaration -> {
+                    Map<MetricCode, Value> methodMetrics = new EnumMap<>(MetricCode.class);
+                    Consumer<MetricResult> methodMetricCollector = result -> methodMetrics.put(result.code(), result.value());
+                    for (JavaParserMethodMetricVisitor visitor : methodVisitors) {
+                        visitor.visit(methodDeclaration, methodMetricCollector);
+                    }
+                    addDerivedMethodMetrics(methodMetrics);
+                    return buildMethodReport(methodDeclaration, sourcePath, methodMetrics, metricSelection);
+                })
+                .toList();
+
+        addDerivedClassMetrics(classMetrics, analyzedMethods);
+        String packageName = classDeclaration.findCompilationUnit()
+                .flatMap(CompilationUnit::getPackageDeclaration)
+                .map(packageDeclaration -> packageDeclaration.getNameAsString())
+                .orElse("");
+        return new AnalyzedClass(
+                packageName,
+                classDeclaration.getNameAsString(),
+                qualifiedName,
+                sourcePath,
+                toSourceLocation(classDeclaration, sourcePath),
+                filterMetrics(classMetrics, metricSelection),
+                classMetrics,
+                analyzedMethods,
+                collectDependencySnapshot(classDeclaration),
+                collectDirectSuperTypes(classDeclaration),
+                collectDeclaredMethods(classDeclaration),
+                collectDeclaredFields(classDeclaration),
+                classDeclaration.isInterface(),
+                classDeclaration.isAbstract(),
+                classDeclaration.isStatic(),
+                classDeclaration.isPublic(),
+                classDeclaration.isProtected(),
+                classDeclaration.isPrivate());
     }
 
     private AnalyzedMethod buildMethodReport(
