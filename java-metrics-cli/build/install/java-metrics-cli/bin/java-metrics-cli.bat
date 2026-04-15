@@ -68,7 +68,7 @@ goto fail
 :execute
 @rem Setup the command line
 
-set CLASSPATH=%APP_HOME%\lib\java-metrics-cli.jar;%APP_HOME%\lib\java-metrics-javaparser.jar;%APP_HOME%\lib\java-metrics-core.jar;%APP_HOME%\lib\picocli-4.7.6.jar;%APP_HOME%\lib\jackson-annotations-2.17.2.jar;%APP_HOME%\lib\jackson-core-2.17.2.jar;%APP_HOME%\lib\jackson-databind-2.17.2.jar;%APP_HOME%\lib\javaparser-symbol-solver-core-3.25.10.jar;%APP_HOME%\lib\javaparser-core-3.25.10.jar;%APP_HOME%\lib\javassist-3.30.2-GA.jar;%APP_HOME%\lib\guava-33.1.0-jre.jar;%APP_HOME%\lib\failureaccess-1.0.2.jar;%APP_HOME%\lib\listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar;%APP_HOME%\lib\jsr305-3.0.2.jar;%APP_HOME%\lib\checker-qual-3.42.0.jar;%APP_HOME%\lib\error_prone_annotations-2.26.1.jar
+set CLASSPATH=%APP_HOME%\lib\java-metrics-cli.jar;%APP_HOME%\lib\java-metrics-lib.jar;%APP_HOME%\lib\picocli-4.7.6.jar;%APP_HOME%\lib\jackson-annotations-2.17.2.jar;%APP_HOME%\lib\jackson-core-2.17.2.jar;%APP_HOME%\lib\jackson-databind-2.17.2.jar;%APP_HOME%\lib\javaparser-symbol-solver-core-3.25.10.jar;%APP_HOME%\lib\javaparser-core-3.25.10.jar;%APP_HOME%\lib\javassist-3.30.2-GA.jar;%APP_HOME%\lib\guava-33.1.0-jre.jar;%APP_HOME%\lib\failureaccess-1.0.2.jar;%APP_HOME%\lib\listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar;%APP_HOME%\lib\jsr305-3.0.2.jar;%APP_HOME%\lib\checker-qual-3.42.0.jar;%APP_HOME%\lib\error_prone_annotations-2.26.1.jar
 
 
 @rem Execute java-metrics-cli

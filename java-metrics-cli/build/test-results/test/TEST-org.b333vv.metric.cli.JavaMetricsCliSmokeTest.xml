@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="org.b333vv.metric.cli.JavaMetricsCliSmokeTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-04-13T16:21:18" hostname="MacBook-Air.local" time="0.289">
+<testsuite name="org.b333vv.metric.cli.JavaMetricsCliSmokeTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-04-13T17:24:33" hostname="MacBook-Air.local" time="0.206">
   <properties/>
-  <testcase name="analyzeShouldAcceptRecordDeclarationsInPlainJvmMode()" classname="org.b333vv.metric.cli.JavaMetricsCliSmokeTest" time="0.186"/>
-  <testcase name="analyzeShouldWorkForSingleSourceFileInPlainJvmMode()" classname="org.b333vv.metric.cli.JavaMetricsCliSmokeTest" time="0.052"/>
-  <testcase name="analyzeShouldReturnPartialResultsAndZeroExitCodeWhenDiagnosticsArePresent()" classname="org.b333vv.metric.cli.JavaMetricsCliSmokeTest" time="0.036"/>
-  <testcase name="analyzeShouldWorkForSourceRootInPlainJvmMode()" classname="org.b333vv.metric.cli.JavaMetricsCliSmokeTest" time="0.014"/>
+  <testcase name="analyzeShouldAcceptRecordDeclarationsInPlainJvmMode()" classname="org.b333vv.metric.cli.JavaMetricsCliSmokeTest" time="0.103"/>
+  <testcase name="analyzeShouldWorkForSingleSourceFileInPlainJvmMode()" classname="org.b333vv.metric.cli.JavaMetricsCliSmokeTest" time="0.068"/>
+  <testcase name="analyzeShouldReturnPartialResultsAndZeroExitCodeWhenDiagnosticsArePresent()" classname="org.b333vv.metric.cli.JavaMetricsCliSmokeTest" time="0.021"/>
+  <testcase name="analyzeShouldWorkForSourceRootInPlainJvmMode()" classname="org.b333vv.metric.cli.JavaMetricsCliSmokeTest" time="0.012"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[Failed to re-parse unit with enhanced context: [Parse error. Found "?", expected one of  ";" "@" "\u001a" "abstract" "class" "default" "enum" "final" "import" "interface" "module" "native" "non-sealed" "open" "private" "protected" "public" "record" "sealed" "static" "strictfp" "synchronized" "transient" "transitive" "volatile" <EOF>
 Problem stacktrace : 
@@ -25,7 +25,7 @@ Problem stacktrace :
   picocli.CommandLine$AbstractParseResultHandler.execute(CommandLine.java:2277)
   picocli.CommandLine$RunLast.execute(CommandLine.java:2421)
   picocli.CommandLine.execute(CommandLine.java:2174)
-  org.b333vv.metric.cli.JavaMetricsCliApplication.run(JavaMetricsCliApplication.java:54)
+  org.b333vv.metric.cli.JavaMetricsCliApplication.run(JavaMetricsCliApplication.java:56)
   org.b333vv.metric.cli.JavaMetricsCliApplication.run(JavaMetricsCliApplication.java:32)
   org.b333vv.metric.cli.JavaMetricsCliSmokeTest.run(JavaMetricsCliSmokeTest.java:121)
   org.b333vv.metric.cli.JavaMetricsCliSmokeTest.analyzeShouldReturnPartialResultsAndZeroExitCodeWhenDiagnosticsArePresent(JavaMetricsCliSmokeTest.java:87)
