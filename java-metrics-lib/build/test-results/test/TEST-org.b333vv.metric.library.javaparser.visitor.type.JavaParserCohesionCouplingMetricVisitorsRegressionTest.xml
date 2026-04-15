@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="org.b333vv.metric.library.javaparser.visitor.type.JavaParserCohesionCouplingMetricVisitorsRegressionTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-04-13T16:21:20" hostname="MacBook-Air.local" time="0.025">
-  <properties/>
-  <testcase name="couplingVisitorsMatchExpectedCounts()" classname="org.b333vv.metric.library.javaparser.visitor.type.JavaParserCohesionCouplingMetricVisitorsRegressionTest" time="0.01"/>
-  <testcase name="lackOfCohesionCountsConnectedComponents()" classname="org.b333vv.metric.library.javaparser.visitor.type.JavaParserCohesionCouplingMetricVisitorsRegressionTest" time="0.004"/>
-  <testcase name="tightClassCohesionMatchesExpectedFraction()" classname="org.b333vv.metric.library.javaparser.visitor.type.JavaParserCohesionCouplingMetricVisitorsRegressionTest" time="0.01"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[]]></system-err>
-</testsuite>

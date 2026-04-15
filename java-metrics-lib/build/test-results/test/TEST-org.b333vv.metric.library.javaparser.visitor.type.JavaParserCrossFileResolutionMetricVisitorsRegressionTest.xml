@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="org.b333vv.metric.library.javaparser.visitor.type.JavaParserCrossFileResolutionMetricVisitorsRegressionTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-04-13T16:21:20" hostname="MacBook-Air.local" time="0.01">
-  <properties/>
-  <testcase name="depthOfInheritanceCapsAtTwoForLeafAboveExternalBaseBoundary()" classname="org.b333vv.metric.library.javaparser.visitor.type.JavaParserCrossFileResolutionMetricVisitorsRegressionTest" time="0.001"/>
-  <testcase name="foreignDataProvidersCountsDistinctClassesForInheritedFieldAccessAcrossFiles()" classname="org.b333vv.metric.library.javaparser.visitor.type.JavaParserCrossFileResolutionMetricVisitorsRegressionTest" time="0.006"/>
-  <testcase name="numberOfChildrenUsesQualifiedTypeResolutionAcrossPackages()" classname="org.b333vv.metric.library.javaparser.visitor.type.JavaParserCrossFileResolutionMetricVisitorsRegressionTest" time="0.003"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[]]></system-err>
-</testsuite>

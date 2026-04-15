@@ -20,25 +20,25 @@
 <tr>
 <td>
 <div class="infoBox" id="tests">
-<div class="counter">107</div>
+<div class="counter">38</div>
 <p>tests</p>
 </div>
 </td>
 <td>
 <div class="infoBox" id="failures">
-<div class="counter">0</div>
+<div class="counter">1</div>
 <p>failures</p>
 </div>
 </td>
 <td>
 <div class="infoBox" id="ignored">
-<div class="counter">0</div>
+<div class="counter">1</div>
 <p>ignored</p>
 </div>
 </td>
 <td>
 <div class="infoBox" id="duration">
-<div class="counter">0.812s</div>
+<div class="counter">1m9.49s</div>
 <p>duration</p>
 </div>
 </td>
@@ -47,8 +47,8 @@
 </div>
 </td>
 <td>
-<div class="infoBox success" id="successRate">
-<div class="percent">100%</div>
+<div class="infoBox failures" id="successRate">
+<div class="percent">97%</div>
 <p>successful</p>
 </div>
 </td>
@@ -58,13 +58,37 @@
 <div id="tabs">
 <ul class="tabLinks">
 <li>
-<a href="#tab0">Packages</a>
+<a href="#tab0">Failed tests</a>
 </li>
 <li>
-<a href="#tab1">Classes</a>
+<a href="#tab1">Ignored tests</a>
+</li>
+<li>
+<a href="#tab2">Packages</a>
+</li>
+<li>
+<a href="#tab3">Classes</a>
 </li>
 </ul>
 <div id="tab0" class="tab">
+<h2>Failed tests</h2>
+<ul class="linkList">
+<li>
+<a href="classes/Gradle%2320Test%2320Executor%23201.html">Gradle Test Executor 1</a>.
+<a href="classes/Gradle%2320Test%2320Executor%23201.html#failed to execute tests">failed to execute tests</a>
+</li>
+</ul>
+</div>
+<div id="tab1" class="tab">
+<h2>Ignored tests</h2>
+<ul class="linkList">
+<li>
+<a href="classes/org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest.html">PerformanceBenchmarkTest</a>.
+<a href="classes/org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest.html#benchmarkMediumProject_ActualTest()">Performance benchmark on medium project</a>
+</li>
+</ul>
+</div>
+<div id="tab2" class="tab">
 <h2>Packages</h2>
 <table>
 <thead>
@@ -79,59 +103,39 @@
 </thead>
 <tbody>
 <tr>
+<td class="failures">
+<a href="packages/default-package.html">default-package</a>
+</td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>34.972s</td>
+<td class="failures">0%</td>
+</tr>
+<tr>
 <td class="success">
 <a href="packages/org.b333vv.metric.library.core.html">org.b333vv.metric.library.core</a>
 </td>
 <td>30</td>
 <td>0</td>
 <td>0</td>
-<td>0.036s</td>
+<td>0.074s</td>
 <td class="success">100%</td>
 </tr>
 <tr>
-<td class="success">
+<td class="skipped">
 <a href="packages/org.b333vv.metric.library.javaparser.html">org.b333vv.metric.library.javaparser</a>
-</td>
-<td>6</td>
-<td>0</td>
-<td>0</td>
-<td>0.494s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="packages/org.b333vv.metric.library.javaparser.visitor.html">org.b333vv.metric.library.javaparser.visitor</a>
 </td>
 <td>7</td>
 <td>0</td>
-<td>0</td>
-<td>0.015s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="packages/org.b333vv.metric.library.javaparser.visitor.method.html">org.b333vv.metric.library.javaparser.visitor.method</a>
-</td>
-<td>18</td>
-<td>0</td>
-<td>0</td>
-<td>0.057s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="packages/org.b333vv.metric.library.javaparser.visitor.type.html">org.b333vv.metric.library.javaparser.visitor.type</a>
-</td>
-<td>46</td>
-<td>0</td>
-<td>0</td>
-<td>0.210s</td>
-<td class="success">100%</td>
+<td>1</td>
+<td>34.444s</td>
+<td class="skipped">100%</td>
 </tr>
 </tbody>
 </table>
 </div>
-<div id="tab1" class="tab">
+<div id="tab3" class="tab">
 <h2>Classes</h2>
 <table>
 <thead>
@@ -146,13 +150,23 @@
 </thead>
 <tbody>
 <tr>
+<td class="failures">
+<a href="classes/Gradle%2320Test%2320Executor%23201.html">Gradle Test Executor 1</a>
+</td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>34.972s</td>
+<td class="failures">0%</td>
+</tr>
+<tr>
 <td class="success">
 <a href="classes/org.b333vv.metric.library.core.AnalysisRequestTest.html">org.b333vv.metric.library.core.AnalysisRequestTest</a>
 </td>
 <td>7</td>
 <td>0</td>
 <td>0</td>
-<td>0.025s</td>
+<td>0.061s</td>
 <td class="success">100%</td>
 </tr>
 <tr>
@@ -162,7 +176,7 @@
 <td>17</td>
 <td>0</td>
 <td>0</td>
-<td>0.006s</td>
+<td>0.003s</td>
 <td class="success">100%</td>
 </tr>
 <tr>
@@ -172,7 +186,7 @@
 <td>3</td>
 <td>0</td>
 <td>0</td>
-<td>0.004s</td>
+<td>0.009s</td>
 <td class="success">100%</td>
 </tr>
 <tr>
@@ -192,7 +206,7 @@
 <td>4</td>
 <td>0</td>
 <td>0</td>
-<td>0.418s</td>
+<td>0.356s</td>
 <td class="success">100%</td>
 </tr>
 <tr>
@@ -202,198 +216,18 @@
 <td>2</td>
 <td>0</td>
 <td>0</td>
-<td>0.076s</td>
+<td>0.047s</td>
 <td class="success">100%</td>
 </tr>
 <tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.JavaParserHalsteadMetricVisitorsRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.JavaParserHalsteadMetricVisitorsRegressionTest</a>
+<td class="skipped">
+<a href="classes/org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest.html">org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest</a>
 </td>
-<td>2</td>
+<td>1</td>
 <td>0</td>
-<td>0</td>
-<td>0.001s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.JavaParserLibraryVisitorSmokeTest.html">org.b333vv.metric.library.javaparser.visitor.JavaParserLibraryVisitorSmokeTest</a>
-</td>
-<td>5</td>
-<td>0</td>
-<td>0</td>
-<td>0.014s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.method.JavaParserMethodComplexityMetricVisitorsRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.method.JavaParserMethodComplexityMetricVisitorsRegressionTest</a>
-</td>
-<td>4</td>
-<td>0</td>
-<td>0</td>
-<td>0.010s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.method.JavaParserMethodCouplingMetricsRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.method.JavaParserMethodCouplingMetricsRegressionTest</a>
-</td>
-<td>3</td>
-<td>0</td>
-<td>0</td>
-<td>0.020s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.method.JavaParserMethodCouplingResolverEdgeCaseRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.method.JavaParserMethodCouplingResolverEdgeCaseRegressionTest</a>
-</td>
-<td>3</td>
-<td>0</td>
-<td>0</td>
-<td>0.021s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.method.JavaParserMethodMetricVisitorsRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.method.JavaParserMethodMetricVisitorsRegressionTest</a>
-</td>
-<td>4</td>
-<td>0</td>
-<td>0</td>
-<td>0.003s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.method.JavaParserMethodNestingMetricVisitorsRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.method.JavaParserMethodNestingMetricVisitorsRegressionTest</a>
-</td>
-<td>4</td>
-<td>0</td>
-<td>0</td>
-<td>0.003s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserClassMetricVisitorsRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserClassMetricVisitorsRegressionTest</a>
-</td>
-<td>5</td>
-<td>0</td>
-<td>0</td>
-<td>0.008s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserClassStructuralMetricVisitorsRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserClassStructuralMetricVisitorsRegressionTest</a>
-</td>
-<td>4</td>
-<td>0</td>
-<td>0</td>
-<td>0.005s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserCohesionCouplingMetricVisitorsRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserCohesionCouplingMetricVisitorsRegressionTest</a>
-</td>
-<td>3</td>
-<td>0</td>
-<td>0</td>
-<td>0.024s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserCouplingCohesionResolverEdgeCaseRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserCouplingCohesionResolverEdgeCaseRegressionTest</a>
-</td>
-<td>5</td>
-<td>0</td>
-<td>0</td>
-<td>0.015s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserCrossFileResolutionMetricVisitorsRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserCrossFileResolutionMetricVisitorsRegressionTest</a>
-</td>
-<td>3</td>
-<td>0</td>
-<td>0</td>
-<td>0.010s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserEdgeCaseMetricVisitorsRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserEdgeCaseMetricVisitorsRegressionTest</a>
-</td>
-<td>5</td>
-<td>0</td>
-<td>0</td>
-<td>0.008s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserInheritanceContextMetricVisitorsRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserInheritanceContextMetricVisitorsRegressionTest</a>
-</td>
-<td>3</td>
-<td>0</td>
-<td>0</td>
-<td>0.011s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserLocalityForeignAccessEdgeCaseRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserLocalityForeignAccessEdgeCaseRegressionTest</a>
-</td>
-<td>3</td>
-<td>0</td>
-<td>0</td>
-<td>0.091s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfAttributesEdgeCaseRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfAttributesEdgeCaseRegressionTest</a>
-</td>
-<td>4</td>
-<td>0</td>
-<td>0</td>
-<td>0.010s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserResponseForClassEdgeCaseRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserResponseForClassEdgeCaseRegressionTest</a>
-</td>
-<td>5</td>
-<td>0</td>
-<td>0</td>
-<td>0.018s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserRfcCboUncommonSyntaxRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserRfcCboUncommonSyntaxRegressionTest</a>
-</td>
-<td>3</td>
-<td>0</td>
-<td>0</td>
-<td>0.006s</td>
-<td class="success">100%</td>
-</tr>
-<tr>
-<td class="success">
-<a href="classes/org.b333vv.metric.library.javaparser.visitor.type.JavaParserUncommonSyntaxInteractionRegressionTest.html">org.b333vv.metric.library.javaparser.visitor.type.JavaParserUncommonSyntaxInteractionRegressionTest</a>
-</td>
-<td>3</td>
-<td>0</td>
-<td>0</td>
-<td>0.004s</td>
-<td class="success">100%</td>
+<td>1</td>
+<td>34.041s</td>
+<td class="skipped">-</td>
 </tr>
 </tbody>
 </table>
@@ -406,7 +240,7 @@
 <input id="line-wrapping-toggle" type="checkbox" autocomplete="off"/>
 </label>
 </div>Generated by 
-<a href="http://www.gradle.org">Gradle 8.8</a> at 13 апр. 2026 г., 19:21:21</p>
+<a href="http://www.gradle.org">Gradle 8.8</a> at 15 апр. 2026 г., 19:11:39</p>
 </div>
 </div>
 </body>

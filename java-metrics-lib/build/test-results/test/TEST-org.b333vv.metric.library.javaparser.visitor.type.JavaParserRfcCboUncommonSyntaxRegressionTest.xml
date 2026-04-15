@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="org.b333vv.metric.library.javaparser.visitor.type.JavaParserRfcCboUncommonSyntaxRegressionTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-04-13T16:21:21" hostname="MacBook-Air.local" time="0.006">
-  <properties/>
-  <testcase name="responseForClassIgnoresAnonymousClassBodyInvocationsButCountsCreationTarget()" classname="org.b333vv.metric.library.javaparser.visitor.type.JavaParserRfcCboUncommonSyntaxRegressionTest" time="0.004"/>
-  <testcase name="couplingBetweenObjectsDoesNotInferFromThisMethodReferenceShape()" classname="org.b333vv.metric.library.javaparser.visitor.type.JavaParserRfcCboUncommonSyntaxRegressionTest" time="0.001"/>
-  <testcase name="couplingBetweenObjectsCountsOnlyExplicitImportsAndSkipsWildcardImports()" classname="org.b333vv.metric.library.javaparser.visitor.type.JavaParserRfcCboUncommonSyntaxRegressionTest" time="0.001"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[]]></system-err>
-</testsuite>
