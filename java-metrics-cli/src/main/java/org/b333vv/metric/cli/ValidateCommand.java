@@ -65,6 +65,9 @@ final class ValidateCommand implements Callable<Integer> {
     @CommandLine.Option(names = {"--strict"}, description = "Exit with code 1 if any metric fails validation.")
     private boolean strict;
 
+    @CommandLine.Option(names = {"--failed-only"}, description = "Include only FAILED metric results in output.")
+    private boolean failedOnly;
+
     @Override
     public Integer call() throws IOException {
         Map<String, Threshold> thresholds = loadThresholds();
@@ -169,7 +172,16 @@ final class ValidateCommand implements Callable<Integer> {
 
     private void writeReport(ValidationResult result) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
-        String json = mapper.writeValueAsString(result);
+        List<MetricValidationResult> resultsToWrite = failedOnly
+                ? result.getResults().stream().filter(r -> r.status() == ValidationStatus.FAILED).toList()
+                : result.getResults();
+
+        String json = mapper.writeValueAsString(new ValidationResultForSerialization(
+                result.getStatus(),
+                resultsToWrite,
+                result.getPassed(),
+                result.getFailed()
+        ));
 
         Path normalizedOutputFile = outputFile.toAbsolutePath().normalize();
         if (normalizedOutputFile.getParent() != null) {
@@ -208,4 +220,11 @@ final class ValidateCommand implements Callable<Integer> {
         public int getFailed() { return failed; }
         public void incrementFailed() { failed++; }
     }
+
+    private record ValidationResultForSerialization(
+            String status,
+            List<MetricValidationResult> results,
+            int passed,
+            int failed
+    ) {}
 }
