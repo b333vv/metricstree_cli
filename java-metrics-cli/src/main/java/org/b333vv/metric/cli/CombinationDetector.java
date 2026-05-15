@@ -14,8 +14,20 @@ final class CombinationDetector {
 
     record ClassEntityRef(String className, String qualifiedName, String sourcePath) {}
     record PackageEntityRef(String packageName) {}
-    record ClassMatch(String name, int matchCount, List<ClassEntityRef> matches) {}
-    record PackageMatch(String name, int matchCount, List<PackageEntityRef> matches) {}
+    record ClassMatch(String name, int matchCount, List<ClassEntityRef> matches) {
+        ClassMatch {
+            if (matchCount != matches.size()) {
+                throw new IllegalArgumentException("matchCount must equal matches.size()");
+            }
+        }
+    }
+    record PackageMatch(String name, int matchCount, List<PackageEntityRef> matches) {
+        PackageMatch {
+            if (matchCount != matches.size()) {
+                throw new IllegalArgumentException("matchCount must equal matches.size()");
+            }
+        }
+    }
 
     List<ClassMatch> detectClasses(MetricReport report, List<CombinationDefinition> rules) {
         List<ClassMatch> results = new ArrayList<>();
@@ -54,7 +66,12 @@ final class CombinationDetector {
 
     private static boolean matchesAll(Map<MetricCode, Value> metrics, List<Condition> conditions) {
         for (Condition condition : conditions) {
-            MetricCode code = MetricCode.valueOf(condition.metric());
+            MetricCode code;
+            try {
+                code = MetricCode.valueOf(condition.metric());
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
             Value value = metrics.get(code);
             if (value == null) {
                 return false;

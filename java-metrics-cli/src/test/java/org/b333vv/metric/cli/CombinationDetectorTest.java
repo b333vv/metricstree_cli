@@ -158,6 +158,20 @@ class CombinationDetectorTest {
         assertEquals(2, result.get(0).matches().size());
     }
 
+    @Test
+    void unknownMetricNameDoesNotCrash() {
+        MetricReport report = createReport(
+                Map.of(MetricCode.WMC, Value.of(50)),
+                Map.of());
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("BadRule",
+                        List.of(new Condition("NONEXISTENT_METRIC", 10.0, null))));
+
+        List<CombinationDetector.ClassMatch> result = detector.detectClasses(report, rules);
+
+        assertTrue(result.isEmpty());
+    }
+
     private static MetricReport createReport(
             Map<MetricCode, Value> classMetrics,
             Map<MetricCode, Value> packageMetrics) {
