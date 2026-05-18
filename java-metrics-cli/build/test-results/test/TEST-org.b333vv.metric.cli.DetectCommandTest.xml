@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="org.b333vv.metric.cli.DetectCommandTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-05-18T16:56:43" hostname="MacBook-Air.local" time="0.115">
+  <properties/>
+  <testcase name="detectFailsWhenRulesFileInvalid(Path)" classname="org.b333vv.metric.cli.DetectCommandTest" time="0.057"/>
+  <testcase name="detectFailsWhenNoRulesProvided(Path)" classname="org.b333vv.metric.cli.DetectCommandTest" time="0.006"/>
+  <testcase name="detectWithClassRulesProducesOutput(Path)" classname="org.b333vv.metric.cli.DetectCommandTest" time="0.04"/>
+  <testcase name="detectWithPackageRulesProducesOutput(Path)" classname="org.b333vv.metric.cli.DetectCommandTest" time="0.009"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

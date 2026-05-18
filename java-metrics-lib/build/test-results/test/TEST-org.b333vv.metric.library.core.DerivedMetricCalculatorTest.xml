@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" tests="17" skipped="0" failures="0" errors="0" timestamp="2026-04-15T16:11:04" hostname="MacBook-Air.local" time="0.015">
+<testsuite name="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" tests="17" skipped="0" failures="0" errors="0" timestamp="2026-05-18T16:56:44" hostname="MacBook-Air.local" time="0.01">
   <properties/>
-  <testcase name="calculatePackageMaintainabilityIndexReturnsZeroWhenAnyInputIsNonPositive()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.001"/>
+  <testcase name="calculatePackageMaintainabilityIndexReturnsZeroWhenAnyInputIsNonPositive()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.002"/>
   <testcase name="calculatePackageMaintainabilityIndexReturnsExpectedValueForPositiveInputs()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.0"/>
   <testcase name="calculateLegacyPsiMaintainabilityIndexReturnsExpectedValueForPositiveInputs()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.0"/>
-  <testcase name="calculateMethodMaintainabilityIndexReturnsZeroWhenAnyInputIsNonPositive()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.0"/>
-  <testcase name="calculateMethodMaintainabilityIndexReturnsExpectedValueForPositiveInputs()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.0"/>
-  <testcase name="calculateClassMaintainabilityIndexReturnsExpectedValueForPositiveInputs()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.001"/>
+  <testcase name="calculateMethodMaintainabilityIndexReturnsZeroWhenAnyInputIsNonPositive()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.001"/>
+  <testcase name="calculateMethodMaintainabilityIndexReturnsExpectedValueForPositiveInputs()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.001"/>
+  <testcase name="calculateClassMaintainabilityIndexReturnsExpectedValueForPositiveInputs()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.0"/>
   <testcase name="sumOrUndefinedReturnsUndefinedWhenAnyValueIsUndefined()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.0"/>
   <testcase name="calculateResilientMaintainabilityIndexClampsInputsToOne()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.0"/>
-  <testcase name="calculateResilientMaintainabilityIndexClampsFinalValueToUpperBound()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.0"/>
+  <testcase name="calculateResilientMaintainabilityIndexClampsFinalValueToUpperBound()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.001"/>
   <testcase name="calculateLegacyPsiMaintainabilityIndexPreservesInfinityWhenHalsteadVolumeIsZero()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.0"/>
   <testcase name="sumDefinedLongValuesSkipsUndefinedEntries()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.0"/>
   <testcase name="calculateLegacyPsiMaintainabilityIndexReturnsZeroWhenCcOrLocIsNonPositive()" classname="org.b333vv.metric.library.core.DerivedMetricCalculatorTest" time="0.0"/>

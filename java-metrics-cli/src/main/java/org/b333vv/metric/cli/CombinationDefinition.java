@@ -5,6 +5,7 @@ import java.util.List;
 
 record CombinationDefinition(
         @JsonProperty("name") String name,
+        @JsonProperty("description") String description,
         @JsonProperty("conditions") List<Condition> conditions) {
 
     CombinationDefinition {

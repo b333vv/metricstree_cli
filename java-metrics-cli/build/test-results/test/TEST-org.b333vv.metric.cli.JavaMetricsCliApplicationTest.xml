@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-04-13T17:24:33" hostname="MacBook-Air.local" time="0.197">
+<testsuite name="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-05-18T16:56:43" hostname="MacBook-Air.local" time="0.076">
   <properties/>
-  <testcase name="analyzeShouldSupportMixedInputRepeatedClasspathAndMetricSelection()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.122"/>
-  <testcase name="analyzeShouldReturnValidationErrorForUnknownMetricCode()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.014"/>
-  <testcase name="analyzeShouldEmitFacadeLikeJsonIncludingDiagnosticsAndEmptyMetricMaps()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.015"/>
-  <testcase name="analyzeShouldDefaultProjectNameFromCurrentWorkingDirectory()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.01"/>
-  <testcase name="analyzeShouldWriteJsonToOutputFileWithoutDuplicatingStdout()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.014"/>
+  <testcase name="analyzeShouldSupportMixedInputRepeatedClasspathAndMetricSelection()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.018"/>
+  <testcase name="analyzeShouldReturnValidationErrorForUnknownMetricCode()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.013"/>
+  <testcase name="analyzeShouldEmitFacadeLikeJsonIncludingDiagnosticsAndEmptyMetricMaps()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.007"/>
+  <testcase name="analyzeShouldDefaultProjectNameFromCurrentWorkingDirectory()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.008"/>
+  <testcase name="analyzeShouldWriteJsonToOutputFileWithoutDuplicatingStdout()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.01"/>
   <testcase name="analyzeShouldMapSingleSourceRootToAnalysisRequest()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.007"/>
-  <testcase name="analyzeShouldMapSingleSourceFileToAnalysisRequest()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.007"/>
+  <testcase name="analyzeShouldMapSingleSourceFileToAnalysisRequest()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.006"/>
   <testcase name="analyzeShouldReturnValidationErrorWhenNoSourcesAreProvided()" classname="org.b333vv.metric.cli.JavaMetricsCliApplicationTest" time="0.006"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>

@@ -20,7 +20,7 @@ class CombinationDetectorTest {
                 Map.of(MetricCode.WMC, Value.of(50)),
                 Map.of());
         List<CombinationDefinition> rules = List.of(
-                new CombinationDefinition("LargeClass",
+new CombinationDefinition("LargeClass", null,
                         List.of(new Condition("WMC", 47.0, null))));
 
         List<CombinationDetector.ClassMatch> result = detector.detectClasses(report, rules);
@@ -37,7 +37,7 @@ class CombinationDetectorTest {
                 Map.of(MetricCode.WMC, Value.of(50), MetricCode.ATFD, Value.of(12)),
                 Map.of());
         List<CombinationDefinition> rules = List.of(
-                new CombinationDefinition("GodClass",
+                new CombinationDefinition("GodClass", null,
                         List.of(new Condition("WMC", 47.0, null),
                                 new Condition("ATFD", 10.0, null))));
 
@@ -52,7 +52,7 @@ class CombinationDetectorTest {
                 Map.of(MetricCode.WMC, Value.of(5)),
                 Map.of());
         List<CombinationDefinition> rules = List.of(
-                new CombinationDefinition("LargeClass",
+                new CombinationDefinition("LargeClass", null,
                         List.of(new Condition("WMC", 47.0, null))));
 
         List<CombinationDetector.ClassMatch> result = detector.detectClasses(report, rules);
@@ -66,7 +66,7 @@ class CombinationDetectorTest {
                 Map.of(MetricCode.TCC, Value.of(0.9)),
                 Map.of());
         List<CombinationDefinition> rules = List.of(
-                new CombinationDefinition("NonCohesive",
+                new CombinationDefinition("NonCohesive", null,
                         List.of(new Condition("TCC", null, 0.33))));
 
         List<CombinationDetector.ClassMatch> result = detector.detectClasses(report, rules);
@@ -80,7 +80,7 @@ class CombinationDetectorTest {
                 Map.of(MetricCode.WMC, Value.of(30)),
                 Map.of());
         List<CombinationDefinition> rules = List.of(
-                new CombinationDefinition("NormalRange",
+                new CombinationDefinition("NormalRange", null,
                         List.of(new Condition("WMC", 10.0, 47.0))));
 
         List<CombinationDetector.ClassMatch> result = detector.detectClasses(report, rules);
@@ -94,7 +94,7 @@ class CombinationDetectorTest {
                 Map.of(MetricCode.NOM, Value.of(5)),
                 Map.of());
         List<CombinationDefinition> rules = List.of(
-                new CombinationDefinition("GodClass",
+                new CombinationDefinition("GodClass", null,
                         List.of(new Condition("WMC", 47.0, null))));
 
         List<CombinationDetector.ClassMatch> result = detector.detectClasses(report, rules);
@@ -117,7 +117,7 @@ class CombinationDetectorTest {
                 Map.of(),
                 Map.of(MetricCode.PLOC, Value.of(5000)));
         List<CombinationDefinition> rules = List.of(
-                new CombinationDefinition("LargePackage",
+                new CombinationDefinition("LargePackage", null,
                         List.of(new Condition("PLOC", 1000.0, null))));
 
         List<CombinationDetector.PackageMatch> result = detector.detectPackages(report, rules);
@@ -149,7 +149,7 @@ class CombinationDetectorTest {
                 List.of());
 
         List<CombinationDefinition> rules = List.of(
-                new CombinationDefinition("LargeClass",
+                new CombinationDefinition("LargeClass", null,
                         List.of(new Condition("WMC", 47.0, null))));
 
         List<CombinationDetector.ClassMatch> result = detector.detectClasses(report, rules);
@@ -164,7 +164,7 @@ class CombinationDetectorTest {
                 Map.of(MetricCode.WMC, Value.of(50)),
                 Map.of());
         List<CombinationDefinition> rules = List.of(
-                new CombinationDefinition("BadRule",
+                new CombinationDefinition("BadRule", null,
                         List.of(new Condition("NONEXISTENT_METRIC", 10.0, null))));
 
         List<CombinationDetector.ClassMatch> result = detector.detectClasses(report, rules);
