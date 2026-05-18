@@ -1,0 +1,252 @@
+[
+  {
+    "name": "Controlled Package Complexity",
+    "conditions": [
+      { "metric": "PLOC", "min": 2000 },
+      { "metric": "PAHVL", "min": 200000 },
+      { "metric": "PAMI", "max": 65 }
+    ]
+  },
+  {
+    "name": "Reduced Coupling and Improved Cohesion",
+    "conditions": [
+      { "metric": "Ce", "min": 20 },
+      { "metric": "Ca", "min": 20 },
+      { "metric": "I", "min": 0.5 }
+    ]
+  },
+  {
+    "name": "Balance of Abstraction and Stability",
+    "conditions": [
+      { "metric": "A", "max": 0.3 },
+      { "metric": "D", "min": 0.5 },
+      { "metric": "I", "min": 0.5 }
+    ]
+  },
+  {
+    "name": "Implementation Efficiency",
+    "conditions": [
+      { "metric": "PAHD", "min": 30 },
+      { "metric": "PACHEF", "min": 50000 },
+      { "metric": "PLOC", "min": 2000 }
+    ]
+  },
+  {
+    "name": "Package Maintainability",
+    "conditions": [
+      { "metric": "PAMI", "max": 75 },
+      { "metric": "PACHER", "min": 0.1 },
+      { "metric": "PNCSS", "min": 1800 }
+    ]
+  },
+  {
+    "name": "Package Size Control",
+    "conditions": [
+      { "metric": "PNOCC", "min": 10 },
+      { "metric": "PNOAC", "min": 5 },
+      { "metric": "PNOSC", "min": 3 },
+      { "metric": "PNOI", "min": 5 },
+      { "metric": "PLOC", "min": 2000 }
+    ]
+  },
+  {
+    "name": "Change Resistance",
+    "conditions": [
+      { "metric": "Ce", "min": 15 },
+      { "metric": "I", "min": 0.3 },
+      { "metric": "D", "min": 0.4 }
+    ]
+  },
+  {
+    "name": "Interaction Efficiency",
+    "conditions": [
+      { "metric": "Ce", "min": 10 },
+      { "metric": "A", "max": 0.5 },
+      { "metric": "PACHEF", "min": 1400 }
+    ]
+  },
+  {
+    "name": "Minimized Interface Complexity",
+    "conditions": [
+      { "metric": "PNOI", "min": 3 },
+      { "metric": "PACHVC", "min": 120 },
+      { "metric": "PAHD", "min": 25 }
+    ]
+  },
+  {
+    "name": "Architectural Stability",
+    "conditions": [
+      { "metric": "I", "min": 0.3 },
+      { "metric": "D", "min": 0.3 },
+      { "metric": "PAMI", "max": 70 }
+    ]
+  },
+  {
+    "name": "Transparency and Simplicity",
+    "conditions": [
+      { "metric": "PNCSS", "min": 1500 },
+      { "metric": "PACHVC", "min": 120 },
+      { "metric": "PAMI", "max": 75 }
+    ]
+  },
+  {
+    "name": "Code Duplication Minimization",
+    "conditions": [
+      { "metric": "PACHL", "min": 10000 },
+      { "metric": "PLOC", "min": 1800 },
+      { "metric": "PAMI", "max": 70 }
+    ]
+  },
+  {
+    "name": "Overload Resistance",
+    "conditions": [
+      { "metric": "PNOCC", "min": 12 },
+      { "metric": "PNOAC", "min": 4 },
+      { "metric": "PAHD", "min": 25 }
+    ]
+  },
+  {
+    "name": "Ease of Maintenance",
+    "conditions": [
+      { "metric": "PAMI", "max": 70 },
+      { "metric": "PNCSS", "min": 1500 },
+      { "metric": "PACHEF", "min": 40000 }
+    ]
+  },
+  {
+    "name": "Interface Optimization",
+    "conditions": [
+      { "metric": "PNOI", "min": 3 },
+      { "metric": "A", "max": 0.6 },
+      { "metric": "Ce", "min": 15 }
+    ]
+  },
+  {
+    "name": "Computational Resource Balance",
+    "conditions": [
+      { "metric": "PACHEF", "min": 35000 },
+      { "metric": "PAHVL", "min": 15000 },
+      { "metric": "PAMI", "max": 70 }
+    ]
+  },
+  {
+    "name": "Class Cohesion Control",
+    "conditions": [
+      { "metric": "Ca", "min": 15 },
+      { "metric": "D", "min": 0.4 },
+      { "metric": "PNOCC", "min": 10 }
+    ]
+  },
+  {
+    "name": "Structural Complexity Optimization",
+    "conditions": [
+      { "metric": "Ce", "min": 15 },
+      { "metric": "PAHVL", "min": 12000 },
+      { "metric": "PLOC", "min": 1500 }
+    ]
+  },
+  {
+    "name": "Stability and Modularity",
+    "conditions": [
+      { "metric": "I", "min": 0.4 },
+      { "metric": "Ce", "min": 10 },
+      { "metric": "A", "max": 0.4 }
+    ]
+  },
+  {
+    "name": "Logic Complexity Minimization",
+    "conditions": [
+      { "metric": "PAHD", "min": 20 },
+      { "metric": "PACHEF", "min": 30000 },
+      { "metric": "D", "min": 0.5 }
+    ]
+  },
+  {
+    "name": "Testability Support",
+    "conditions": [
+      { "metric": "PNOI", "min": 5 },
+      { "metric": "I", "min": 0.3 },
+      { "metric": "PAMI", "max": 75 }
+    ]
+  },
+  {
+    "name": "Functional Load Optimization",
+    "conditions": [
+      { "metric": "PNCSS", "min": 1200 },
+      { "metric": "PNOCC", "min": 8 },
+      { "metric": "PACHVC", "min": 100 }
+    ]
+  },
+  {
+    "name": "Hidden Technical Debt",
+    "conditions": [
+      { "metric": "Ce", "min": 10 },
+      { "metric": "PAHD", "min": 20 },
+      { "metric": "PAMI", "min": 65, "max": 85 }
+    ]
+  },
+  {
+    "name": "End-User Package Complexity",
+    "conditions": [
+      { "metric": "A", "max": 0.6 },
+      { "metric": "PACHEF", "min": 25000 },
+      { "metric": "PNCSS", "min": 1000 }
+    ]
+  },
+  {
+    "name": "Rigid Core Package",
+    "conditions": [
+      { "metric": "A", "max": 0.2 },
+      { "metric": "Ca", "min": 20 },
+      { "metric": "I", "max": 0.3 }
+    ]
+  },
+  {
+    "name": "Concrete Overload",
+    "conditions": [
+      { "metric": "A", "max": 0.2 },
+      { "metric": "Ca", "min": 20 },
+      { "metric": "I", "max": 0.3 }
+    ]
+  },
+  {
+    "name": "Unstable Utility Package",
+    "conditions": [
+      { "metric": "PNOSC", "min": 5 },
+      { "metric": "PAMI", "min": 70 },
+      { "metric": "I", "min": 0.7 }
+    ]
+  },
+  {
+    "name": "Interface Deficiency",
+    "conditions": [
+      { "metric": "PNOI", "max": 2 },
+      { "metric": "Ce", "min": 15 },
+      { "metric": "D", "min": 0.3 }
+    ]
+  },
+  {
+    "name": "Large Blob Package",
+    "conditions": [
+      { "metric": "PLOC", "min": 2000 },
+      { "metric": "PNCSS", "min": 1500 },
+      { "metric": "PAMI", "max": 60 }
+    ]
+  },
+  {
+    "name": "Abstractness Mismatch",
+    "conditions": [
+      { "metric": "PNOAC", "min": 5 },
+      { "metric": "A", "min": 0.8 },
+      { "metric": "I", "min": 0.7 }
+    ]
+  },
+  {
+    "name": "Error-Prone Logic",
+    "conditions": [
+      { "metric": "PRCHER", "min": 5 },
+      { "metric": "PRCHVC", "min": 100 },
+      { "metric": "PLOC", "min": 500 }
+    ]
+  }
+]
