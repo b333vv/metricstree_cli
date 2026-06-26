@@ -8,7 +8,6 @@
 ```
 docs/
 ├── index.md              # This file — main entry point
-├── WAL.md                # Write-Ahead Log — active session state
 ├── ARCHITECTURE.md       # System architecture specification
 ├── templates/            # Templates for documentation
 │   ├── feature.md
@@ -19,7 +18,7 @@ docs/
 ## For AI Agents
 Before starting any task, read:
 1. `AGENTS.md` — Entry point for agent work
-2. `docs/WAL.md` — Current session state and active tasks
+
 
 ## Key Concepts
 - **TDD:** Write tests first, then implement logic

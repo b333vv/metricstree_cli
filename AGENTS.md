@@ -7,10 +7,9 @@ This file is the entry point for agent work in this repository.
 - Use progressive disclosure: start with this file, then follow links.
 
 ## Operational Rules
-1. **Context First:** Always read `docs/index.md` and `docs/WAL.md` before starting.
+1. **Context First:** Always read `docs/index.md` before starting.
 2. **Harness Compliance:** You must run `./gradlew check` before committing. Never bypass tests.
-3. **Write-Ahead Log (IPC):** Before finishing your response, update `docs/WAL.md` with completed actions and the exact next step.
-4. Use English for the documentation.
+3. Use English for the documentation.
 
 ## Primary Navigation
 - Main entry point: `docs/index.md`
@@ -28,10 +27,3 @@ java-metrics-cli/           # CLI application entry point
 java-metrics-core/          # Core API and data models
 java-metrics-javaparser/    # JavaParser-based metric visitors
 ```
-
-## Development Workflow
-1. Read `docs/WAL.md` to understand current task
-2. Write tests first (TDD approach)
-3. Implement logic
-4. Run `./gradlew check build`
-5. Update `docs/WAL.md` with progress
