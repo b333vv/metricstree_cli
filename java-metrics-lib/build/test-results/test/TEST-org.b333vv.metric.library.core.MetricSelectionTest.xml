@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="org.b333vv.metric.library.core.MetricSelectionTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-06-26T14:33:22" hostname="MacBook-Air.local" time="0.0">
+<testsuite name="org.b333vv.metric.library.core.MetricSelectionTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-07-06T18:06:31" hostname="MacBook-Air.local" time="0.001">
   <properties/>
-  <testcase name="noneShouldExcludeAllMetricCodes()" classname="org.b333vv.metric.library.core.MetricSelectionTest" time="0.0"/>
+  <testcase name="noneShouldExcludeAllMetricCodes()" classname="org.b333vv.metric.library.core.MetricSelectionTest" time="0.001"/>
   <testcase name="excludingShouldRemoveOnlySpecifiedMetricCodes()" classname="org.b333vv.metric.library.core.MetricSelectionTest" time="0.0"/>
   <testcase name="ofShouldIncludeOnlyRequestedMetricCodes()" classname="org.b333vv.metric.library.core.MetricSelectionTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>

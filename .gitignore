@@ -44,3 +44,6 @@ Thumbs.db
 *.tmp
 *.swp
 *~
+
+java-metrics-lib/build/
+java-metrics-cli/build/

@@ -10,6 +10,7 @@
 docs/
 ├── index.md              # This file — main entry point
 ├── ARCHITECTURE.md       # System architecture specification
+├── PROGRESS.md           # Progress fixation
 ├── prd/                  # PRD
 ├── templates/            # Templates for documentation
 │   ├── feature.md

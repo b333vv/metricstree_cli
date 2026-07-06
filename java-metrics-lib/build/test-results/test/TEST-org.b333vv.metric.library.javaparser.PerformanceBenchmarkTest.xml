@@ -1,9 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest" tests="1" skipped="1" failures="0" errors="0" timestamp="2026-06-26T14:33:22" hostname="MacBook-Air.local" time="25.12">
+<testsuite name="org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-06T18:06:31" hostname="MacBook-Air.local" time="41.77">
   <properties/>
-  <testcase name="Performance benchmark on medium project" classname="org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest" time="25.12">
-    <skipped/>
-  </testcase>
-  <system-out><![CDATA[]]></system-out>
+  <testcase name="Performance benchmark on medium project" classname="org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest" time="41.77"/>
+  <system-out><![CDATA[=== Performance Benchmark ===
+Source: /Users/vadim/code/core/src/main/java
+Files: 4074
+Lines: 289665
+Classes: 4020
+Methods: 19994
+Packages: 1318
+
+Total Time: 40576 ms
+Files/sec: 100,40
+Lines/sec: 7138,83
+Classes/sec: 99,07
+Methods/sec: 492,75
+Memory (delta): 1928 MB
+]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>
