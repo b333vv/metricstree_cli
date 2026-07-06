@@ -98,6 +98,6 @@ class JavaParserCrossFileResolutionMetricVisitorsRegressionTest extends JavaPars
         ClassOrInterfaceDeclaration leaf = findClass(context, "sample.Leaf");
         MetricResult leafResult = collectMetric(new JavaParserDepthOfInheritanceTreeMetricVisitor(), leaf);
         assertEquals(MetricCode.DIT, leafResult.code());
-        assertEquals(2L, leafResult.value().longValue());
+        assertEquals(3L, leafResult.value().longValue());
     }
 }

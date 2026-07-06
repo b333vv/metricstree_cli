@@ -21,6 +21,7 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    jvmArgs("-Xmx4g")
 }
 
 tasks.register<JavaExec>("benchmark") {
