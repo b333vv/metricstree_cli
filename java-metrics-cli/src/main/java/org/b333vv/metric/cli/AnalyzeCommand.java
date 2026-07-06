@@ -3,6 +3,7 @@ package org.b333vv.metric.cli;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.ClasspathEntry;
+import org.b333vv.metric.library.core.ExclusionConfig;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricSelection;
 import org.b333vv.metric.library.core.SourceRoot;
@@ -46,6 +47,9 @@ final class AnalyzeCommand implements Callable<Integer> {
     @CommandLine.Spec
     private CommandLine.Model.CommandSpec spec;
 
+    @CommandLine.ParentCommand
+    private JavaMetricsCliCommand parentCommand;
+
     @CommandLine.Option(names = "--project-name", description = "Project name written to the resulting report.")
     private String projectName;
 
@@ -74,7 +78,8 @@ final class AnalyzeCommand implements Callable<Integer> {
                     "At least one --source-root or --source-file must be provided.");
         }
 
-        AnalysisRequest request = buildRequest();
+        ExclusionConfig exclusions = loadExclusions();
+        AnalysisRequest request = buildRequest(exclusions);
         String json = jsonWriter.toJson(analyzer.analyze(request), pretty);
         if (outputFile == null) {
             stdout.println(json);
@@ -91,7 +96,15 @@ final class AnalyzeCommand implements Callable<Integer> {
         return 0;
     }
 
-    AnalysisRequest buildRequest() {
+    private ExclusionConfig loadExclusions() {
+        Path excludeFilePath = parentCommand != null ? parentCommand.getExcludeFilePath() : null;
+        if (excludeFilePath == null) {
+            return ExclusionConfig.empty();
+        }
+        return ExclusionConfigLoader.load(excludeFilePath);
+    }
+
+    AnalysisRequest buildRequest(ExclusionConfig exclusions) {
         List<SourceRoot> normalizedSourceRoots = sourceRoots.stream()
                 .map(SourceRoot::new)
                 .toList();
@@ -105,6 +118,9 @@ final class AnalyzeCommand implements Callable<Integer> {
         AnalysisOptions options = metrics.isEmpty()
                 ? AnalysisOptions.defaults()
                 : AnalysisOptions.of(MetricSelection.of(metrics.toArray(MetricCode[]::new)));
+        if (!exclusions.isEmpty()) {
+            options = options.withExclusions(exclusions);
+        }
         return new AnalysisRequest(
                 effectiveProjectName(),
                 normalizedSourceRoots,

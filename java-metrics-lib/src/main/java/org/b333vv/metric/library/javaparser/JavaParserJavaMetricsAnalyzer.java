@@ -23,6 +23,7 @@ import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.AnalysisSeverity;
 import org.b333vv.metric.library.core.ClassReport;
+import org.b333vv.metric.library.core.ExclusionConfig;
 import org.b333vv.metric.library.core.ClasspathEntry;
 import org.b333vv.metric.library.core.DerivedMetricCalculator;
 import org.b333vv.metric.library.core.MethodReport;
@@ -250,7 +251,58 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             }
         }
 
+        ExclusionConfig exclusions = request.options().exclusions();
+        if (exclusions != null && !exclusions.isEmpty()) {
+            List<SourceRoot> roots = request.sourceRoots();
+            Set<Path> filtered = new TreeSet<>();
+            int excludedCount = 0;
+            for (Path file : sourceFiles) {
+                String fqcn = deriveFqcn(file, roots);
+                if (exclusions.isExcluded(fqcn)) {
+                    excludedCount++;
+                } else {
+                    filtered.add(file);
+                }
+            }
+            if (excludedCount > 0) {
+                diagnostics.add(new AnalysisDiagnostic(
+                        "EXCLUSION_FILTER",
+                        AnalysisSeverity.INFO,
+                        "Skipped " + excludedCount + " files matching exclusion rules",
+                        null));
+            }
+            return List.copyOf(filtered);
+        }
+
         return List.copyOf(sourceFiles);
+    }
+
+    private static String deriveFqcn(Path filePath, List<SourceRoot> roots) {
+        for (SourceRoot root : roots) {
+            Path rootPath = root.path().normalize();
+            Path normalizedFile = filePath.normalize();
+            if (normalizedFile.startsWith(rootPath)) {
+                Path relative = rootPath.relativize(normalizedFile);
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < relative.getNameCount() - 1; i++) {
+                    if (sb.length() > 0) {
+                        sb.append('.');
+                    }
+                    sb.append(relative.getName(i));
+                }
+                String className = relative.getFileName().toString();
+                if (className.endsWith(".java")) {
+                    className = className.substring(0, className.length() - 5);
+                }
+                if (sb.length() > 0) {
+                    sb.append('.');
+                    sb.append(className);
+                    return sb.toString();
+                }
+                return className;
+            }
+        }
+        return filePath.toString();
     }
 
     private static final int PARALLELISM = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.ClasspathEntry;
+import org.b333vv.metric.library.core.ExclusionConfig;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricReport;
 import org.b333vv.metric.library.core.MetricSelection;
@@ -50,6 +51,9 @@ final class ValidateCommand implements Callable<Integer> {
     @CommandLine.Spec
     private CommandLine.Model.CommandSpec spec;
 
+    @CommandLine.ParentCommand
+    private JavaMetricsCliCommand parentCommand;
+
     @CommandLine.Option(names = {"-s", "--source"}, required = true, paramLabel = "PATH",
             description = "Source root scanned recursively for .java files or explicit Java source file.")
     private Path source;
@@ -84,12 +88,17 @@ final class ValidateCommand implements Callable<Integer> {
                     "Source must be a .java file or directory containing .java files.");
         }
 
+        ExclusionConfig exclusions = loadExclusions();
+        AnalysisOptions options = exclusions.isEmpty()
+                ? AnalysisOptions.defaults()
+                : AnalysisOptions.defaults().withExclusions(exclusions);
+
         AnalysisRequest request = new AnalysisRequest(
                 "validate",
                 sourceRoots,
                 sourceUnits,
                 List.of(),
-                AnalysisOptions.defaults()
+                options
         );
 
         MetricReport report = analyzer.analyze(request);
@@ -104,6 +113,14 @@ final class ValidateCommand implements Callable<Integer> {
             return 0;
         }
         return 0;
+    }
+
+    private ExclusionConfig loadExclusions() {
+        Path excludeFilePath = parentCommand != null ? parentCommand.getExcludeFilePath() : null;
+        if (excludeFilePath == null) {
+            return ExclusionConfig.empty();
+        }
+        return ExclusionConfigLoader.load(excludeFilePath);
     }
 
     private Map<String, Threshold> loadThresholds() throws IOException {

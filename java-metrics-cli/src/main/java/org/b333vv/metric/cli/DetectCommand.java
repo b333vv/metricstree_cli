@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
+import org.b333vv.metric.library.core.ExclusionConfig;
 import org.b333vv.metric.library.core.MetricReport;
 import org.b333vv.metric.library.core.SourceRoot;
 import org.b333vv.metric.library.core.SourceUnit;
@@ -42,6 +43,9 @@ final class DetectCommand implements Callable<Integer> {
     @CommandLine.Spec
     private CommandLine.Model.CommandSpec spec;
 
+    @CommandLine.ParentCommand
+    private JavaMetricsCliCommand parentCommand;
+
     @CommandLine.Option(names = {"-s", "--source"}, required = true, paramLabel = "PATH",
             description = "Source root scanned recursively for .java files or explicit Java source file.")
     private Path source;
@@ -57,6 +61,14 @@ final class DetectCommand implements Callable<Integer> {
     @CommandLine.Option(names = {"-o", "--output"}, required = true, paramLabel = "PATH",
             description = "Path to write JSON report.")
     private Path outputFile;
+
+    private ExclusionConfig loadExclusions() {
+        Path excludeFilePath = parentCommand != null ? parentCommand.getExcludeFilePath() : null;
+        if (excludeFilePath == null) {
+            return ExclusionConfig.empty();
+        }
+        return ExclusionConfigLoader.load(excludeFilePath);
+    }
 
     @Override
     public Integer call() throws IOException {
@@ -76,9 +88,14 @@ final class DetectCommand implements Callable<Integer> {
                     "Source must be a .java file or directory containing .java files.");
         }
 
+        ExclusionConfig exclusions = loadExclusions();
+        AnalysisOptions options = exclusions.isEmpty()
+                ? AnalysisOptions.defaults()
+                : AnalysisOptions.defaults().withExclusions(exclusions);
+
         AnalysisRequest request = new AnalysisRequest(
                 "detect", sourceRoots, sourceUnits, List.of(),
-                AnalysisOptions.defaults());
+                options);
 
         MetricReport report = analyzer.analyze(request);
 
