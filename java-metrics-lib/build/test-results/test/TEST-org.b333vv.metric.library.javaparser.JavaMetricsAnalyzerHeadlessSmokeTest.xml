@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="org.b333vv.metric.library.javaparser.JavaMetricsAnalyzerHeadlessSmokeTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-05-18T16:56:44" hostname="MacBook-Air.local" time="0.14">
+<testsuite name="org.b333vv.metric.library.javaparser.JavaMetricsAnalyzerHeadlessSmokeTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-06-26T14:33:22" hostname="MacBook-Air.local" time="0.138">
   <properties/>
-  <testcase name="analyzeShouldWorkAsPlainJvmHeadlessFacade()" classname="org.b333vv.metric.library.javaparser.JavaMetricsAnalyzerHeadlessSmokeTest" time="0.114"/>
-  <testcase name="analyzeShouldRespectMetricSelection()" classname="org.b333vv.metric.library.javaparser.JavaMetricsAnalyzerHeadlessSmokeTest" time="0.005"/>
-  <testcase name="analyzeShouldReturnDiagnosticsAndKeepPartialResults()" classname="org.b333vv.metric.library.javaparser.JavaMetricsAnalyzerHeadlessSmokeTest" time="0.013"/>
-  <testcase name="analyzeShouldSupportSingleSourceUnitRequests()" classname="org.b333vv.metric.library.javaparser.JavaMetricsAnalyzerHeadlessSmokeTest" time="0.007"/>
+  <testcase name="analyzeShouldWorkAsPlainJvmHeadlessFacade()" classname="org.b333vv.metric.library.javaparser.JavaMetricsAnalyzerHeadlessSmokeTest" time="0.111"/>
+  <testcase name="analyzeShouldRespectMetricSelection()" classname="org.b333vv.metric.library.javaparser.JavaMetricsAnalyzerHeadlessSmokeTest" time="0.007"/>
+  <testcase name="analyzeShouldReturnDiagnosticsAndKeepPartialResults()" classname="org.b333vv.metric.library.javaparser.JavaMetricsAnalyzerHeadlessSmokeTest" time="0.011"/>
+  <testcase name="analyzeShouldSupportSingleSourceUnitRequests()" classname="org.b333vv.metric.library.javaparser.JavaMetricsAnalyzerHeadlessSmokeTest" time="0.009"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[Failed to re-parse unit with enhanced context: [Parse error. Found "?", expected one of  ";" "@" "\u001a" "abstract" "class" "default" "enum" "final" "import" "interface" "module" "native" "non-sealed" "open" "private" "protected" "public" "record" "sealed" "static" "strictfp" "synchronized" "transient" "transitive" "volatile" <EOF>
 Problem stacktrace : 

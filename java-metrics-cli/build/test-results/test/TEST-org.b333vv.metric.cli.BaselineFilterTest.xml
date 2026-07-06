@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="org.b333vv.metric.cli.BaselineFilterTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-06-26T14:34:09" hostname="MacBook-Air.local" time="0.014">
+  <properties/>
+  <testcase name="shouldDetectDegradedViolation()" classname="org.b333vv.metric.cli.BaselineFilterTest" time="0.008"/>
+  <testcase name="shouldIgnoreMetricsWithinThreshold()" classname="org.b333vv.metric.cli.BaselineFilterTest" time="0.001"/>
+  <testcase name="shouldDetectImprovedViolation()" classname="org.b333vv.metric.cli.BaselineFilterTest" time="0.0"/>
+  <testcase name="shouldIgnoreMetricsNotInThresholds()" classname="org.b333vv.metric.cli.BaselineFilterTest" time="0.001"/>
+  <testcase name="shouldHandleMultipleViolationsPerEntity()" classname="org.b333vv.metric.cli.BaselineFilterTest" time="0.0"/>
+  <testcase name="shouldHandleMethodLevelViolations()" classname="org.b333vv.metric.cli.BaselineFilterTest" time="0.002"/>
+  <testcase name="shouldDetectResolvedViolation()" classname="org.b333vv.metric.cli.BaselineFilterTest" time="0.001"/>
+  <testcase name="shouldDetectNewViolation()" classname="org.b333vv.metric.cli.BaselineFilterTest" time="0.0"/>
+  <testcase name="shouldIgnoreUnchangedViolation()" classname="org.b333vv.metric.cli.BaselineFilterTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

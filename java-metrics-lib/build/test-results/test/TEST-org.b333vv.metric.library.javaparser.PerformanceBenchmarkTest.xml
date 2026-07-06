@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest" tests="1" skipped="1" failures="0" errors="0" timestamp="2026-05-18T16:56:44" hostname="MacBook-Air.local" time="27.06">
+<testsuite name="org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest" tests="1" skipped="1" failures="0" errors="0" timestamp="2026-06-26T14:33:22" hostname="MacBook-Air.local" time="25.12">
   <properties/>
-  <testcase name="Performance benchmark on medium project" classname="org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest" time="27.06">
+  <testcase name="Performance benchmark on medium project" classname="org.b333vv.metric.library.javaparser.PerformanceBenchmarkTest" time="25.12">
     <skipped/>
   </testcase>
   <system-out><![CDATA[]]></system-out>
