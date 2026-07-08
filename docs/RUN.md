@@ -2,14 +2,24 @@
 
 ## Build
 
+Build the project and generate the distribution launcher:
+
 ```bash
-./gradlew build
+./gradlew :java-metrics-cli:installDist
 ```
 
-## Run via Gradle
+The launcher script is created at:
+
+```
+java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli
+```
+
+All examples below use `java-metrics-cli` as shorthand — replace it with the full path or add the `bin/` directory to your `PATH`.
+
+## Run
 
 ```bash
-./gradlew :java-metrics-cli:run --args="--help"
+java-metrics-cli --help
 ```
 
 ## Command-Line Options
@@ -62,17 +72,17 @@ Patterns from `packages` and `classes` are merged into one list and tested again
 
 Analyze a single file:
 ```bash
-./gradlew :java-metrics-cli:run --args="analyze --source-file src/main/java/org/b333vv/metric/cli/JavaMetricsCliMain.java --metric LOC,NOC"
+java-metrics-cli analyze --source-file src/main/java/org/b333vv/metric/cli/JavaMetricsCliMain.java --metric LOC,NOC
 ```
 
 Analyze a directory:
 ```bash
-./gradlew :java-metrics-cli:run --args="analyze --source-root src/main/java --metric LOC,NOC --output-file results.json --pretty"
+java-metrics-cli analyze --source-root src/main/java --metric LOC,NOC --output-file results.json --pretty
 ```
 
 Analyze with exclusions:
 ```bash
-./gradlew :java-metrics-cli:run --args="analyze --source-root src/main/java --exclude-file exclusions.yml --output-file results.json"
+java-metrics-cli analyze --source-root src/main/java --exclude-file exclusions.yml --output-file results.json
 ```
 
 ### `validate` Command
@@ -259,15 +269,15 @@ Each `condition` specifies a `metric` code (any `MetricCode` enum value) with op
 
 Detect classes matching class-level rules:
 ```bash
-./gradlew :java-metrics-cli:run --args="detect -s src/main/java --class-rules rules.json -o report.json"
+java-metrics-cli detect -s src/main/java --class-rules rules.json -o report.json
 ```
 
 Detect packages matching package-level rules:
 ```bash
-./gradlew :java-metrics-cli:run --args="detect -s src/main/java --package-rules pkg-rules.json -o report.json"
+java-metrics-cli detect -s src/main/java --package-rules pkg-rules.json -o report.json
 ```
 
 Detect with both class and package rules, plus exclusions:
 ```bash
-./gradlew :java-metrics-cli:run --args="detect -s src/main/java --class-rules rules.json --package-rules pkg-rules.json -o report.json --exclude-file exclusions.yml"
+java-metrics-cli detect -s src/main/java --class-rules rules.json --package-rules pkg-rules.json -o report.json --exclude-file exclusions.yml
 ```
