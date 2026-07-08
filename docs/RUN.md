@@ -188,3 +188,86 @@ Baseline check (fail only on new/degraded violations):
 java-metrics-cli validate -s src/main/java -t thresholds.json -o report.json --baseline=baseline.json
 echo $?  # 1 if new or degraded violations found
 ```
+
+### `detect` Command
+
+Detect metric rule matches (antipatterns / fitness functions) — find classes or packages whose metric values satisfy all given constraints.
+
+```bash
+java-metrics-cli detect -s <source> --class-rules=<path> [--package-rules=<path>] -o <output> [--exclude-file=<path>]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-s, --source=<path>` | Java source file or directory to analyze (required) |
+| `--class-rules=<path>` | JSON file with class-level rule definitions |
+| `--package-rules=<path>` | JSON file with package-level rule definitions |
+| `-o, --output=<path>` | Path to write JSON report (required) |
+| `--exclude-file, -e, --ignore=<path>` | YAML file with exclusion patterns (see [Exclusions](#exclusions)) |
+
+At least one of `--class-rules` or `--package-rules` must be provided.
+
+#### Rules file format
+
+A JSON array of rule objects. Each rule has a `name`, optional `description`, and an array of `conditions`. A class/package matches a rule only if it satisfies **all** of its conditions (AND logic).
+
+```json
+[
+  {
+    "name": "GodClass",
+    "description": "High complexity and low cohesion",
+    "conditions": [
+      { "metric": "WMC", "min": 47 },
+      { "metric": "ATFD", "min": 10 }
+    ]
+  },
+  {
+    "name": "LargeClass",
+    "conditions": [
+      { "metric": "LOC", "min": 1000 }
+    ]
+  }
+]
+```
+
+Each `condition` specifies a `metric` code (any `MetricCode` enum value) with optional `min` and/or `max` bounds.
+
+#### Report output format
+
+```json
+{
+  "status": "COMPLETED",
+  "classRules": [
+    {
+      "name": "GodClass",
+      "matchCount": 2,
+      "matches": [
+        {"className": "AppService", "qualifiedName": "com.example.AppService", "sourcePath": "src/main/java/AppService.java"},
+        {"className": "ReportBuilder", "qualifiedName": "com.example.ReportBuilder", "sourcePath": "src/main/java/ReportBuilder.java"}
+      ]
+    }
+  ],
+  "packageRules": [],
+  "summary": {
+    "classRules": {"total": 2, "matched": 1},
+    "packageRules": {"total": 0, "matched": 0}
+  }
+}
+```
+
+#### Examples
+
+Detect classes matching class-level rules:
+```bash
+./gradlew :java-metrics-cli:run --args="detect -s src/main/java --class-rules rules.json -o report.json"
+```
+
+Detect packages matching package-level rules:
+```bash
+./gradlew :java-metrics-cli:run --args="detect -s src/main/java --package-rules pkg-rules.json -o report.json"
+```
+
+Detect with both class and package rules, plus exclusions:
+```bash
+./gradlew :java-metrics-cli:run --args="detect -s src/main/java --class-rules rules.json --package-rules pkg-rules.json -o report.json --exclude-file exclusions.yml"
+```
