@@ -1,39 +1,39 @@
-## TASK-042: Добавить экспорт отчёта в CSV
+## TASK-042: Add CSV report export
 
-### Цель
-Пользователь должен иметь возможность выгрузить отчёт по продажам в CSV.
+### Goal
+The user should be able to download a sales report in CSV format.
 
-### Пользовательская ценность
-Отчёт можно открыть в Excel/Google Sheets без ручной копии данных.
+### User value
+The report can be opened in Excel/Google Sheets without manually copying data.
 
-### Область
-- Добавить кнопку экспорта на страницу отчётов.
-- Реализовать эндпоинт /api/reports/{id}/export.csv.
-- Добавить тесты на формат CSV.
+### Scope
+- Add an export button to the reports page.
+- Implement the `/api/reports/{id}/export.csv` endpoint.
+- Add tests for CSV format.
 
-### Вне области
-- Не менять модель продаж.
-- Не добавлять экспорт в Excel.
-- Не переписывать фронтенд-компоненты отчётов.
+### Out of scope
+- Do not change the sales model.
+- Do not add Excel export.
+- Do not rewrite report frontend components.
 
-### Критерии приёмки
-- Для существующего отчёта возвращается CSV с корректными заголовками.
-- Пустой отчёт возвращает только заголовки.
-- При отсутствии прав возвращается 403.
-- Все новые и изменённые тесты проходят.
+### Acceptance criteria
+- For an existing report, a CSV with correct headers is returned.
+- An empty report returns only headers.
+- Missing permissions return a 403.
+- All new and modified tests pass.
 
-### Команды проверки
-- make smoke
-- make test
-- make lint
-- make typecheck
+### Verification commands
+- `make smoke`
+- `make test`
+- `make lint`
+- `make typecheck`
 
-### Риски
-- Возможна большая выборка данных.
-- Нужно избежать N+1 запросов.
+### Risks
+- Potentially large data sets.
+- N+1 queries must be avoided.
 
 ### Definition of Done
-- Код проходит линтер и типизацию.
-- Тесты зелёные.
-- Обновлена документация, если изменился API.
-- В PR есть описание изменений и доказательства тестов.
+- Code passes linting and type checking.
+- Tests are green.
+- Documentation is updated if the API changes.
+- PR includes a description of changes and test evidence.

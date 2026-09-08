@@ -3,6 +3,7 @@
 2. **Fix progress:** Update `docs/PROGRESS.md` before the end of each session, and read it at the start of the next one.
 2. **Harness Compliance:** You must run `./gradlew check` before committing. Never bypass tests.
 3. Use English for the documentation.
+4. Make a commit after each task.
 
 ## Primary Navigation
 - Main entry point: `docs/index.md`
