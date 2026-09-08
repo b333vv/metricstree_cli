@@ -44,16 +44,21 @@ the current codebase was verified against the source on 2026-09-08.
   whole MOOD suite already compute from snapshots only. Only `NOC` and `FDP` still need
   full ASTs of *other* classes.
 
-### Defects discovered outside the road-map (registered in `docs/tech-debt-tracker.md`)
+### Defects discovered outside the road-map (registered in `docs/tech-debt-tracker.md`, each with a dedicated quick-win task)
 1. **Race condition:** Halstead visitors are stateful (`HashSet`/`ArrayList` fields cleared
    at the start of each `visit`) yet are singletons shared across parallel-stream threads —
-   concurrent runs corrupt Halstead metric data.
+   concurrent runs corrupt Halstead metric data. → [TASK-003](../tasks/TASK-003-halstead-visitor-race-condition.md)
 2. **Resource leak:** both custom `ForkJoinPool`s are created per `analyze()` call and never
-   shut down.
+   shut down. → [TASK-004](../tasks/TASK-004-forkjoinpool-lifecycle.md)
 3. **Silent config drop:** `--classpath` entries that are directories are silently filtered
-   out (only regular files become `JarTypeSolver` entries).
+   out (only regular files become `JarTypeSolver` entries). →
+   [TASK-006](../tasks/TASK-006-classpath-dirs-diagnostics.md) (warning now) and
+   [TASK-105](../tasks/TASK-105-typesolver-improvements.md) (directory support, Phase 1)
 4. **Dead rule:** `HAS_METHOD_RULE` in `class-level-rules.json` can never match —
-   `Condition` (`cli/CombinationDefinition.java`) has no `value` field.
+   `Condition` (`cli/CombinationDefinition.java`) has no `value` field. →
+   [TASK-007](../tasks/TASK-007-has-method-rule-fix.md)
+5. **Dead structure:** `EnhancedJavaParserContext.compilationUnitsByClass` has no production
+   callers (see Memory above). → [TASK-005](../tasks/TASK-005-remove-dead-context-structure.md)
 
 ### Serialization / tests (road-map Phases 3–4 context)
 - Three independent serialization paths (`MetricReportJsonWriter`, `DetectResultWriter`,
@@ -73,18 +78,20 @@ baseline must exist first.
 | Stage | Road-map phase | Theme | Tasks |
 |---|---|---|---|
 | 0 | — | Safety net: JSON contract goldens + performance baseline | TASK-001, TASK-002 |
+| QW | — | Quick wins: dedicated fixes for audit findings (DEBT-01…05) | TASK-003…007 |
 | 1 | Phase 1 (Reliability) | Diagnostics channel instead of silent catches; TypeSolver improvements | TASK-101…105 |
-| 2 | Phase 2 (Performance) | Thread-safety hotfixes, snapshot-based global metrics, AST release, concurrency scaling | TASK-201…205 |
+| 2 | Phase 2 (Performance) | Snapshot-based global metrics, AST release, concurrency scaling | TASK-202…205 |
 | 3 | Phase 3 (Architecture) | MetricRegistry; serialization consolidation | TASK-301, TASK-302 |
 | 4 | Phase 4 (Ecosystem) | SARIF output; config unification | TASK-401, TASK-402 |
 
 Ordering rules:
 - Stage 0 strictly precedes Phases 2–4 refactors.
-- Within Phase 1: diagnostics channel (101) → visitor wiring (102, 103) → coverage metric (104).
-- Within Phase 2: hotfixes (201) are independent and may be pulled forward as quick wins;
-  snapshot enrichment (202) → AST lifecycle (203) → two-pass pipeline (204).
-- Quick wins that can be pulled forward at any time: `HAS_METHOD_RULE` fix (part of 402),
-  Halstead thread-safety (part of 201).
+- Quick wins (TASK-003…007) are independent of all stages and may be pulled forward at any
+  time; TASK-003–005 are recommended before Phase 2 work (they clean up the code the
+  pipeline restructure will touch).
+- Within Phase 1: diagnostics channel (101) → visitor wiring (102, 103) → coverage metric (104);
+  TASK-105 is independent (recommended after TASK-006).
+- Within Phase 2: snapshot enrichment (202) → AST lifecycle (203) → two-pass pipeline (204).
 
 ---
 
@@ -140,12 +147,16 @@ dataformat already present); existing files keep working. Sample files remain as
 |---|---|---|---|---|---|
 | [TASK-001](../tasks/TASK-001-json-contract-golden-tests.md) | JSON contract golden tests | 0 | High | M | — |
 | [TASK-002](../tasks/TASK-002-performance-baseline.md) | Performance/memory baseline | 0 | High | S | — |
+| [TASK-003](../tasks/TASK-003-halstead-visitor-race-condition.md) | Fix Halstead visitor race condition (DEBT-01) | QW | High | S | — |
+| [TASK-004](../tasks/TASK-004-forkjoinpool-lifecycle.md) | Fix ForkJoinPool lifecycle leak (DEBT-02) | QW | High | S | — |
+| [TASK-005](../tasks/TASK-005-remove-dead-context-structure.md) | Remove dead CU retention (DEBT-05) | QW | Medium | S | — |
+| [TASK-006](../tasks/TASK-006-classpath-dirs-diagnostics.md) | Warn on unusable classpath entries (DEBT-03) | QW | Medium | S | — |
+| [TASK-007](../tasks/TASK-007-has-method-rule-fix.md) | Fix dead HAS_METHOD_RULE, surface rule failures (DEBT-04) | QW | Medium | S | — |
 | [TASK-101](../tasks/TASK-101-diagnostics-channel.md) | Diagnostics channel into visitors | 1 | High | M | — |
 | [TASK-102](../tasks/TASK-102-class-visitor-diagnostics.md) | Class visitors: silent catch → diagnostics | 1 | High | M | TASK-001, TASK-101 |
 | [TASK-103](../tasks/TASK-103-method-visitor-analyzer-diagnostics.md) | Method visitors + analyzer + solver factory diagnostics | 1 | High | S | TASK-102 |
 | [TASK-104](../tasks/TASK-104-resolution-coverage.md) | resolutionCoverage in report | 1 | Medium | S | TASK-103 |
 | [TASK-105](../tasks/TASK-105-typesolver-improvements.md) | TypeSolver: dirs, module-info, fallback | 1 | Medium | S | — |
-| [TASK-201](../tasks/TASK-201-thread-safety-hotfixes.md) | Thread-safety & resource hotfixes | 2 | High | S | — |
 | [TASK-202](../tasks/TASK-202-snapshot-enrichment.md) | DependencySnapshot enrichment (NOC/FDP) | 2 | High | M | TASK-001 |
 | [TASK-203](../tasks/TASK-203-ast-memory-manager.md) | AstMemoryManager: AST lifecycle | 2 | High | L | TASK-202 |
 | [TASK-204](../tasks/TASK-204-two-pass-pipeline.md) | Two-pass pipeline + memory gate | 2 | High | L | TASK-002, TASK-203 |
@@ -153,7 +164,7 @@ dataformat already present); existing files keep working. Sample files remain as
 | [TASK-301](../tasks/TASK-301-metric-registry.md) | MetricRegistry + MetricDefinition | 3 | Medium | L | TASK-104 |
 | [TASK-302](../tasks/TASK-302-jackson-serialization.md) | Jackson mixins, writer consolidation | 3 | Medium | M | TASK-001 |
 | [TASK-401](../tasks/TASK-401-sarif-output.md) | SARIF output + --format flag | 4 | Medium | M | TASK-302 |
-| [TASK-402](../tasks/TASK-402-config-unification.md) | Config unification + HAS_METHOD_RULE fix | 4 | Medium | S | — |
+| [TASK-402](../tasks/TASK-402-config-unification.md) | Config unification (JSON + YAML) | 4 | Medium | S | — |
 
 Dependency sketch:
 
@@ -162,7 +173,9 @@ TASK-001 ──┬──> TASK-102 ──> TASK-103 ──> TASK-104 ──> TAS
            ├──> TASK-202 ──> TASK-203 ──> TASK-204 ──> TASK-205
            └──> TASK-302 ──> TASK-401
 TASK-002 ──────────────────────> TASK-204
-TASK-101 ──> TASK-102        TASK-201, TASK-105, TASK-402: independent
+TASK-101 ──> TASK-102
+TASK-006 ──> TASK-105 (recommended order, formally independent)
+TASK-003…007, TASK-105, TASK-402: independent quick wins / phase tasks
 ```
 
 ---

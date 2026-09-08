@@ -11,8 +11,12 @@ Documentation-only session (no code changes):
     `AstMemoryManager` with bounded AST window, `MetricRegistry` (aggregation stays
     explicit), Jackson mixins in CLI, dual JSON/YAML config loading;
   - 16 tasks, dependency graph, success-metric mapping, risks.
-- Created `docs/tasks/` with 16 task files (TASK-001/002, TASK-101…105, TASK-201…205,
-  TASK-301/302, TASK-401/402) in `docs/templates/task-sample.md` format.
+- Created `docs/tasks/` with 20 task files in `docs/templates/task-sample.md` format:
+  baseline TASK-001/002, quick wins TASK-003…007 (dedicated fixes for the six audit
+  findings), Phase 1 TASK-101…105, Phase 2 TASK-202…205, Phase 3 TASK-301/302,
+  Phase 4 TASK-401/402. (TASK-201 "Thread-safety & resource hotfixes" from the first
+  draft was dissolved the same day into the dedicated quick-win tasks TASK-003/004/005,
+  with the classpath-warning part going to TASK-006 and the rule fix to TASK-007.)
 - Updated `docs/index.md` navigation and `docs/tech-debt-tracker.md` (DEBT-01…06 from the
   code audit: Halstead visitor race condition, ForkJoinPool leak, classpath dirs silently
   dropped, dead `HAS_METHOD_RULE`, dead `compilationUnitsByClass` map, silent resolution

@@ -1,26 +1,28 @@
 # Tech Debt Tracker
 
 ## Active Debt Items
-- **DEBT-01 — Halstead visitor race condition (Phase 2 priority).**
+- **DEBT-01 — Halstead visitor race condition.**
   `JavaParserHalsteadClassMetricVisitor` and `JavaParserHalsteadMethodMetricVisitor` keep
   stateful `HashSet`/`ArrayList` fields (cleared at each `visit`) while being shared
   singletons across parallel-stream threads in `JavaParserJavaMetricsAnalyzer` — concurrent
-  runs corrupt Halstead values. Fix planned in [TASK-201](tasks/TASK-201-thread-safety-hotfixes.md).
+  runs corrupt Halstead values. Fix planned in
+  [TASK-003](tasks/TASK-003-halstead-visitor-race-condition.md).
 - **DEBT-02 — ForkJoinPool leak.**
   Both custom `ForkJoinPool`s created per `analyze()` call (parse phase ~lines 308–323,
   visit phase ~lines 373–390) are never shut down. Fix planned in
-  [TASK-201](tasks/TASK-201-thread-safety-hotfixes.md).
+  [TASK-004](tasks/TASK-004-forkjoinpool-lifecycle.md).
 - **DEBT-03 — `--classpath` directories silently dropped.**
   `JavaParserJavaMetricsAnalyzer` filters classpath entries with `Files::isRegularFile`
-  (~lines 207–211); directories vanish without diagnostics. Fix planned in
-  [TASK-105](tasks/TASK-105-typesolver-improvements.md).
+  (~lines 207–211); directories vanish without diagnostics. Warning diagnostics planned in
+  [TASK-006](tasks/TASK-006-classpath-dirs-diagnostics.md); actual directory-backed
+  resolution in [TASK-105](tasks/TASK-105-typesolver-improvements.md).
 - **DEBT-04 — Dead `HAS_METHOD_RULE` in `class-level-rules.json`.**
   `Condition` (`cli/CombinationDefinition.java`) has no `value` field, so the rule can
   never match; `CombinationDetector` swallows the failure. Fix planned in
-  [TASK-402](tasks/TASK-402-config-unification.md).
+  [TASK-007](tasks/TASK-007-has-method-rule-fix.md).
 - **DEBT-05 — Dead structure `EnhancedJavaParserContext.compilationUnitsByClass`.**
   No production callers; pure memory overhead retained until end of analysis. Removal
-  planned in [TASK-201](tasks/TASK-201-thread-safety-hotfixes.md).
+  planned in [TASK-005](tasks/TASK-005-remove-dead-context-structure.md).
 - **DEBT-06 — Silent resolution failures in visitors.**
   15 of 35 visitors (~44 sites) plus analyzer `tryResolve` and
   `JavaParserTypeSolverFactory` (`System.err`) swallow symbol-resolution exceptions;

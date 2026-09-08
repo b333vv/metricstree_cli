@@ -10,11 +10,12 @@ Multi-module and modularized projects resolve more symbols without manual classp
 gymnastics; metrics get more accurate on the same input.
 
 ## Scope
-- Directory classpath entries: `--classpath`/`AnalysisRequest.classpathEntries` directories
-  currently dropped silently by `Files::isRegularFile` filtering in the analyzer (lines
-  ~207–211). Build a directory-backed type source (walk `.class`/`.java` or register the
-  directory root with `JavaParserTypeSolver`), emit `CLASSPATH_PROBLEM` diagnostics for
-  unusable entries instead of silence. This also closes tech-debt item "classpath dirs dropped".
+- Directory classpath entries: build a directory-backed type source (walk `.class`/`.java`
+  or register the directory root with `JavaParserTypeSolver`) so directories passed via
+  `--classpath`/`AnalysisRequest.classpathEntries` actually resolve types. The *warning*
+  for entries that remain unusable is already delivered by
+  [TASK-006](TASK-006-classpath-dirs-diagnostics.md); this task makes directories work and
+  closes the remainder of tech-debt DEBT-03.
 - `module-info.java`: parse it when present in source roots; register module
   exports/requires so package-visible types resolve (use JavaParser's `ModuleDeclaration`
   support; scope: correctness for the common case, not full JPMS fidelity).
@@ -30,8 +31,8 @@ gymnastics; metrics get more accurate on the same input.
 - Custom TypeSolver caching strategy (Phase 2, TASK-203).
 
 ## Acceptance criteria
-- Directory entry in `--classpath` resolves types from it; junk entries produce WARNING
-  diagnostics, not silence.
+- Directory entry in `--classpath` resolves types from it; junk entries keep producing
+  WARNING diagnostics (TASK-006 behavior preserved).
 - Fixture project with `module-info.java` resolves exported types without extra flags.
 - Solver precedence documented and unit-tested.
 - Golden corpus values may improve (more symbols resolve) — goldens updated intentionally
@@ -49,5 +50,6 @@ gymnastics; metrics get more accurate on the same input.
   value change must be explainable by improved resolution.
 
 ## Definition of Done
-- Dirs, module-info, and documented fallback policy delivered with tests.
-- Tech-debt item "classpath directories silently dropped" closed.
+- Dirs, module-info, and documented fallback policy delivered with tests; recommended to
+  schedule after [TASK-006](TASK-006-classpath-dirs-diagnostics.md).
+- Tech-debt item DEBT-03 closed (diagnostics part was TASK-006).
