@@ -1,5 +1,23 @@
 # what has been done
 
+## Road-map implementation planning (2026-09-08)
+
+Documentation-only session (no code changes):
+- Created `docs/prd/implementation-plan.md` — detailed realization plan for
+  `docs/prd/road-map.md`, based on a code audit (not just the road-map text):
+  - Stage 0 (safety net: JSON golden tests + performance baseline), then Phases 1–4;
+  - key design decisions: `AnalysisCollector` diagnostics channel, snapshot-based
+    global metrics (NOC from `directSuperTypes`, FDP from enriched snapshots),
+    `AstMemoryManager` with bounded AST window, `MetricRegistry` (aggregation stays
+    explicit), Jackson mixins in CLI, dual JSON/YAML config loading;
+  - 16 tasks, dependency graph, success-metric mapping, risks.
+- Created `docs/tasks/` with 16 task files (TASK-001/002, TASK-101…105, TASK-201…205,
+  TASK-301/302, TASK-401/402) in `docs/templates/task-sample.md` format.
+- Updated `docs/index.md` navigation and `docs/tech-debt-tracker.md` (DEBT-01…06 from the
+  code audit: Halstead visitor race condition, ForkJoinPool leak, classpath dirs silently
+  dropped, dead `HAS_METHOD_RULE`, dead `compilationUnitsByClass` map, silent resolution
+  failures).
+
 ## Exclusions feature (2026-07-06)
 
 ### Core Model (java-metrics-lib)

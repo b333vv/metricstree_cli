@@ -1,9 +1,36 @@
 # Tech Debt Tracker
 
 ## Active Debt Items
-- None.
+- **DEBT-01 — Halstead visitor race condition (Phase 2 priority).**
+  `JavaParserHalsteadClassMetricVisitor` and `JavaParserHalsteadMethodMetricVisitor` keep
+  stateful `HashSet`/`ArrayList` fields (cleared at each `visit`) while being shared
+  singletons across parallel-stream threads in `JavaParserJavaMetricsAnalyzer` — concurrent
+  runs corrupt Halstead values. Fix planned in [TASK-201](tasks/TASK-201-thread-safety-hotfixes.md).
+- **DEBT-02 — ForkJoinPool leak.**
+  Both custom `ForkJoinPool`s created per `analyze()` call (parse phase ~lines 308–323,
+  visit phase ~lines 373–390) are never shut down. Fix planned in
+  [TASK-201](tasks/TASK-201-thread-safety-hotfixes.md).
+- **DEBT-03 — `--classpath` directories silently dropped.**
+  `JavaParserJavaMetricsAnalyzer` filters classpath entries with `Files::isRegularFile`
+  (~lines 207–211); directories vanish without diagnostics. Fix planned in
+  [TASK-105](tasks/TASK-105-typesolver-improvements.md).
+- **DEBT-04 — Dead `HAS_METHOD_RULE` in `class-level-rules.json`.**
+  `Condition` (`cli/CombinationDefinition.java`) has no `value` field, so the rule can
+  never match; `CombinationDetector` swallows the failure. Fix planned in
+  [TASK-402](tasks/TASK-402-config-unification.md).
+- **DEBT-05 — Dead structure `EnhancedJavaParserContext.compilationUnitsByClass`.**
+  No production callers; pure memory overhead retained until end of analysis. Removal
+  planned in [TASK-201](tasks/TASK-201-thread-safety-hotfixes.md).
+- **DEBT-06 — Silent resolution failures in visitors.**
+  15 of 35 visitors (~44 sites) plus analyzer `tryResolve` and
+  `JavaParserTypeSolverFactory` (`System.err`) swallow symbol-resolution exceptions;
+  metrics are understated without a trace. Fix planned in
+  [TASK-101](tasks/TASK-101-diagnostics-channel.md) →
+  [TASK-102](tasks/TASK-102-class-visitor-diagnostics.md) →
+  [TASK-103](tasks/TASK-103-method-visitor-analyzer-diagnostics.md).
 
 ## Resolved Debt Items
+- (none yet)
 
 ## Tracking Rule
 Close a debt item only when automated checks prove the replacement path is active and stable.
