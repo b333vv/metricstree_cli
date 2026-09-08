@@ -41,7 +41,7 @@
 </td>
 <td>
 <div class="infoBox" id="duration">
-<div class="counter">0.149s</div>
+<div class="counter">0.131s</div>
 <p>duration</p>
 </div>
 </td>
@@ -63,9 +63,6 @@
 <li>
 <a href="#tab0">Tests</a>
 </li>
-<li>
-<a href="#tab1">Standard error</a>
-</li>
 </ul>
 <div id="tab0" class="tab">
 <h2>Tests</h2>
@@ -79,17 +76,17 @@
 </thead>
 <tr>
 <td class="success">analyzeShouldAcceptRecordDeclarationsInPlainJvmMode()</td>
-<td class="success">0.093s</td>
+<td class="success">0.078s</td>
 <td class="success">passed</td>
 </tr>
 <tr>
 <td class="success">analyzeShouldReturnPartialResultsAndZeroExitCodeWhenDiagnosticsArePresent()</td>
-<td class="success">0.017s</td>
+<td class="success">0.011s</td>
 <td class="success">passed</td>
 </tr>
 <tr>
 <td class="success">analyzeShouldWorkForSingleSourceFileInPlainJvmMode()</td>
-<td class="success">0.028s</td>
+<td class="success">0.031s</td>
 <td class="success">passed</td>
 </tr>
 <tr>
@@ -99,119 +96,6 @@
 </tr>
 </table>
 </div>
-<div id="tab1" class="tab">
-<h2>Standard error</h2>
-<span class="code">
-<pre>Failed to re-parse unit with enhanced context: [Parse error. Found &quot;?&quot;, expected one of  &quot;;&quot; &quot;@&quot; &quot;\u001a&quot; &quot;abstract&quot; &quot;class&quot; &quot;default&quot; &quot;enum&quot; &quot;final&quot; &quot;import&quot; &quot;interface&quot; &quot;module&quot; &quot;native&quot; &quot;non-sealed&quot; &quot;open&quot; &quot;private&quot; &quot;protected&quot; &quot;public&quot; &quot;record&quot; &quot;sealed&quot; &quot;static&quot; &quot;strictfp&quot; &quot;synchronized&quot; &quot;transient&quot; &quot;transitive&quot; &quot;volatile&quot; &lt;EOF&gt;
-Problem stacktrace : 
-  com.github.javaparser.GeneratedJavaParser.generateParseException(GeneratedJavaParser.java:14041)
-  com.github.javaparser.GeneratedJavaParser.jj_consume_token(GeneratedJavaParser.java:13886)
-  com.github.javaparser.GeneratedJavaParser.CompilationUnit(GeneratedJavaParser.java:208)
-  com.github.javaparser.JavaParser.parse(JavaParser.java:125)
-  com.github.javaparser.JavaParser.parse(JavaParser.java:305)
-  org.b333vv.metric.library.javaparser.EnhancedJavaParserContextBuilder.build(EnhancedJavaParserContextBuilder.java:33)
-  org.b333vv.metric.library.javaparser.JavaParserJavaMetricsAnalyzer.analyze(JavaParserJavaMetricsAnalyzer.java:211)
-  org.b333vv.metric.cli.AnalyzeCommand.call(AnalyzeCommand.java:78)
-  org.b333vv.metric.cli.AnalyzeCommand.call(AnalyzeCommand.java:22)
-  picocli.CommandLine.executeUserObject(CommandLine.java:2045)
-  picocli.CommandLine.access$1500(CommandLine.java:148)
-  picocli.CommandLine$RunLast.executeUserObjectOfLastSubcommandWithSameParent(CommandLine.java:2465)
-  picocli.CommandLine$RunLast.handle(CommandLine.java:2457)
-  picocli.CommandLine$RunLast.handle(CommandLine.java:2419)
-  picocli.CommandLine$AbstractParseResultHandler.execute(CommandLine.java:2277)
-  picocli.CommandLine$RunLast.execute(CommandLine.java:2421)
-  picocli.CommandLine.execute(CommandLine.java:2174)
-  org.b333vv.metric.cli.JavaMetricsCliApplication.run(JavaMetricsCliApplication.java:58)
-  org.b333vv.metric.cli.JavaMetricsCliApplication.run(JavaMetricsCliApplication.java:32)
-  org.b333vv.metric.cli.JavaMetricsCliSmokeTest.run(JavaMetricsCliSmokeTest.java:121)
-  org.b333vv.metric.cli.JavaMetricsCliSmokeTest.analyzeShouldReturnPartialResultsAndZeroExitCodeWhenDiagnosticsArePresent(JavaMetricsCliSmokeTest.java:87)
-  java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-  java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-  java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-  java.base/java.lang.reflect.Method.invoke(Method.java:568)
-  org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:766)
-  org.junit.jupiter.engine.execution.MethodInvocation.proceed(MethodInvocation.java:60)
-  org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed(InvocationInterceptorChain.java:131)
-  org.junit.jupiter.engine.extension.TimeoutExtension.intercept(TimeoutExtension.java:156)
-  org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod(TimeoutExtension.java:147)
-  org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestMethod(TimeoutExtension.java:86)
-  org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0(InterceptingExecutableInvoker.java:103)
-  org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0(InterceptingExecutableInvoker.java:93)
-  org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed(InvocationInterceptorChain.java:106)
-  org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed(InvocationInterceptorChain.java:64)
-  org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke(InvocationInterceptorChain.java:45)
-  org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke(InvocationInterceptorChain.java:37)
-  org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:92)
-  org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:86)
-  org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.lambda$invokeTestMethod$8(TestMethodTestDescriptor.java:217)
-  org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
-  org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.invokeTestMethod(TestMethodTestDescriptor.java:213)
-  org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:138)
-  org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:68)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:151)
-  org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
-  org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
-  org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
-  java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
-  org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
-  org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
-  org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
-  org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
-  java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
-  org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
-  org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
-  org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
-  org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
-  org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
-  org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:35)
-  org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:57)
-  org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:54)
-  org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:107)
-  org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:88)
-  org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:54)
-  org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:67)
-  org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:52)
-  org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:114)
-  org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:86)
-  org.junit.platform.launcher.core.DefaultLauncherSession$DelegatingLauncher.execute(DefaultLauncherSession.java:86)
-  org.gradle.api.internal.tasks.testing.junitplatform.JUnitPlatformTestClassProcessor$CollectAllTestClassesExecutor.processAllTestClasses(JUnitPlatformTestClassProcessor.java:119)
-  org.gradle.api.internal.tasks.testing.junitplatform.JUnitPlatformTestClassProcessor$CollectAllTestClassesExecutor.access$000(JUnitPlatformTestClassProcessor.java:94)
-  org.gradle.api.internal.tasks.testing.junitplatform.JUnitPlatformTestClassProcessor.stop(JUnitPlatformTestClassProcessor.java:89)
-  org.gradle.api.internal.tasks.testing.SuiteTestClassProcessor.stop(SuiteTestClassProcessor.java:62)
-  java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
-  java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
-  java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
-  java.base/java.lang.reflect.Method.invoke(Method.java:568)
-  org.gradle.internal.dispatch.ReflectionDispatch.dispatch(ReflectionDispatch.java:36)
-  org.gradle.internal.dispatch.ReflectionDispatch.dispatch(ReflectionDispatch.java:24)
-  org.gradle.internal.dispatch.ContextClassLoaderDispatch.dispatch(ContextClassLoaderDispatch.java:33)
-  org.gradle.internal.dispatch.ProxyDispatchAdapter$DispatchingInvocationHandler.invoke(ProxyDispatchAdapter.java:94)
-  jdk.proxy1/jdk.proxy1.$Proxy2.stop(Unknown Source)
-  org.gradle.api.internal.tasks.testing.worker.TestWorker$3.run(TestWorker.java:193)
-  org.gradle.api.internal.tasks.testing.worker.TestWorker.executeAndMaintainThreadName(TestWorker.java:129)
-  org.gradle.api.internal.tasks.testing.worker.TestWorker.execute(TestWorker.java:100)
-  org.gradle.api.internal.tasks.testing.worker.TestWorker.execute(TestWorker.java:60)
-  org.gradle.process.internal.worker.child.ActionExecutionWorker.execute(ActionExecutionWorker.java:56)
-  org.gradle.process.internal.worker.child.SystemApplicationClassLoaderWorker.call(SystemApplicationClassLoaderWorker.java:119)
-  org.gradle.process.internal.worker.child.SystemApplicationClassLoaderWorker.call(SystemApplicationClassLoaderWorker.java:66)
-  worker.org.gradle.process.internal.worker.GradleWorkerMain.run(GradleWorkerMain.java:69)
-  worker.org.gradle.process.internal.worker.GradleWorkerMain.main(GradleWorkerMain.java:74)]
-</pre>
-</span>
-</div>
 </div>
 <div id="footer">
 <p>
@@ -220,7 +104,7 @@ Problem stacktrace :
 <input id="line-wrapping-toggle" type="checkbox" autocomplete="off"/>
 </label>
 </div>Generated by 
-<a href="http://www.gradle.org">Gradle 8.8</a> at 26 июн. 2026 г., 17:34:09</p>
+<a href="http://www.gradle.org">Gradle 8.8</a> at 8 июл. 2026 г., 15:08:45</p>
 </div>
 </div>
 </body>

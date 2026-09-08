@@ -1,147 +1,63 @@
-[
-  {
-    "name": "God Class (type 1)",
-    "description": "Is a class that single-handedly implements large blocks of functionality within a system and performs multiple, non-cohesive functionalities",
-    "conditions": [
-      { "metric": "WMC", "min": 47 },
-      { "metric": "ATFD", "min": 6 },
-      { "metric": "TCC", "max": 0.33 }
-    ]
-  },
-  {
-    "name": "God Class (type 2)",
-    "description": "Is a class that single-handedly implements large blocks of functionality within a system and performs multiple, non-cohesive functionalities",
-    "conditions": [
-      { "metric": "WMC", "min": 44 },
-      { "metric": "ATFD", "max": 4 },
-      { "metric": "NOA", "min": 30 }
-    ]
-  },
-  {
-    "name": "God Class (type 3)",
-    "description": "Is a class that single-handedly implements large blocks of functionality within a system and performs multiple, non-cohesive functionalities",
-    "conditions": [
-      { "metric": "WMC", "min": 44 },
-      { "metric": "ATFD", "min": 4 },
-      { "metric": "CBO", "min": 11 }
-    ]
-  },
-  {
-    "name": "God Class (type 4)",
-    "description": "Is a class that single-handedly implements large blocks of functionality within a system and performs multiple, non-cohesive functionalities",
-    "conditions": [
-      { "metric": "WMC", "min": 46 },
-      { "metric": "TCC", "max": 0.37 },
-      { "metric": "CBO", "min": 1 },
-      { "metric": "RFC", "min": 144 }
-    ]
-  },
-  {
-    "name": "High Coupling",
-    "description": "A class whose change affects many others, making the system complex, rigid, and fragile",
-    "conditions": [
-      { "metric": "CBO", "min": 20 }
-    ]
-  },
-  {
-    "name": "Long Parameters List",
-    "description": "Might happen after several types of algorithms are merged in a single method",
-    "conditions": [
-      { "metric": "NOPM", "min": 4 }
-    ]
-  },
-  {
-    "name": "Long Method",
-    "description": "The longer the method, the more difficult it is to understand, modify, or extend. It is a sign that the method is doing too much",
-    "conditions": [
-      { "metric": "LOC", "min": 16 }
-    ]
-  },
-  {
-    "name": "Complex Method",
-    "description": "Potential difficulties in understanding and maintaining the code",
-    "conditions": [
-      { "metric": "CC", "min": 8 }
-    ]
-  },
-  {
-    "name": "Feature Envy",
-    "description": "Indicates that the method is in the wrong place and is more tightly coupled to the other class than to the one where it is currently located",
-    "conditions": [
-      { "metric": "ATFD", "min": 5 },
-      { "metric": "FDP", "min": 5 },
-      { "metric": "LAA", "max": 0.33 }
-    ]
-  },
-  {
-    "name": "Brain Method",
-    "description": "Is a method that seeks to centralize the functionality of the owner class, performs most of its tasks that should be distributed among several methods",
-    "conditions": [
-      { "metric": "LOC", "min": 30 },
-      { "metric": "CC", "min": 3 },
-      { "metric": "MND", "min": 3 },
-      { "metric": "NOAV", "min": 3 }
-    ]
-  },
-  {
-    "name": "Brain Class",
-    "description": "This is a complex class that implements too much system intelligence, making it difficult to understand and maintain",
-    "conditions": [
-      { "metric": "LOC", "min": 30 },
-      { "metric": "CC", "min": 3 },
-      { "metric": "MND", "min": 3 },
-      { "metric": "NOAV", "min": 3 },
-      { "metric": "WMC", "min": 34 },
-      { "metric": "TCC", "max": 0.50 }
-    ]
-  },
-  {
-    "name": "Intensive Coupling",
-    "description": "Understanding the relation between the client method and the classes providing services becomes difficult",
-    "conditions": [
-      { "metric": "CINT", "min": 8 },
-      { "metric": "CDISP", "max": 0.50 },
-      { "metric": "MND", "min": 2 }
-    ]
-  },
-  {
-    "name": "Dispersed Coupling",
-    "description": "A change in a dispersively coupled method leads to changes in all the dependent (coupled) classes",
-    "conditions": [
-      { "metric": "CINT", "min": 8 },
-      { "metric": "CDISP", "min": 0.66 },
-      { "metric": "MND", "min": 2 }
-    ]
-  },
-  {
-    "name": "Deeply Nested Conditions",
-    "description": "The more nested conditions, the more difficult it is to understand and maintain the code",
-    "conditions": [
-      { "metric": "CND", "min": 3 }
-    ]
-  },
-  {
-    "name": "Too Many Fields",
-    "description": "A class with too many fields is difficult to understand and maintain",
-    "conditions": [
-      { "metric": "NOA", "min": 15 }
-    ]
-  },
-  {
-    "name": "Too Many Methods",
-    "description": "A class with too many methods is difficult to understand and maintain",
-    "conditions": [
-      { "metric": "NOM", "min": 10 }
-    ]
-  },
-  {
-    "name": "Data Class",
-    "description": "A class does not implement enough functionality itself to justify it being a class",
-    "conditions": [
-      { "metric": "WMC", "max": 15 },
-      { "metric": "WOC", "max": 0.34 },
-      { "metric": "NOAM", "min": 4 },
-      { "metric": "NOPA", "min": 3 }
-    ]
-  }
+ [
+    {
+      "name": "God Class (type 1)",
+      "conditions": [
+        { "metric": "WMC", "min": 47 },
+        { "metric": "ATFD", "min": 6 },
+        { "metric": "TCC", "max": 0.33 }
+      ]
+    },
+    {
+      "name": "God Class (type 2)",
+      "conditions": [
+        { "metric": "WMC", "min": 44 },
+        { "metric": "ATFD", "max": 4 },
+        { "metric": "NOA", "min": 30 }
+      ]
+    },
+    {
+      "name": "God Class (type 3)",
+      "conditions": [
+        { "metric": "WMC", "min": 44 },
+        { "metric": "ATFD", "min": 4 },
+        { "metric": "CBO", "min": 11 }
+      ]
+    },
+    {
+      "name": "God Class (type 4)",
+      "conditions": [
+        { "metric": "WMC", "min": 46 },
+        { "metric": "TCC", "max": 0.37 },
+        { "metric": "RFC", "min": 144 }
+      ]
+    },
+    {
+      "name": "Brain Class",
+      "conditions": [
+        { "metric": "WMC", "min": 34 },
+        { "metric": "TCC", "max": 0.50 },
+        { "metric": "HAS_METHOD_RULE", "value": "Brain Method" }
+      ]
+    },
+    {
+      "name": "Data Class",
+      "conditions": [
+        { "metric": "WMC", "max": 15 },
+        { "metric": "WOC", "max": 0.34 },
+        { "metric": "NOAM", "min": 4 },
+        { "metric": "NOPA", "min": 3 }
+      ]
+    },
+    {
+      "name": "High Coupling",
+      "conditions": [ { "metric": "CBO", "min": 20 } ]
+    },
+    {
+      "name": "Too Many Fields",
+      "conditions": [ { "metric": "NOA", "min": 15 } ]
+    },
+    {
+      "name": "Too Many Methods",
+      "conditions": [ { "metric": "NOM", "min": 10 } ]
+    }
 ]

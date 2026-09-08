@@ -1,282 +1,102 @@
 [
   {
-    "name": "Controlled Package Complexity",
-    "description": "Minimize package complexity to make it easier to maintain",
-    "conditions": [
-      { "metric": "PLOC", "min": 2000 },
-      { "metric": "PAHVL", "min": 200000 },
-      { "metric": "PAMI", "max": 65 }
-    ]
-  },
-  {
-    "name": "Reduced Coupling and Improved Cohesion",
-    "description": "Ensure minimal dependency on other packets and maximize cohesion within the packet",
-    "conditions": [
-      { "metric": "Ce", "min": 20 },
-      { "metric": "Ca", "min": 20 },
-      { "metric": "I", "min": 0.5 }
-    ]
-  },
-  {
-    "name": "Balance of Abstraction and Stability",
-    "description": "The package must be abstract enough to be extensible and stable enough to be usable",
+    "name": "Zone of Pain (Rigid Core)",
+    "description": "The package contains a lot of concrete code and is stable (many dependencies), but it is difficult to change without cascading breakage (Martin's Zone of Pain).",
     "conditions": [
       { "metric": "A", "max": 0.3 },
-      { "metric": "D", "min": 0.5 },
-      { "metric": "I", "min": 0.5 }
+      { "metric": "I", "max": 0.3 },
+      { "metric": "PLOC", "min": 500 }
     ]
   },
   {
-    "name": "Implementation Efficiency",
-    "description": "The package should be efficiently implemented in terms of algorithm complexity",
+    "name": "Zone of Uselessness",
+    "description": "The package contains many abstractions, but they are unstable and not used as a reliable foundation (Zone of Uselessness).",
     "conditions": [
-      { "metric": "PAHD", "min": 30 },
+      { "metric": "A", "min": 0.7 },
+      { "metric": "I", "min": 0.7 },
+      { "metric": "PNOAC", "min": 3 }
+    ]
+  },
+  {
+    "name": "God Package (Blob)",
+    "description": "An overly large, complex package with a low maintainability index. Hard to refactor and understand.",
+    "conditions": [
+      { "metric": "PLOC", "min": 2000 },
+      { "metric": "PAMI", "max": 65 },
+      { "metric": "PAHVL", "min": 100000 }
+    ]
+  },
+  {
+    "name": "Coupling Hub",
+    "description": "The package has critically many incoming and outgoing dependencies, creating an architectural bottleneck.",
+    "conditions": [
+      { "metric": "Ce", "min": 20 },
+      { "metric": "Ca", "min": 20 }
+    ]
+  },
+  {
+    "name": "Unstable Utility",
+    "description": "The package consists mostly of static utilities, but is unstable and changes frequently, causing ripple effects.",
+    "conditions": [
+      { "metric": "PNOSC", "min": 5 },
+      { "metric": "I", "min": 0.7 }
+    ]
+  },
+  {
+    "name": "Overly Complex Implementation",
+    "description": "High algorithmic complexity (Effort) and difficulty (Difficulty) of the code inside the package.",
+    "conditions": [
       { "metric": "PACHEF", "min": 50000 },
-      { "metric": "PLOC", "min": 2000 }
+      { "metric": "PAHD", "min": 30 }
     ]
   },
   {
-    "name": "Package Maintainability",
-    "description": "The package should be easily maintainable",
+    "name": "Error-Prone Package",
+    "description": "High number of potential errors (Halstead Errors) and a large vocabulary indicate convoluted logic.",
     "conditions": [
-      { "metric": "PAMI", "max": 75 },
-      { "metric": "PACHER", "min": 0.1 },
-      { "metric": "PNCSS", "min": 1800 }
-    ]
-  },
-  {
-    "name": "Package Size Control",
-    "description": "Provide a manageable amount of code in the package",
-    "conditions": [
-      { "metric": "PNOCC", "min": 10 },
-      { "metric": "PNOAC", "min": 5 },
-      { "metric": "PNOSC", "min": 3 },
-      { "metric": "PNOI", "min": 5 },
-      { "metric": "PLOC", "min": 2000 }
-    ]
-  },
-  {
-    "name": "Change Resistance",
-    "description": "Reduce the impact of changes in the package on the rest of the system",
-    "conditions": [
-      { "metric": "Ce", "min": 15 },
-      { "metric": "I", "min": 0.3 },
-      { "metric": "D", "min": 0.4 }
-    ]
-  },
-  {
-    "name": "Interaction Efficiency",
-    "description": "Reduce the complexity of packet interactions",
-    "conditions": [
-      { "metric": "Ce", "min": 10 },
-      { "metric": "A", "max": 0.5 },
-      { "metric": "PACHEF", "min": 1400 }
-    ]
-  },
-  {
-    "name": "Minimized Interface Complexity",
-    "description": "Provide simple and clear architecture of interfaces",
-    "conditions": [
-      { "metric": "PNOI", "min": 3 },
+      { "metric": "PACHER", "min": 5 },
       { "metric": "PACHVC", "min": 120 },
-      { "metric": "PAHD", "min": 25 }
+      { "metric": "PNCSS", "min": 500 }
     ]
   },
   {
-    "name": "Architectural Stability",
-    "description": "Ensure that the package architecture remains stable and predictable",
+    "name": "Interface Bloat",
+    "description": "Excessive number of interfaces with few concrete implementations (possible API over-engineering).",
     "conditions": [
-      { "metric": "I", "min": 0.3 },
-      { "metric": "D", "min": 0.3 },
-      { "metric": "PAMI", "max": 70 }
-    ]
-  },
-  {
-    "name": "Transparency and Simplicity",
-    "description": "Make it easier to read and understand the code in the package",
-    "conditions": [
-      { "metric": "PNCSS", "min": 1500 },
-      { "metric": "PACHVC", "min": 120 },
-      { "metric": "PAMI", "max": 75 }
-    ]
-  },
-  {
-    "name": "Code Duplication Minimization",
-    "description": "Reduce code redundancy and duplication",
-    "conditions": [
-      { "metric": "PACHL", "min": 10000 },
-      { "metric": "PLOC", "min": 1800 },
-      { "metric": "PAMI", "max": 70 }
-    ]
-  },
-  {
-    "name": "Overload Resistance",
-    "description": "Ensure that responsibilities are evenly distributed among the classes within the package",
-    "conditions": [
-      { "metric": "PNOCC", "min": 12 },
-      { "metric": "PNOAC", "min": 4 },
-      { "metric": "PAHD", "min": 25 }
-    ]
-  },
-  {
-    "name": "Ease of Maintenance",
-    "description": "Reduce package maintenance costs",
-    "conditions": [
-      { "metric": "PAMI", "max": 70 },
-      { "metric": "PNCSS", "min": 1500 },
-      { "metric": "PACHEF", "min": 40000 }
-    ]
-  },
-  {
-    "name": "Interface Optimization",
-    "description": "Minimize the number of interfaces while maintaining functionality",
-    "conditions": [
-      { "metric": "PNOI", "min": 3 },
-      { "metric": "A", "max": 0.6 },
-      { "metric": "Ce", "min": 15 }
-    ]
-  },
-  {
-    "name": "Computational Resource Balance",
-    "description": "Reduce computational complexity within the package",
-    "conditions": [
-      { "metric": "PACHEF", "min": 35000 },
-      { "metric": "PAHVL", "min": 15000 },
-      { "metric": "PAMI", "max": 70 }
-    ]
-  },
-  {
-    "name": "Class Cohesion Control",
-    "description": "Increase cohesion between classes within a package",
-    "conditions": [
-      { "metric": "Ca", "min": 15 },
-      { "metric": "D", "min": 0.4 },
-      { "metric": "PNOCC", "min": 10 }
-    ]
-  },
-  {
-    "name": "Structural Complexity Optimization",
-    "description": "Reduce the structural complexity of the package to increase its simplicity",
-    "conditions": [
-      { "metric": "Ce", "min": 15 },
-      { "metric": "PAHVL", "min": 12000 },
-      { "metric": "PLOC", "min": 1500 }
-    ]
-  },
-  {
-    "name": "Stability and Modularity",
-    "description": "Preserve the modularity of the package, ensuring its independence and stability",
-    "conditions": [
-      { "metric": "I", "min": 0.4 },
-      { "metric": "Ce", "min": 10 },
-      { "metric": "A", "max": 0.4 }
-    ]
-  },
-  {
-    "name": "Logic Complexity Minimization",
-    "description": "Simplify the logical structure of the code in the package",
-    "conditions": [
-      { "metric": "PAHD", "min": 20 },
-      { "metric": "PACHEF", "min": 30000 },
-      { "metric": "D", "min": 0.5 }
-    ]
-  },
-  {
-    "name": "Testability Support",
-    "description": "Increase the testability of the package",
-    "conditions": [
-      { "metric": "PNOI", "min": 5 },
-      { "metric": "I", "min": 0.3 },
-      { "metric": "PAMI", "max": 75 }
-    ]
-  },
-  {
-    "name": "Functional Load Optimization",
-    "description": "Ensure that the load on packets is distributed evenly",
-    "conditions": [
-      { "metric": "PNCSS", "min": 1200 },
-      { "metric": "PNOCC", "min": 8 },
-      { "metric": "PACHVC", "min": 100 }
+      { "metric": "PNOI", "min": 10 },
+      { "metric": "PNOCC", "max": 3 }
     ]
   },
   {
     "name": "Hidden Technical Debt",
-    "description": "Moderate MI masks high complexity and coupling, indicating accumulating debt",
+    "description": "A moderate maintainability index masks high complexity and outgoing coupling. Debt accumulates covertly.",
     "conditions": [
-      { "metric": "Ce", "min": 10 },
-      { "metric": "PAHD", "min": 20 },
+      { "metric": "Ce", "min": 15 },
+      { "metric": "PAHD", "min": 25 },
       { "metric": "PAMI", "min": 65, "max": 85 }
     ]
   },
   {
-    "name": "End-User Package Complexity",
-    "description": "Reduce the complexity of the functionality provided to the end user",
+    "name": "High Efferent Dependency",
+    "description": "The package depends on too many other packages, making it brittle when changes occur in the system.",
     "conditions": [
-      { "metric": "A", "max": 0.6 },
-      { "metric": "PACHEF", "min": 25000 },
-      { "metric": "PNCSS", "min": 1000 }
+      { "metric": "Ce", "min": 25 },
+      { "metric": "Ca", "max": 5 }
     ]
   },
   {
-    "name": "Rigid Core Package",
-    "description": "A package with many dependents (high Ca) but low abstraction (A) and stability (I) becomes a rigid \"core\" – changes here risk cascading failures",
+    "name": "Kotlin Data Class Anemia",
+    "description": "The package is overloaded with Kotlin data classes without complex business logic (a sign of Anemic Domain Model).",
     "conditions": [
-      { "metric": "A", "max": 0.2 },
-      { "metric": "Ca", "min": 20 },
-      { "metric": "I", "max": 0.3 }
+      { "metric": "PNOKDC", "min": 15 },
+      { "metric": "PAMI", "max": 80 }
     ]
   },
   {
-    "name": "Concrete Overload",
-    "description": "Excessive concrete classes with high outgoing dependencies (Ce) create rigidity",
+    "name": "Kotlin Companion Object Bloat",
+    "description": "Overuse of companion objects, which may indicate a return to static methods and reduced testability.",
     "conditions": [
-      { "metric": "A", "max": 0.2 },
-      { "metric": "Ca", "min": 20 },
-      { "metric": "I", "max": 0.3 }
-    ]
-  },
-  {
-    "name": "Unstable Utility Package",
-    "description": "Static utility classes with high instability are prone to ripple effects",
-    "conditions": [
-      { "metric": "PNOSC", "min": 5 },
-      { "metric": "PAMI", "min": 70 },
-      { "metric": "I", "min": 0.7 }
-    ]
-  },
-  {
-    "name": "Interface Deficiency",
-    "description": "High coupling without interfaces leads to brittle dependencies",
-    "conditions": [
-      { "metric": "PNOI", "max": 2 },
-      { "metric": "Ce", "min": 15 },
-      { "metric": "D", "min": 0.3 }
-    ]
-  },
-  {
-    "name": "Large Blob Package",
-    "description": "Oversized packages with low MI are hard to understand and modify",
-    "conditions": [
-      { "metric": "PLOC", "min": 2000 },
-      { "metric": "PNCSS", "min": 1500 },
-      { "metric": "PAMI", "max": 60 }
-    ]
-  },
-  {
-    "name": "Abstractness Mismatch",
-    "description": "Over-abstraction in unstable packages leads to unnecessary indirection",
-    "conditions": [
-      { "metric": "PNOAC", "min": 5 },
-      { "metric": "A", "min": 0.8 },
-      { "metric": "I", "min": 0.7 }
-    ]
-  },
-  {
-    "name": "Error-Prone Logic",
-    "description": "High vocabulary/errors suggest error-prone, dense logic",
-    "conditions": [
-      { "metric": "PRCHER", "min": 5 },
-      { "metric": "PRCHVC", "min": 100 },
+      { "metric": "PNOKCO", "min": 10 },
       { "metric": "PLOC", "min": 500 }
     ]
   }
