@@ -29,6 +29,69 @@ final class CombinationDetector {
         }
     }
 
+    /**
+     * A condition that cannot be evaluated, so the rule it belongs to can never fire.
+     *
+     * <p>Reported instead of silently evaluating to "no match" (DEBT-04): a rule file that has been
+     * broken by a typo, an unsupported condition kind or inverted bounds must be visible, otherwise
+     * detection quietly weakens while every run still reports success.
+     *
+     * @param rule     name of the owning rule
+     * @param metric   the {@code metric} value exactly as written in the rules file
+     * @param reason   human-readable explanation
+     */
+    record RuleProblem(String rule, String metric, String reason) {}
+
+    /**
+     * Reports every condition of every rule that cannot be evaluated.
+     *
+     * <p>Validation looks only at the rules — never at a report — so a rule over a metric that the
+     * analysed project simply does not expose is not a problem, while a rule naming a metric that does
+     * not exist at all is.
+     */
+    List<RuleProblem> validateRules(List<CombinationDefinition> rules) {
+        List<RuleProblem> problems = new ArrayList<>();
+        for (CombinationDefinition rule : rules) {
+            for (Condition condition : rule.conditions()) {
+                String reason = describeProblem(condition);
+                if (reason != null) {
+                    problems.add(new RuleProblem(rule.name(), condition.metric(), reason));
+                }
+            }
+        }
+        return problems;
+    }
+
+    /**
+     * @return why the condition cannot be evaluated, or {@code null} when it is usable
+     */
+    private static String describeProblem(Condition condition) {
+        if (condition.hasUnsupportedKeys()) {
+            return "condition has unsupported key(s) " + condition.unsupportedKeys().keySet()
+                    + "; only 'metric', 'min' and 'max' are understood, so the key is ignored";
+        }
+        if (!isKnownMetric(condition.metric())) {
+            return "unknown metric '" + condition.metric() + "'; not a metric code this detector knows";
+        }
+        if (condition.min() == null && condition.max() == null) {
+            return "condition has neither min nor max, so it never constrains anything";
+        }
+        if (condition.min() != null && condition.max() != null && condition.min() > condition.max()) {
+            return "min " + condition.min() + " is greater than max " + condition.max()
+                    + ", so the condition can never be satisfied";
+        }
+        return null;
+    }
+
+    private static boolean isKnownMetric(String metric) {
+        try {
+            MetricCode.valueOf(metric);
+            return true;
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
     List<ClassMatch> detectClasses(MetricReport report, List<CombinationDefinition> rules) {
         List<ClassMatch> results = new ArrayList<>();
         for (CombinationDefinition rule : rules) {

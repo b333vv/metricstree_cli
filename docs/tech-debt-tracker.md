@@ -10,10 +10,6 @@
   mixed-list cases, and the warning is visible end-to-end in the `analyze` JSON output.
   **Still open:** directories are not actually resolved against — that is
   [TASK-105](tasks/TASK-105-typesolver-improvements.md), which is what will close this item.
-- **DEBT-04 — Dead `HAS_METHOD_RULE` in `class-level-rules.json`.**
-  `Condition` (`cli/CombinationDefinition.java`) has no `value` field, so the rule can
-  never match; `CombinationDetector` swallows the failure. Fix planned in
-  [TASK-007](tasks/TASK-007-has-method-rule-fix.md).
 - **DEBT-06 — Silent resolution failures in visitors.**
   15 of 35 visitors (~44 sites) plus analyzer `tryResolve` and
   `JavaParserTypeSolverFactory` (`System.err`) swallow symbol-resolution exceptions;
@@ -33,8 +29,48 @@
   strings) belongs to the serialization consolidation in
   [TASK-302](tasks/TASK-302-jackson-serialization.md) and must be an explicit, reviewed golden
   update.
+- **DEBT-08 — Two shipped Kotlin package rules can never fire.**
+  Found while writing the TASK-007 characterization test for the sample rules files (2026-09-16).
+  `package-level-rules.json` ships `Kotlin Data Class Anemia` (`PNOKDC >= 15`) and
+  `Kotlin Companion Object Bloat` (`PNOKCO >= 10`), but the analyzer hardcodes all four Kotlin
+  package metrics to zero:
+  `putMetric(metrics, PNOKOBJ/PNOKCO/PNOKDC/PNOKSC, 0L)` in both `buildPackageReports` and
+  `buildProjectReport`. The rules are *valid* — they name real `MetricCode` values, so
+  `validateRules` correctly does not flag them — yet they are unreachable, which is the same
+  "silently weaker detection" symptom as DEBT-04. The Kotlin metrics are placeholders (Kotlin
+  declarations are not parsed at all: `JavaParserTypeSolverFactory` only handles `.java`), so the
+  honest options are to implement the metrics or drop the rules. Not fixed by TASK-007: this is a
+  missing-metric issue, not a rule-engine issue, and it is not in any task's scope yet.
 
 ## Resolved Debt Items
+- **DEBT-04 — Dead `HAS_METHOD_RULE` in `class-level-rules.json`.** Resolved by
+  [TASK-007](tasks/TASK-007-has-method-rule-fix.md).
+  **The original description was wrong in an important way.** It claimed Jackson "drops the unknown
+  key" and the rule silently never matched. In reality `FAIL_ON_UNKNOWN_PROPERTIES` is on, so the
+  unknown `value` key made Jackson reject the **entire** `class-level-rules.json`: every one of the
+  nine rules was unloadable, and `detect --class-rules class-level-rules.json` failed with
+  `Analysis failed: Unrecognized field "value" ... (through reference chain: ArrayList[4]->
+  CombinationDefinition["conditions"]->ArrayList[2]->Condition["value"])`. The "silent" part of the
+  defect was real for a different reason: nothing told the user which rule was at fault.
+  What landed:
+  - `Condition` is now a class (not a record — `@JsonAnySetter` is not wired up on record
+    components) that captures unknown keys into `unsupportedKeys()` via `@JsonAnySetter`, so a stray
+    key neither rejects the file nor disappears. The understood `min`/`max` bounds are still applied.
+  - `CombinationDetector.validateRules` reports four kinds of unusable condition: unsupported keys,
+    unknown metric names, conditions with neither bound, and inverted bounds (`min > max`). Detection
+    keeps evaluating whatever conditions *are* valid.
+  - `detect` output gained an additive `summary.<classRules|packageRules>.problems` array, always
+    present so consumers can distinguish "no problems" from "producer does not report problems".
+  - The `Brain Class` rule was **removed** rather than repaired. The detector has no method-level rule
+    engine, and dropping only the dead `HAS_METHOD_RULE` condition would have left
+    `WMC >= 34 && TCC <= 0.50`, which matches ordinary large classes and would have produced false
+    "Brain Class" reports. The README's claim that Brain Method / Feature Envy / Long Method /
+    Complex Method are shipped was corrected at the same time.
+  Evidence: `CombinationDetectorTest` (validation cases), `DetectCommandTest` (problems surface in the
+  JSON while valid rules still match), `ShippedRulesFilesTest` (the shipped sample files load, contain
+  no unevaluable rule, and no longer reference `HAS_METHOD_RULE`; unknown keys are tolerated *and*
+  reported). The `detect.json` golden was regenerated — the diff is only the new `problems` key, with
+  `total` and `matched` unchanged.
 - **DEBT-01 — Halstead visitor race condition.** Resolved by
   [TASK-003](tasks/TASK-003-halstead-visitor-race-condition.md). Both Halstead visitors are now
   stateless: operators/operands are accumulated by a `HalsteadTokenCollector` created per `visit`

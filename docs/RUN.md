@@ -264,6 +264,9 @@ A JSON array of rule objects. Each rule has a `name`, optional `description`, an
 
 Each `condition` specifies a `metric` code (any `MetricCode` enum value) with optional `min` and/or `max` bounds.
 
+A condition that cannot be evaluated is reported rather than silently ignored — see
+[Rule problems](#rule-problems) below.
+
 #### Report output format
 
 ```json
@@ -281,11 +284,44 @@ Each `condition` specifies a `metric` code (any `MetricCode` enum value) with op
   ],
   "packageRules": [],
   "summary": {
-    "classRules": {"total": 2, "matched": 1},
-    "packageRules": {"total": 0, "matched": 0}
+    "classRules": {"total": 2, "matched": 1, "problems": []},
+    "packageRules": {"total": 0, "matched": 0, "problems": []}
   }
 }
 ```
+
+`problems` is always present, even when empty, so a consumer can distinguish "this run had no rule
+problems" from "this producer does not report rule problems at all". It is an additive key:
+consumers reading `total` and `matched` are unaffected.
+
+#### Rule problems
+
+A rule whose conditions cannot be evaluated would otherwise silently never match, which weakens
+detection while every run still reports success. Every such condition is listed in
+`summary.<classRules|packageRules>.problems`:
+
+```json
+{
+  "rule": "UnknownMetricNeverMatches",
+  "metric": "NOT_A_METRIC_CODE",
+  "reason": "unknown metric 'NOT_A_METRIC_CODE'; not a metric code this detector knows"
+}
+```
+
+Four kinds of problem are reported:
+
+| Reason | Cause |
+|--------|-------|
+| `condition has unsupported key(s) [...]` | A key other than `metric`, `min`, `max` (e.g. the `value` key of a `HAS_METHOD_RULE` condition). The unknown key is ignored, the remaining bounds still apply, and the key is named in the report |
+| `unknown metric '<name>'` | `metric` is not a `MetricCode` value — usually a typo |
+| `condition has neither min nor max` | The condition never constrains anything |
+| `min ... is greater than max ...` | Inverted bounds; the condition can never be satisfied |
+
+A rule with problems is still evaluated using whatever conditions *are* valid, so a partially broken
+rule degrades instead of disappearing.
+
+Unknown keys do **not** reject the rules file: a file with a stray key still loads, and the key is
+reported. (Jackson's default is the opposite — it refuses the whole file on the first unknown key.)
 
 #### Examples
 

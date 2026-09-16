@@ -32,14 +32,6 @@
       ]
     },
     {
-      "name": "Brain Class",
-      "conditions": [
-        { "metric": "WMC", "min": 34 },
-        { "metric": "TCC", "max": 0.50 },
-        { "metric": "HAS_METHOD_RULE", "value": "Brain Method" }
-      ]
-    },
-    {
       "name": "Data Class",
       "conditions": [
         { "metric": "WMC", "max": 15 },

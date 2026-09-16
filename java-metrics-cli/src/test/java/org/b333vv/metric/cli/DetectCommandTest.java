@@ -129,6 +129,75 @@ class DetectCommandTest {
         assertEquals(1, exitCode);
     }
 
+    /**
+     * DEBT-04 / TASK-007: a rule referencing an unknown metric (the shipped {@code HAS_METHOD_RULE}
+     * case) used to be swallowed and simply never matched. It must now be reported in the detect
+     * output while the other rules keep evaluating normally.
+     */
+    @Test
+    void detectReportsBrokenRulesWhileStillEvaluatingValidOnes(@TempDir Path tempDir) throws Exception {
+        Path rulesFile = tempDir.resolve("rules.json");
+        Files.writeString(rulesFile, """
+                [
+                  {"name":"ValidLargeClass","conditions":[{"metric":"WMC","min":10}]},
+                  {"name":"BrokenBrainClass","conditions":[
+                      {"metric":"WMC","min":10},
+                      {"metric":"HAS_METHOD_RULE","value":"Brain Method"}
+                  ]}
+                ]
+                """);
+        Path outputFile = tempDir.resolve("output.json");
+        Path sourceFile = tempDir.resolve("Demo.java");
+        Files.writeString(sourceFile, "class Demo {}");
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+
+        int exitCode = createApp(request -> createReport()).run(new String[]{
+                "detect",
+                "-s", sourceFile.toString(),
+                "--class-rules", rulesFile.toString(),
+                "-o", outputFile.toString()
+        }, out, err);
+
+        assertEquals(0, exitCode);
+        JsonNode summary = mapper.readTree(Files.readString(outputFile)).get("summary").get("classRules");
+        assertEquals(2, summary.get("total").asInt());
+        assertEquals(1, summary.get("matched").asInt(), "The valid rule must still match");
+
+        JsonNode problems = summary.get("problems");
+        assertNotNull(problems, "The summary must carry a problems array so silent failures are impossible");
+        assertEquals(1, problems.size(), () -> "Expected one problem, got " + problems);
+        assertEquals("BrokenBrainClass", problems.get(0).get("rule").asText());
+        assertEquals("HAS_METHOD_RULE", problems.get(0).get("metric").asText());
+    }
+
+    @Test
+    void detectReportsNoProblemsForAHealthyRulesFile(@TempDir Path tempDir) throws Exception {
+        Path rulesFile = tempDir.resolve("rules.json");
+        Files.writeString(rulesFile, """
+                [{"name":"LargeClass","conditions":[{"metric":"WMC","min":10}]}]
+                """);
+        Path outputFile = tempDir.resolve("output.json");
+        Path sourceFile = tempDir.resolve("Demo.java");
+        Files.writeString(sourceFile, "class Demo {}");
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+
+        int exitCode = createApp(request -> createReport()).run(new String[]{
+                "detect",
+                "-s", sourceFile.toString(),
+                "--class-rules", rulesFile.toString(),
+                "-o", outputFile.toString()
+        }, out, err);
+
+        assertEquals(0, exitCode);
+        JsonNode summary = mapper.readTree(Files.readString(outputFile)).get("summary");
+        assertEquals(0, summary.get("classRules").get("problems").size());
+        assertEquals(0, summary.get("packageRules").get("problems").size());
+    }
+
     private static MetricReport createReport() {
         ClassReport cls = new ClassReport(
                 "Demo", "Demo", Path.of("Demo.java"),

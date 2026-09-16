@@ -1,5 +1,41 @@
 # what has been done
 
+## Quick wins: rules, classpath, dead code (2026-09-16)
+
+### TASK-007 — Dead `HAS_METHOD_RULE` and silent rule failures (DEBT-04) — done
+
+**The recorded defect was wrong, and the truth was worse.** DEBT-04 said Jackson "drops the unknown
+key" so the rule silently never matched. Verified against the real build:
+`detect --class-rules class-level-rules.json` failed outright with
+`Analysis failed: Unrecognized field "value" (class org.b333vv.metric.cli.Condition) ... (through
+reference chain: ArrayList[4]->CombinationDefinition["conditions"]->ArrayList[2]->Condition["value"])`.
+`FAIL_ON_UNKNOWN_PROPERTIES` is on by default, so one stray key made the **whole** rules file
+unloadable — all nine shipped class rules were dead, not just `Brain Class`. The "silent" half of the
+defect was real for a different reason: nothing identified the offending rule.
+
+- `Condition` is now a class rather than a record (`@JsonAnySetter` is not wired up on record
+  components) and captures unknown keys via `@JsonAnySetter` into `unsupportedKeys()`. A stray key
+  neither rejects the file nor vanishes, and the `min`/`max` bounds that *are* understood keep
+  working — a partially broken rule degrades instead of disappearing.
+- `CombinationDetector.validateRules` reports four kinds of unusable condition: unsupported keys,
+  unknown metric names, conditions with neither bound, and inverted bounds (`min > max`). Validation
+  looks only at the rules, never at a report, so a rule over a metric the project merely does not
+  expose is correctly *not* flagged.
+- `detect` output gained an additive `summary.<classRules|packageRules>.problems` array, always
+  present so consumers can tell "no problems" from "this producer does not report problems".
+  `total`/`matched` are untouched.
+- The `Brain Class` rule was **removed**, not repaired: the detector has no method-level rule engine,
+  and deleting only the dead condition would have left `WMC >= 34 && TCC <= 0.50`, which matches
+  ordinary large classes and would have produced false "Brain Class" reports. README's claim that
+  Brain Method / Feature Envy / Long Method / Complex Method ship with the tool was corrected.
+- `detect.json` golden regenerated: the diff is only the new `problems` key (reporting the fixture's
+  own previously-silent `UnknownMetricNeverMatches` rule), with `total` and `matched` unchanged.
+- Verified end-to-end through the installed CLI: the shipped rules files now load (8 class rules,
+  12 package rules, 0 problems) and a rules file with all four defect kinds reports each of them.
+- New finding registered as DEBT-08: `package-level-rules.json` ships two Kotlin rules
+  (`PNOKDC >= 15`, `PNOKCO >= 10`) whose metrics the analyzer hardcodes to `0`, so they are valid but
+  unreachable. Out of scope here — it is a missing-metric issue, not a rule-engine one.
+
 ### TASK-006 — Warn instead of silently dropping classpath entries (DEBT-03) — done
 
 - `analyze()` filtered classpath entries with `Files::isRegularFile` and said nothing, so
@@ -17,8 +53,6 @@
   resolved against yet and pointing at TASK-105.
 - DEBT-03 is only *partially* closed: the observability half is done, the directory-support half
   stays open until TASK-105.
-
-## Quick wins: dead code and debt cleanup (2026-09-16)
 
 ### TASK-005 — Remove dead CompilationUnit retention (DEBT-05) — done
 

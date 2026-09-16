@@ -65,11 +65,17 @@
   "summary" : {
     "classRules" : {
       "total" : 5,
-      "matched" : 3
+      "matched" : 3,
+      "problems" : [ {
+        "rule" : "UnknownMetricNeverMatches",
+        "metric" : "NOT_A_METRIC_CODE",
+        "reason" : "unknown metric 'NOT_A_METRIC_CODE'; not a metric code this detector knows"
+      } ]
     },
     "packageRules" : {
       "total" : 2,
-      "matched" : 1
+      "matched" : 1,
+      "problems" : [ ]
     }
   }
 }

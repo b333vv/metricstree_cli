@@ -103,27 +103,29 @@ final class DetectCommand implements Callable<Integer> {
         CombinationDetector detector = new CombinationDetector();
 
         List<CombinationDetector.ClassMatch> classMatches = List.of();
-        int classRulesTotal = 0;
+        DetectResultWriter.RulesSummary classRulesSummary = emptyRulesSummary();
         if (classRulesFile != null) {
             List<CombinationDefinition> classRules = mapper.readValue(
                     Files.readString(classRulesFile),
                     new TypeReference<List<CombinationDefinition>>() {});
-            classRulesTotal = classRules.size();
             classMatches = detector.detectClasses(report, classRules);
+            classRulesSummary = new DetectResultWriter.RulesSummary(
+                    classRules.size(), classMatches.size(), detector.validateRules(classRules));
         }
 
         List<CombinationDetector.PackageMatch> packageMatches = List.of();
-        int packageRulesTotal = 0;
+        DetectResultWriter.RulesSummary packageRulesSummary = emptyRulesSummary();
         if (packageRulesFile != null) {
             List<CombinationDefinition> packageRules = mapper.readValue(
                     Files.readString(packageRulesFile),
                     new TypeReference<List<CombinationDefinition>>() {});
-            packageRulesTotal = packageRules.size();
             packageMatches = detector.detectPackages(report, packageRules);
+            packageRulesSummary = new DetectResultWriter.RulesSummary(
+                    packageRules.size(), packageMatches.size(), detector.validateRules(packageRules));
         }
 
         String json = new DetectResultWriter().toJson(
-                classMatches, classRulesTotal, packageMatches, packageRulesTotal);
+                classMatches, classRulesSummary, packageMatches, packageRulesSummary);
 
         Path normalizedOutputFile = outputFile.toAbsolutePath().normalize();
         if (normalizedOutputFile.getParent() != null) {
@@ -131,5 +133,9 @@ final class DetectCommand implements Callable<Integer> {
         }
         Files.writeString(normalizedOutputFile, json);
         return 0;
+    }
+
+    private static DetectResultWriter.RulesSummary emptyRulesSummary() {
+        return new DetectResultWriter.RulesSummary(0, 0, List.of());
     }
 }

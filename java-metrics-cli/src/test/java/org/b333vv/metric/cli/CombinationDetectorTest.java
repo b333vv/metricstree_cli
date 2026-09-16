@@ -172,6 +172,111 @@ new CombinationDefinition("LargeClass", null,
         assertTrue(result.isEmpty());
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Rule validation (DEBT-04 / TASK-007). A rule that cannot be evaluated used to evaluate to
+    // "no match" with no signal at all; these tests pin the signal.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    void validRulesProduceNoProblems() {
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("LargeClass", null,
+                        List.of(new Condition("WMC", 47.0, null))),
+                new CombinationDefinition("NormalRange", null,
+                        List.of(new Condition("WMC", 10.0, 47.0))));
+
+        assertEquals(List.of(), detector.validateRules(rules));
+    }
+
+    @Test
+    void reportsUnknownMetricNames() {
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("BadRule", null,
+                        List.of(new Condition("NONEXISTENT_METRIC", 10.0, null))));
+
+        List<CombinationDetector.RuleProblem> problems = detector.validateRules(rules);
+
+        assertEquals(1, problems.size());
+        assertEquals("BadRule", problems.get(0).rule());
+        assertEquals("NONEXISTENT_METRIC", problems.get(0).metric());
+        assertTrue(problems.get(0).reason().contains("unknown metric"),
+                () -> "Reason must explain the failure, got: " + problems.get(0).reason());
+    }
+
+    /**
+     * The exact DEBT-04 defect: {@code class-level-rules.json} shipped a {@code HAS_METHOD_RULE}
+     * condition that is not a metric code, so Jackson dropped its {@code value} key and the rule
+     * silently never matched.
+     */
+    @Test
+    void reportsUnsupportedConditionKindsSuchAsHasMethodRule() {
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("Brain Class", null,
+                        List.of(new Condition("WMC", 34.0, null),
+                                new Condition("TCC", null, 0.50),
+                                new Condition("HAS_METHOD_RULE", null, null))));
+
+        List<CombinationDetector.RuleProblem> problems = detector.validateRules(rules);
+
+        assertEquals(1, problems.size());
+        assertEquals("Brain Class", problems.get(0).rule());
+        assertEquals("HAS_METHOD_RULE", problems.get(0).metric());
+    }
+
+    @Test
+    void reportsConditionsThatConstrainNothing() {
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("Toothless", null,
+                        List.of(new Condition("WMC", null, null))));
+
+        List<CombinationDetector.RuleProblem> problems = detector.validateRules(rules);
+
+        assertEquals(1, problems.size());
+        assertTrue(problems.get(0).reason().contains("neither min nor max"),
+                () -> "Reason must explain the failure, got: " + problems.get(0).reason());
+    }
+
+    @Test
+    void reportsInvertedBoundsThatCanNeverBeSatisfied() {
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("Impossible", null,
+                        List.of(new Condition("WMC", 50.0, 10.0))));
+
+        List<CombinationDetector.RuleProblem> problems = detector.validateRules(rules);
+
+        assertEquals(1, problems.size());
+        assertTrue(problems.get(0).reason().contains("can never be satisfied"),
+                () -> "Reason must explain the failure, got: " + problems.get(0).reason());
+    }
+
+    @Test
+    void reportsEveryBrokenConditionOfARule() {
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("DoublyBroken", null,
+                        List.of(new Condition("NONEXISTENT_METRIC", 1.0, null),
+                                new Condition("ALSO_MISSING", null, null))));
+
+        List<CombinationDetector.RuleProblem> problems = detector.validateRules(rules);
+
+        assertEquals(2, problems.size());
+        assertTrue(problems.stream().allMatch(problem -> problem.rule().equals("DoublyBroken")));
+    }
+
+    /**
+     * Validation is about the rule file, not the analysed report, so a valid rule over a metric the
+     * report happens to lack must not be reported as broken.
+     */
+    @Test
+    void doesNotReportMetricsThatAreMerelyAbsentFromTheReport() {
+        MetricReport report = createReport(Map.of(MetricCode.NOM, Value.of(5)), Map.of());
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("LargeClass", null,
+                        List.of(new Condition("WMC", 47.0, null))));
+
+        assertTrue(detector.detectClasses(report, rules).isEmpty());
+        assertEquals(List.of(), detector.validateRules(rules));
+    }
+
     private static MetricReport createReport(
             Map<MetricCode, Value> classMetrics,
             Map<MetricCode, Value> packageMetrics) {

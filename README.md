@@ -13,7 +13,7 @@ It has three interfaces:
 ## Features
 
 - **40+ object-oriented metrics** — LOC, WMC, CBO, RFC, LCOM, DIT, HALSTEAD metrics, CK metrics, QMOOD metrics, and more
-- **Antipattern detection** — God Class, Brain Method, Feature Envy, Data Class, and others via configurable rule files
+- **Antipattern detection** — God Class, Data Class, High Coupling, and others via configurable rule files; rules that cannot be evaluated are reported instead of silently never matching
 - **CI/CD ready** — validate metrics against thresholds, produce JSON reports, exit-code based pass/fail
 - **Baseline workflow** — snapshot existing violations and only alert on new or worsened ones
 - **Exclusion patterns** — skip generated code, test classes, or any file matching regex patterns
@@ -133,7 +133,9 @@ Define rules as metric constraints in a JSON file. A class matches a rule when *
 ]
 ```
 
-See [`class-level-rules.json`](./class-level-rules.json) for the full set of built-in antipattern definitions (God Class, Brain Method, Feature Envy, Long Method, Complex Method, Data Class, etc.).
+See [`class-level-rules.json`](./class-level-rules.json) for the full set of built-in class-level antipattern definitions (God Class types 1–4, Data Class, High Coupling, Too Many Fields, Too Many Methods) and [`package-level-rules.json`](./package-level-rules.json) for the package-level ones. Rules that reference a metric the detector does not know, carry an unsupported key, or use inverted bounds are listed in the report's `summary.*.problems` array rather than silently never matching.
+
+Method-level antipatterns (Brain Method, Feature Envy, Long Method, Complex Method) are **not** implemented yet: this detector evaluates class- and package-level metrics only. See [`docs/prd/road-map.md`](./docs/prd/road-map.md).
 
 ## Programmatic API
 

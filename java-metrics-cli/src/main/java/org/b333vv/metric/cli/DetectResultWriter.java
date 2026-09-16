@@ -11,16 +11,14 @@ final class DetectResultWriter {
 
     String toJson(
             List<CombinationDetector.ClassMatch> classMatches,
-            int classRulesTotal,
+            RulesSummary classRules,
             List<CombinationDetector.PackageMatch> packageMatches,
-            int packageRulesTotal) throws JsonProcessingException {
+            RulesSummary packageRules) throws JsonProcessingException {
         return mapper.writeValueAsString(new DetectResultView(
                 "COMPLETED",
                 classMatches,
                 packageMatches,
-                new SummaryView(
-                        new RulesSummary(classRulesTotal, classMatches.size()),
-                        new RulesSummary(packageRulesTotal, packageMatches.size()))));
+                new SummaryView(classRules, packageRules)));
     }
 
     private record DetectResultView(
@@ -33,7 +31,15 @@ final class DetectResultWriter {
             @JsonProperty("classRules") RulesSummary classRules,
             @JsonProperty("packageRules") RulesSummary packageRules) {}
 
-    private record RulesSummary(
+    /**
+     * Per-rules-file counters.
+     *
+     * <p>{@code problems} is always present, even when empty: consumers can then tell "this run had no
+     * rule problems" apart from "this producer does not report rule problems at all". It is an
+     * additive key, so consumers reading {@code total} and {@code matched} are unaffected.
+     */
+    record RulesSummary(
             @JsonProperty("total") int total,
-            @JsonProperty("matched") int matched) {}
+            @JsonProperty("matched") int matched,
+            @JsonProperty("problems") List<CombinationDetector.RuleProblem> problems) {}
 }
