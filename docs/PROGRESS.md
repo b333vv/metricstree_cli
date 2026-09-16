@@ -1,5 +1,22 @@
 # what has been done
 
+## Quick wins: dead code and debt cleanup (2026-09-16)
+
+### TASK-005 — Remove dead CompilationUnit retention (DEBT-05) — done
+
+- `EnhancedJavaParserContext` kept a `Map<String, CompilationUnit>` indexed by **both** FQCN and
+  simple name (two entries per class, ~8 000 entries on a 4 000-class project) that no code ever
+  read. The map, its accessor and the builder code populating it are gone.
+- The sweep found the same for `getEnhancedUnits()` and the `enhancedUnits` field: no callers
+  anywhere. Both removed — the units stay reachable through the declarations' parent chain and
+  through the analyzer's local `parsedUnits` list, so the context's copy bought nothing. The class is
+  now `getAllClassDeclarations()` + `fromEnhancedUnits`.
+- New `EnhancedJavaParserContextTest`: pins the public surface reflectively (fails with
+  `getCompilationUnitsByClass`/`getEnhancedUnits` present, passes without them), plus characterization
+  tests for nested/inner declaration collection, default-package naming and list immutability.
+  A deletion task has no behaviour change to assert, so the accessor set is the contract worth pinning.
+- The TASK-001 goldens are unchanged, proving no metric value moved.
+
 ## Stage 0: performance baseline + DEBT-02 fix (2026-09-16)
 
 ### TASK-002 — Performance and memory baseline — done

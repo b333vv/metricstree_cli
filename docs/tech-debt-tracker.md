@@ -10,9 +10,6 @@
   `Condition` (`cli/CombinationDefinition.java`) has no `value` field, so the rule can
   never match; `CombinationDetector` swallows the failure. Fix planned in
   [TASK-007](tasks/TASK-007-has-method-rule-fix.md).
-- **DEBT-05 — Dead structure `EnhancedJavaParserContext.compilationUnitsByClass`.**
-  No production callers; pure memory overhead retained until end of analysis. Removal
-  planned in [TASK-005](tasks/TASK-005-remove-dead-context-structure.md).
 - **DEBT-06 — Silent resolution failures in visitors.**
   15 of 35 visitors (~44 sites) plus analyzer `tryResolve` and
   `JavaParserTypeSolverFactory` (`System.err`) swallow symbol-resolution exceptions;
@@ -60,6 +57,18 @@
   reports growth from 13 to 151 workers; with the fix it reports no growth. The assertion is
   growth-based, not absolute, so the alternative "one pool owned by the analyzer" design allowed by
   TASK-004 would still pass.
+- **DEBT-05 — Dead structure `EnhancedJavaParserContext.compilationUnitsByClass`.** Resolved by
+  [TASK-005](tasks/TASK-005-remove-dead-context-structure.md). The index (two entries per class —
+  FQCN *and* simple name) and its accessor are gone. The sweep also found `getEnhancedUnits()` and
+  the `enhancedUnits` field to be equally dead, so they were removed too: the units stay reachable
+  through the declarations' own parent chain and through the analyzer's local `parsedUnits` list,
+  so nothing depended on the context's copy. `EnhancedJavaParserContext` is now just
+  `getAllClassDeclarations()` + `fromEnhancedUnits`.
+  Evidence: `EnhancedJavaParserContextTest` pins the public surface reflectively
+  (`expected: [fromEnhancedUnits, getAllClassDeclarations]` / `actual: [..., getCompilationUnitsByClass,
+  getEnhancedUnits]` before the removal), plus characterization tests for nested/inner declaration
+  collection, default-package handling and list immutability. The TASK-001 goldens are unchanged,
+  which proves no metric value moved.
 
 ## Tracking Rule
 Close a debt item only when automated checks prove the replacement path is active and stable.
