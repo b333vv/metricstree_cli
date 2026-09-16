@@ -10,19 +10,21 @@
   mixed-list cases, and the warning is visible end-to-end in the `analyze` JSON output.
   **Still open:** directories are not actually resolved against — that is
   [TASK-105](tasks/TASK-105-typesolver-improvements.md), which is what will close this item.
-- **DEBT-06 — Silent resolution failures in visitors.** *Class visitors done
-  ([TASK-102](tasks/TASK-102-class-visitor-diagnostics.md)); method visitors, `tryResolve` and the
-  solver factory still open.*
-  15 of 35 visitors (~44 sites) plus analyzer `tryResolve` and
-  `JavaParserTypeSolverFactory` (`System.err`) swallow symbol-resolution exceptions;
-  metrics are understated without a trace.
-  **Done:** the `AnalysisCollector` channel exists and is wired end-to-end (visitor →
-  `MetricReport.diagnostics` → JSON), with per-class dedup, a configurable cap
-  (`AnalysisOptions.unresolvedSymbolDiagnosticCap`, default 20) and `*_BULK` aggregation for the
-  suppressed remainder. All 35 visitors receive the collector. The 12 resolving class visitors now
-  report: `CBO`, `RFC`, `LCOM`, `NOA`, `ATFD`, `MPC`, `NOC`, `DAC`, `DIT`, `FDP`, `LAA`, `SIZE2`.
-  **Remaining:** the method visitors plus the analyzer/`JavaParserTypeSolverFactory`
-  ([TASK-103](tasks/TASK-103-method-visitor-analyzer-diagnostics.md)).
+- **DEBT-06 — Silent resolution failures in visitors.** *Resolved (TASK-101, TASK-102, TASK-103).*
+  All 35 visitors, the analyzer's `tryResolve` and `JavaParserTypeSolverFactory` used to swallow
+  symbol-resolution exceptions, so metrics were understated without a trace. Every catch in
+  `java-metrics-lib/src/main` is now accounted for: 37 report through `AnalysisCollector`, 6 report a
+  diagnostic directly, 1 rethrows a richer exception, and the remaining 10 are deliberately silent
+  with a comment explaining why — **zero unexplained**. The conversion also surfaced and fixed two
+  ways diagnostics could still be lost after being produced (findings emitted after `flush()`, and
+  method-level collectors that were never flushed) and a vocabulary error that called a failed method
+  call a "type". See the audit tables in [PROGRESS.md](PROGRESS.md) and
+  [TASK-103](tasks/TASK-103-method-visitor-analyzer-diagnostics.md).
+  The `AnalysisCollector` channel is wired end-to-end (visitor → `MetricReport.diagnostics` → JSON)
+  with per-class dedup, a configurable cap (`AnalysisOptions.unresolvedSymbolDiagnosticCap`, default
+  20) and `*_BULK` aggregation for the suppressed remainder.
+  *Follow-up:* the per-class cap does not bound the array for a whole project — tracked separately as
+  DEBT-09.
 - **DEBT-07 — Locale-dependent metric values in the JSON contract.**
   Found while building the TASK-001 goldens (2026-09-16). `Value.toString()` formats doubles with a
   `static final DecimalFormat("0.0###")` created from the JVM default locale, and the JSON writers
@@ -60,6 +62,11 @@
   that belongs with the report-quality work in [TASK-104](tasks/TASK-104-resolution-coverage.md).
   One amplifier was removed in TASK-102: `NOC` used to report another class's broken supertype once
   per class analysed (34,323 diagnostics for 20 distinct facts), which is now down to 33.
+  TASK-103 (2026-09-16) confirmed the scope is worse than "per class": each method gets its own
+  collector with its own cap, so the effective bound is `classes × methods × 20`. It also made the
+  cap reachable for method-level diagnostics for the first time, which is what exposed that method
+  collectors were never flushed at all. Both are fixed, but they strengthen the case for the
+  project-level cap.
 
 ## Resolved Debt Items
 - **DEBT-04 — Dead `HAS_METHOD_RULE` in `class-level-rules.json`.** Resolved by

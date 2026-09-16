@@ -4,6 +4,7 @@ import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
@@ -255,7 +256,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 parsedUnits,
                 request.sourceRoots().stream().map(SourceRoot::path).toList(),
                 resolveClasspathEntries(request, diagnostics),
-                getClass().getClassLoader());
+                getClass().getClassLoader(),
+                diagnostics::add);
         EnhancedJavaParserContext enhancedContext = enhancedContextBuilder.build(parsedUnits, typeSolver);
         Map<String, Path> sourcePathByQualifiedName = buildSourcePathIndex(parsedSourceUnits);
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.PARSE, System.nanoTime() - phaseStart);
@@ -393,7 +395,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
     private static void addClasspathWarning(List<AnalysisDiagnostic> diagnostics, Path path, String reason) {
         diagnostics.add(new AnalysisDiagnostic(
-                "CLASSPATH_PROBLEM",
+                JavaParserTypeSolverFactory.CLASSPATH_PROBLEM,
                 AnalysisSeverity.WARNING,
                 "Ignoring classpath entry " + path + ": " + reason,
                 new SourceLocation(path, 1, 1)));
@@ -406,6 +408,18 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
      * the caller after a failure.
      */
     private static final long POOL_SHUTDOWN_TIMEOUT_SECONDS = 5L;
+
+    /**
+     * Metric context for the dependency snapshot. Not a {@link MetricCode} because the snapshot feeds
+     * several package-level coupling metrics at once (Ce, Ca, I, A, D), so naming one of them would
+     * misattribute the failure.
+     */
+    private static final String DEPENDENCIES_CONTEXT = "DEPENDENCIES";
+
+    /**
+     * Metric context for the direct supertype list, which feeds the inheritance-based metrics.
+     */
+    private static final String SUPERTYPES_CONTEXT = "SUPERTYPES";
 
     private List<ParsedSourceUnit> parseSourceFiles(List<Path> sourceFiles, List<AnalysisDiagnostic> diagnostics) {
         ParserConfiguration parserConfig = EnhancedJavaParserContextBuilder.createParserConfiguration();
@@ -444,6 +458,9 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 pool.shutdownNow();
             }
         } catch (InterruptedException exception) {
+            // Deliberately silent: this is teardown, not analysis. Restoring the interrupt flag and
+            // forcing the pool down is the whole job; a diagnostic here would report a JVM shutdown
+            // as a problem with the user's code.
             Thread.currentThread().interrupt();
             pool.shutdownNow();
         } catch (RuntimeException ignored) {
@@ -562,20 +579,32 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                     for (JavaParserMethodMetricVisitor visitor : methodVisitors) {
                         visitor.visit(methodDeclaration, methodCollector);
                     }
+                    // A method collector keeps its own cap counters, so it owns the flush that turns
+                    // its excess into an aggregate. Without this, a method with more unresolvable
+                    // symbols than the cap would report the first `cap` and drop the rest.
+                    methodCollector.flush();
                     addDerivedMethodMetrics(methodMetrics);
                     return buildMethodReport(methodDeclaration, sourcePath, methodMetrics, metricSelection);
                 })
                 .toList();
-
-        // Emits the aggregated diagnostics for whatever hit the cap; must happen before the report is
-        // built, and is idempotent.
-        classCollector.flush();
 
         addDerivedClassMetrics(classMetrics, analyzedMethods);
         String packageName = classDeclaration.findCompilationUnit()
                 .flatMap(CompilationUnit::getPackageDeclaration)
                 .map(packageDeclaration -> packageDeclaration.getNameAsString())
                 .orElse("");
+
+        // The dependency snapshot and the supertype list are the last producers of diagnostics for
+        // this class, so they must run before the flush below. Flushing first would send their
+        // findings into an aggregation that has already been emitted — a silent loss, which is the
+        // very failure mode this work exists to remove.
+        DependencySnapshot dependencySnapshot = collectDependencySnapshot(classDeclaration, classCollector);
+        Set<String> directSuperTypes = collectDirectSuperTypes(classDeclaration, classCollector);
+
+        // Emits the aggregated diagnostics for whatever hit the cap; must happen after every producer
+        // has run and before the report is assembled from the collected classes. Idempotent.
+        classCollector.flush();
+
         return new AnalyzedClass(
                 packageName,
                 classDeclaration.getNameAsString(),
@@ -585,8 +614,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 filterMetrics(classMetrics, metricSelection),
                 classMetrics,
                 analyzedMethods,
-                collectDependencySnapshot(classDeclaration),
-                collectDirectSuperTypes(classDeclaration),
+                dependencySnapshot,
+                directSuperTypes,
                 collectDeclaredMethods(classDeclaration),
                 collectDeclaredFields(classDeclaration),
                 classDeclaration.isInterface(),
@@ -778,7 +807,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         return new ProjectReport(projectName, filterMetrics(projectMetrics, metricSelection), packageReports);
     }
 
-    private DependencySnapshot collectDependencySnapshot(ClassOrInterfaceDeclaration classDeclaration) {
+    private DependencySnapshot collectDependencySnapshot(
+            ClassOrInterfaceDeclaration classDeclaration, AnalysisCollector collector) {
         Set<String> dependencyPackages = new LinkedHashSet<>();
         Set<String> dependencyClassNames = new LinkedHashSet<>();
         String ownPackage = classDeclaration.findCompilationUnit()
@@ -787,21 +817,21 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 .orElse("");
 
         classDeclaration.findAll(ClassOrInterfaceType.class).forEach(type -> {
-            tryResolve(type::resolve)
+            tryResolve(DEPENDENCIES_CONTEXT, type.asString(), type, collector, type::resolve, ReferenceKind.TYPE)
                     .filter(resolvedType -> resolvedType.isReferenceType() && resolvedType.asReferenceType().getTypeDeclaration().isPresent())
                     .map(resolvedType -> resolvedType.asReferenceType().getTypeDeclaration().orElseThrow())
                     .ifPresent(typeDeclaration -> addDependency(typeDeclaration, ownPackage, dependencyPackages, dependencyClassNames));
         });
         classDeclaration.findAll(ObjectCreationExpr.class).forEach(expr ->
-                tryResolve(expr::resolve)
+                tryResolve(DEPENDENCIES_CONTEXT, expr.getType().asString(), expr, collector, expr::resolve, ReferenceKind.TYPE)
                         .map(ResolvedConstructorDeclaration::declaringType)
                         .ifPresent(typeDeclaration -> addDependency(typeDeclaration, ownPackage, dependencyPackages, dependencyClassNames)));
         classDeclaration.findAll(MethodCallExpr.class).forEach(expr ->
-                tryResolve(expr::resolve)
+                tryResolve(DEPENDENCIES_CONTEXT, expr.toString(), expr, collector, expr::resolve, ReferenceKind.SYMBOL)
                         .map(ResolvedMethodDeclaration::declaringType)
                         .ifPresent(typeDeclaration -> addDependency(typeDeclaration, ownPackage, dependencyPackages, dependencyClassNames)));
         classDeclaration.findAll(FieldAccessExpr.class).forEach(expr ->
-                tryResolve(expr::resolve)
+                tryResolve(DEPENDENCIES_CONTEXT, expr.toString(), expr, collector, expr::resolve, ReferenceKind.SYMBOL)
                         .filter(ResolvedFieldDeclaration.class::isInstance)
                         .map(ResolvedFieldDeclaration.class::cast)
                         .map(ResolvedFieldDeclaration::declaringType)
@@ -809,7 +839,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                         .map(ResolvedReferenceTypeDeclaration.class::cast)
                         .ifPresent(typeDeclaration -> addDependency(typeDeclaration, ownPackage, dependencyPackages, dependencyClassNames)));
         classDeclaration.findAll(MethodReferenceExpr.class).forEach(expr ->
-                tryResolve(expr::resolve)
+                tryResolve(DEPENDENCIES_CONTEXT, expr.toString(), expr, collector, expr::resolve, ReferenceKind.SYMBOL)
                         .map(ResolvedMethodDeclaration::declaringType)
                         .ifPresent(typeDeclaration -> addDependency(typeDeclaration, ownPackage, dependencyPackages, dependencyClassNames)));
 
@@ -1232,16 +1262,17 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         }
     }
 
-    private Set<String> collectDirectSuperTypes(ClassOrInterfaceDeclaration classDeclaration) {
+    private Set<String> collectDirectSuperTypes(
+            ClassOrInterfaceDeclaration classDeclaration, AnalysisCollector collector) {
         Set<String> directSuperTypes = new LinkedHashSet<>();
         classDeclaration.getExtendedTypes().forEach(type ->
-                tryResolve(type::resolve)
+                tryResolve(SUPERTYPES_CONTEXT, type.asString(), type, collector, type::resolve, ReferenceKind.TYPE)
                         .filter(resolvedType -> resolvedType.isReferenceType() && resolvedType.asReferenceType().getTypeDeclaration().isPresent())
                         .map(resolvedType -> resolvedType.asReferenceType().getTypeDeclaration().orElseThrow().getQualifiedName())
                         .filter(name -> name != null && !name.isBlank())
                         .ifPresent(directSuperTypes::add));
         classDeclaration.getImplementedTypes().forEach(type ->
-                tryResolve(type::resolve)
+                tryResolve(SUPERTYPES_CONTEXT, type.asString(), type, collector, type::resolve, ReferenceKind.TYPE)
                         .filter(resolvedType -> resolvedType.isReferenceType() && resolvedType.asReferenceType().getTypeDeclaration().isPresent())
                         .map(resolvedType -> resolvedType.asReferenceType().getTypeDeclaration().orElseThrow().getQualifiedName())
                         .filter(name -> name != null && !name.isBlank())
@@ -1288,10 +1319,46 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         return Visibility.PACKAGE_PRIVATE;
     }
 
-    private <T> Optional<T> tryResolve(ResolveSupplier<T> supplier) {
+    /**
+     * What a failed {@link #tryResolve} was looking at, so the diagnostic can say "type" or "symbol"
+     * truthfully. The rule at the call sites is simply: if we hand over a type name, it is a
+     * {@link #TYPE}; if we hand over an expression's source text, it is a {@link #SYMBOL}.
+     */
+    private enum ReferenceKind {
+        /** A type reference, e.g. {@code AbsentService} or {@code a.b.C}. */
+        TYPE,
+        /** A method, field or constructor reference, e.g. {@code service.describe()}. */
+        SYMBOL
+    }
+
+    /**
+     * Resolves like {@link #tryResolve}, but tells the report what was lost when it cannot.
+     *
+     * <p>Every caller sits on a per-class path — the dependency snapshot and the supertype list — and
+     * every call site resolves a different node, so the failure is reported against the node that
+     * could not be resolved. The per-class collector deduplicates and caps, which is what keeps this
+     * from producing one diagnostic per AST node.
+     *
+     * <p>The kind matters for the reader: a dependency snapshot resolves types <em>and</em> method
+     * calls, and calling a failed {@code service.describe()} a "type" would send the user looking for
+     * a class that was never supposed to exist.
+     *
+     * @param metricContext what the resolution feeds, e.g. {@code "DEPENDENCIES"}
+     * @param name          the type or symbol that could not be resolved, as written in the source
+     * @param at            the node to point the diagnostic at
+     * @param collector     the collector of the class being analysed
+     * @param kind          whether {@code name} is a type or a symbol
+     */
+    private <T> Optional<T> tryResolve(String metricContext, String name, Node at,
+            AnalysisCollector collector, ResolveSupplier<T> supplier, ReferenceKind kind) {
         try {
             return Optional.ofNullable(supplier.resolve());
         } catch (Exception exception) {
+            if (kind == ReferenceKind.TYPE) {
+                collector.warnUnresolvedType(metricContext, name, at);
+            } else {
+                collector.warnUnresolved(metricContext, name, at);
+            }
             return Optional.empty();
         }
     }

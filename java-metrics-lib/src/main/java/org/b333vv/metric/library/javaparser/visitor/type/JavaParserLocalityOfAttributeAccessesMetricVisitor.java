@@ -47,7 +47,7 @@ public class JavaParserLocalityOfAttributeAccessesMetricVisitor extends JavaPars
             }
             double locality = (double) localMethods / methodsAndConstructors.size();
             collector.accept(MetricResult.of(MetricCode.LAA, locality));
-        } catch (Exception ignored) {
+        } catch (Exception unresolved) {
             // This catch is deliberately broad: it covers the class under analysis as well as any
             // field access inside it, because the existing abort-the-whole-walk fallback (LAA
             // undefined) must be preserved and splitting the two would change the metric. The

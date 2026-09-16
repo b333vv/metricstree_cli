@@ -13,6 +13,8 @@ import java.util.Set;
 
 public class JavaParserNumberOfAccessedVariablesMetricVisitor extends JavaParserMethodMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.NOAV.name();
+
     @Override
     public void visit(MethodDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
@@ -23,8 +25,10 @@ public class JavaParserNumberOfAccessedVariablesMetricVisitor extends JavaParser
                 if (resolved.isParameter() || resolved.isField() || resolved.isVariable()) {
                     accessedVariables.add(resolved.getName());
                 }
-            } catch (Exception ignored) {
-                // Ignore unresolved symbols to preserve existing behavior.
+            } catch (Exception unresolved) {
+                // warnUnresolvedName rather than warnUnresolved: most bare names that fail to resolve
+                // as a value are types used as qualifiers (Math, System, ...), which is not a problem.
+                collector.warnUnresolvedName(METRIC_CONTEXT, nameExpr);
             }
         });
         collector.accept(MetricResult.of(MetricCode.NOAV, accessedVariables.size()));

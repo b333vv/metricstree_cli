@@ -80,7 +80,7 @@ array, so a metric that is lower than expected can be told apart from a metric t
 | Code | Meaning |
 |------|---------|
 | `PARSE_PROBLEM` | A source file could not be parsed; it is excluded from the report |
-| `CLASSPATH_PROBLEM` | A `--classpath` entry was ignored (see above) |
+| `CLASSPATH_PROBLEM` | A `--classpath` entry or source root was ignored or only partly usable (see above) |
 | `UNRESOLVED_TYPE` | A type reference could not be resolved while computing a metric |
 | `UNRESOLVED_SYMBOL` | A method, field or constructor reference could not be resolved |
 | `UNRESOLVED_TYPE_BULK` | Aggregate for `UNRESOLVED_TYPE` entries dropped by the per-class cap |
@@ -96,11 +96,13 @@ array, so a metric that is lower than expected can be told apart from a metric t
 ```
 
 The metric code in brackets says which number the failure affects; `ATFD` above means the access to
-foreign data count is understated because that call could not be attributed to a class. A diagnostic
-is emitted only when the failure actually changes the value, so a fallback that recovers the missing
-information stays silent — a call on `Math` or `Collections` is not reported as an unresolved symbol,
-because those are types rather than values and the visitor's static-receiver fallback already covers
-them.
+foreign data count is understated because that call could not be attributed to a class. Two brackets
+are not metric codes: `DEPENDENCIES` marks a failure while building a class's dependency snapshot,
+and `SUPERTYPES` a failure while reading its supertypes. Both feed several coupling and inheritance
+metrics at once, so naming a single metric would misattribute the failure. A diagnostic is emitted
+only when the failure actually changes a value, so a fallback that recovers the missing information
+stays silent — a call on `Math` or `Collections` is not reported as an unresolved symbol, because
+those are types rather than values and the visitor's static-receiver fallback already covers them.
 
 Diagnostics are deduplicated per class and per metric, so one broken symbol is reported once per
 metric rather than once per reference to it. Each class may emit at most

@@ -57,7 +57,7 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
         String classQualifiedName = null;
         try {
             classQualifiedName = declaration.resolve().getQualifiedName();
-        } catch (Exception ignored) {
+        } catch (Exception unresolved) {
             // Without the class name no field can be attributed to it, so LCOM overstates cohesion.
             collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);
         }
@@ -75,7 +75,7 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
                             usedFields.add(fieldAccess.getNameAsString());
                         }
                     }
-                } catch (Exception ignored) {
+                } catch (Exception unresolved) {
                     // Unresolved access: the field is dropped from this method's usage set, which
                     // splits the graph and inflates LCOM.
                     collector.warnUnresolved(METRIC_CONTEXT, fieldAccess.toString(), fieldAccess);
@@ -92,7 +92,7 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
                             usedFields.add(nameExpr.getNameAsString());
                         }
                     }
-                } catch (Exception ignored) {
+                } catch (Exception unresolved) {
                     // See AnalysisCollector.warnUnresolvedName: a bare name that is really a type is
                     // not a resolution problem and must not be reported as one.
                     collector.warnUnresolvedName(METRIC_CONTEXT, nameExpr);
@@ -156,7 +156,7 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
                             }
                         }
                     }
-                } catch (Exception ignored) {
+                } catch (Exception unresolved) {
                     // The name-and-arity fallback below guesses the target, and it cannot tell
                     // overloads apart, so the edge it adds — or fails to add — is approximate.
                     collector.warnUnresolved(METRIC_CONTEXT, methodCall.toString(), methodCall);

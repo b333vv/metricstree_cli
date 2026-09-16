@@ -30,7 +30,7 @@ public class JavaParserNumberOfChildrenMetricVisitor extends JavaParserClassMetr
                                 try {
                                     return extendedType.resolve().asReferenceType().getQualifiedName()
                                             .equals(currentClassQualifiedName);
-                                } catch (Exception ignored) {
+                                } catch (Exception unresolved) {
                                     // An unresolved supertype hides a potential child, so NOC
                                     // understates.
                                     //
@@ -48,7 +48,7 @@ public class JavaParserNumberOfChildrenMetricVisitor extends JavaParserClassMetr
                             }))
                     .count();
             collector.accept(MetricResult.of(MetricCode.NOC, numberOfChildren));
-        } catch (Exception ignored) {
+        } catch (Exception unresolved) {
             // The class under analysis could not be resolved, so NOC is reported as undefined.
             collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);
             collector.accept(MetricResult.of(MetricCode.NOC, Value.UNDEFINED));

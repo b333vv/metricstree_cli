@@ -7,6 +7,8 @@ import org.b333vv.metric.library.javaparser.EnhancedJavaParserContext;
 import org.b333vv.metric.library.javaparser.visitor.support.JavaParserVisitorTestSupport;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class JavaParserMethodCouplingResolverEdgeCaseRegressionTest extends JavaParserVisitorTestSupport {
@@ -40,6 +42,12 @@ class JavaParserMethodCouplingResolverEdgeCaseRegressionTest extends JavaParserV
 
         assertEquals(MetricCode.CDISP, result.code());
         assertEquals(2L, result.value().longValue());
+        // The two calls the metric had to skip, now named: the depth spread is understated because of
+        // exactly these.
+        assertEquals(List.of(
+                        "UNRESOLVED_SYMBOL [CDISP] Could not resolve symbol 'missing.call()'",
+                        "UNRESOLVED_SYMBOL [CDISP] Could not resolve symbol 'UnknownType.staticCall()'"),
+                lastDiagnosticSummaries());
     }
 
     @Test
@@ -71,6 +79,10 @@ class JavaParserMethodCouplingResolverEdgeCaseRegressionTest extends JavaParserV
 
         assertEquals(MetricCode.CINT, result.code());
         assertEquals(2L, result.value().longValue());
+        assertEquals(List.of(
+                        "UNRESOLVED_SYMBOL [CINT] Could not resolve symbol 'missing.call()'",
+                        "UNRESOLVED_SYMBOL [CINT] Could not resolve symbol 'UnknownType.staticCall()'"),
+                lastDiagnosticSummaries());
     }
 
     @Test
@@ -94,5 +106,9 @@ class JavaParserMethodCouplingResolverEdgeCaseRegressionTest extends JavaParserV
 
         assertEquals(MetricCode.NOAV, result.code());
         assertEquals(3L, result.value().longValue());
+        // `missingValue` is not a type, so unlike the `Math` in `Math.abs(x)` it is a genuine
+        // resolution failure and is reported.
+        assertEquals(List.of("UNRESOLVED_SYMBOL [NOAV] Could not resolve symbol 'missingValue'"),
+                lastDiagnosticSummaries());
     }
 }

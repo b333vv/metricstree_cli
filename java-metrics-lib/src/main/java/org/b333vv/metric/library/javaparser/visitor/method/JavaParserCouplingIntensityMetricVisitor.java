@@ -12,6 +12,8 @@ import java.util.Set;
 
 public class JavaParserCouplingIntensityMetricVisitor extends JavaParserMethodMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.CINT.name();
+
     @Override
     public void visit(MethodDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
@@ -19,8 +21,9 @@ public class JavaParserCouplingIntensityMetricVisitor extends JavaParserMethodMe
         declaration.walk(MethodCallExpr.class, methodCall -> {
             try {
                 calledMethods.add(methodCall.resolve().getQualifiedSignature());
-            } catch (Exception ignored) {
-                // Ignore unresolved symbols to preserve existing behavior.
+            } catch (Exception unresolved) {
+                // The call contributes nothing to the set, so the coupling intensity is understated.
+                collector.warnUnresolved(METRIC_CONTEXT, methodCall.toString(), methodCall);
             }
         });
         collector.accept(MetricResult.of(MetricCode.CINT, calledMethods.size()));

@@ -42,7 +42,7 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
         declaration.getMethods().forEach(method -> {
             try {
                 uniqueTargets.add(normalizeSignature(method.resolve().getQualifiedSignature()));
-            } catch (Exception ignored) {
+            } catch (Exception unresolved) {
                 // The fallback keeps the method in the response set, but under a name that no longer
                 // distinguishes overloads or inherited members, so the set can be off.
                 collector.warnUnresolved(METRIC_CONTEXT, method.getNameAsString() + "()", method);
@@ -53,7 +53,7 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
         declaration.getConstructors().forEach(constructor -> {
             try {
                 uniqueTargets.add(normalizeSignature(constructor.resolve().getQualifiedSignature()));
-            } catch (Exception ignored) {
+            } catch (Exception unresolved) {
                 collector.warnUnresolved(METRIC_CONTEXT, constructor.getNameAsString() + "()", constructor);
                 uniqueTargets.add(normalizeSignature(className + "#" + constructor.getSignature().asString()));
             }
@@ -126,7 +126,7 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
             super.visit(expression, collector);
             try {
                 collector.add(normalizeSignature(expression.resolve().getQualifiedSignature()));
-            } catch (Exception ignored) {
+            } catch (Exception unresolved) {
                 // Unresolved call: it contributes no response target, so RFC understates.
                 diagnostics.warnUnresolved(METRIC_CONTEXT, expression.toString(), expression);
             }
@@ -138,7 +138,7 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
             expression.getArguments().forEach(argument -> argument.accept(this, collector));
             try {
                 collector.add(normalizeSignature(expression.resolve().getQualifiedSignature()));
-            } catch (Exception ignored) {
+            } catch (Exception unresolved) {
                 diagnostics.warnUnresolved(METRIC_CONTEXT, expression.toString(), expression);
             }
             // Skip anonymous class body to avoid counting nested class calls.
@@ -149,7 +149,7 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
             super.visit(expression, collector);
             try {
                 collector.add(normalizeSignature(expression.resolve().getQualifiedSignature()));
-            } catch (Exception ignored) {
+            } catch (Exception unresolved) {
                 diagnostics.warnUnresolved(METRIC_CONTEXT, expression.toString(), expression);
             }
         }
@@ -159,7 +159,7 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
             statement.getArguments().forEach(argument -> argument.accept(this, collector));
             try {
                 collector.add(normalizeSignature(statement.resolve().getQualifiedSignature()));
-            } catch (Exception ignored) {
+            } catch (Exception unresolved) {
                 diagnostics.warnUnresolved(METRIC_CONTEXT, statement.toString(), statement);
             }
         }

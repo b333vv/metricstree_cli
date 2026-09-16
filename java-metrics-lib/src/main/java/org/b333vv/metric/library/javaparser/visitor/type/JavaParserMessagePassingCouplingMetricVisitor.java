@@ -26,13 +26,13 @@ public class JavaParserMessagePassingCouplingMetricVisitor extends JavaParserCla
                     if (!declaringClassName.equals(currentClassName)) {
                         messagePassingCalls.add(methodCall);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception unresolved) {
                     // The call cannot be attributed to a declaring class, so it is dropped from the
                     // count even though it may well be message passing.
                     collector.warnUnresolved(METRIC_CONTEXT, methodCall.toString(), methodCall);
                 }
             });
-        } catch (Exception ignored) {
+        } catch (Exception unresolved) {
             // Without the class's own name no call can be judged "foreign", so MPC collapses to 0.
             collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);
         }

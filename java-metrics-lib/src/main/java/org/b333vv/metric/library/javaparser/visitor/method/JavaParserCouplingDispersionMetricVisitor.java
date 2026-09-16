@@ -15,6 +15,8 @@ import java.util.Set;
 
 public class JavaParserCouplingDispersionMetricVisitor extends JavaParserMethodMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.CDISP.name();
+
     @Override
     public void visit(MethodDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
@@ -23,10 +25,19 @@ public class JavaParserCouplingDispersionMetricVisitor extends JavaParserMethodM
             try {
                 ResolvedReferenceTypeDeclaration declaringType = methodCall.resolve().declaringType();
                 if (declaringType.isClass()) {
-                    depths.add(getDepth(declaringType));
+                    try {
+                        depths.add(getDepth(declaringType));
+                    } catch (Exception unresolved) {
+                        // The declaring type resolved but its hierarchy did not, so this call's depth
+                        // is missing from the dispersion set. Split from the catch below so the
+                        // diagnostic names the type that failed rather than the call.
+                        collector.warnUnresolvedType(
+                                METRIC_CONTEXT, declaringType.getQualifiedName(), methodCall);
+                    }
                 }
-            } catch (Exception ignored) {
-                // Ignore unresolved symbols to preserve existing behavior.
+            } catch (Exception unresolved) {
+                // The call itself could not be attributed to a type, so its depth is missing too.
+                collector.warnUnresolved(METRIC_CONTEXT, methodCall.toString(), methodCall);
             }
         });
         collector.accept(MetricResult.of(MetricCode.CDISP, depths.size()));

@@ -1,5 +1,89 @@
 # what has been done
 
+## Phase 1: method visitors, the analyzer and the solver factory report too (2026-09-16)
+
+### TASK-103 — Phase 1 diagnostics conversion complete — done
+
+The last silent failures are gone: the three resolving method visitors, the analyzer's centralized
+`tryResolve`, and `JavaParserTypeSolverFactory`. The module now has **54 catch blocks and none of them
+swallows a resolution failure unexplained** (audit table below).
+
+- Converted: `CINT`, `CDISP` and `NOAV` report through the TASK-101 channel like the class visitors.
+  `CDISP` splits its two failure modes — the call resolved but its declaring type's hierarchy did not
+  (`UNRESOLVED_TYPE` naming the type) versus the call itself not resolving (`UNRESOLVED_SYMBOL` naming
+  the call) — so the message points at whichever thing actually failed.
+- `tryResolve` gained a reporting overload. It sits on the per-class path (dependency snapshot,
+  supertype list), so the per-class collector's dedup is what keeps it from emitting one diagnostic
+  per AST node, exactly as the task's risk section required.
+- `JavaParserTypeSolverFactory` gained an optional `Consumer<AnalysisDiagnostic>` parameter and reports
+  source-root registration, library-jar loading and in-memory-solver population failures as
+  `CLASSPATH_PROBLEM` (WARNING) with the offending path. The old `System.out`/`System.err` prints are
+  gone, so a library caller and a JSON consumer can now see them. The four-argument `create(...)` still
+  delegates with a no-op consumer, so the library API is unchanged.
+
+**Three defects found while wiring this up — all fixed here:**
+
+- **Diagnostics produced after the flush were silently dropped.** `buildClassReport` called
+  `classCollector.flush()` *before* `collectDependencySnapshot` and `collectDirectSuperTypes`, which
+  are the last two producers of diagnostics for a class. Once the cap was exhausted, their findings
+  went into an aggregation that had already been emitted and never surfaced — the exact failure mode
+  this phase exists to remove. The snapshot and supertype collection now run before the flush.
+  Regression test: `dependencyDiagnosticsAreNotLostWhenTheCapIsAlreadyExhausted`.
+- **Method collectors were never flushed at all.** `childCollector` keeps its own cap counters, so the
+  class collector cannot aggregate for it, and nothing else called `flush()` on it. A method with more
+  unresolvable symbols than the cap kept the first `cap` and dropped the rest with no aggregate. The
+  analyzer now flushes each method collector. Regression test:
+  `methodDiagnosticsAreAggregatedByTheirOwnCollector`.
+- **A failed method call was reported as a "type".** The dependency snapshot resolves types *and*
+  method calls, and the first version of the helper labelled everything `UNRESOLVED_TYPE`, producing
+  `[DEPENDENCIES] Could not resolve type 'service.describe()'` — sending the reader looking for a class
+  that was never supposed to exist. `tryResolve` now takes a `ReferenceKind`: hand it a type name and it
+  is a `TYPE`, hand it an expression's source text and it is a `SYMBOL`. Regression test:
+  `dependencySnapshotDistinguishesUnresolvedTypesFromUnresolvedSymbols`.
+
+Two other cleanups fell out of the audit:
+
+- The analyzer's original non-reporting `tryResolve(ResolveSupplier)` had no callers left once every
+  site was converted, so it was deleted rather than left as dead code with a silent catch.
+- `JavaParserTypeSolverFactory`'s `catch (UnsupportedOperationException)` around source-root
+  registration was **dead code**: `new JavaParserTypeSolver(nonDirectory)` throws
+  `IllegalStateException`. Widened to `RuntimeException`, so a bad source root is now reported instead
+  of escaping the factory. Covered by `JavaParserTypeSolverFactoryDiagnosticsTest`.
+- 36 catch parameters that reported diagnostics were still named `ignored`, which contradicted their
+  own bodies and would mislead the next audit. Renamed to `unresolved` (or `exception` where the
+  binding is deliberately unused).
+
+- `analyze.json` golden regenerated: 8 → 12 diagnostics, all four new ones pointing at
+  `golden-project/src/a/Unresolvable.java`. **Every metric value is byte-identical** and the array is
+  still sorted by (severity, code, message, location) — the "same values, more visibility" proof.
+- Tests: `JavaParserTypeSolverFactoryDiagnosticsTest` (4 new), three new cases in
+  `AnalysisCollectorPipelineTest`, and diagnostic assertions on all three cases in
+  `JavaParserMethodCouplingResolverEdgeCaseRegressionTest`. `./gradlew check` green: 235 tests, 0
+  failures, 1 intentional skip.
+
+### Silent-catch audit — every `catch` in `java-metrics-lib/src/main`
+
+| Disposition | Count | Notes |
+| --- | --- | --- |
+| Reports through `AnalysisCollector` | 37 | All converted visitors, plus the analyzer's `tryResolve` |
+| Reports a diagnostic directly | 6 | `SOURCE_ROOT_READ_FAILED`, `PARSE_FAILED` (analyzer); 4 × `CLASSPATH_PROBLEM` via `report(...)` (factory) |
+| Rethrows a richer exception | 1 | `ExclusionConfig.compilePatterns` — adds the offending pattern and index to the message |
+| Deliberately silent, with a comment | 10 | Listed below |
+| **Unexplained** | **0** | The acceptance criterion for this task |
+
+The ten deliberate silences, and why silence is right in each:
+
+| Site | Why silent |
+| --- | --- |
+| `JavaParserJavaMetricsAnalyzer.shutdownQuietly` ×2 | Teardown, not analysis. A diagnostic here would report a JVM shutdown as a problem with the user's code, and it must never mask the analysis failure that caused the unwinding (DEBT-02). |
+| `AnalysisCollector.denotesType` | The probe itself. It asks "does this name resolve as a type?", and a failure is the answer "no", not a problem to report. |
+| `JavaParserCouplingBetweenObjectsMetricVisitor` (import names) | Reading an import's name is purely syntactic — nothing is resolved, so a failure is a malformed AST, not a classpath problem. |
+| `JavaParserNumberOfAttributesMetricVisitor` ×6 | The reflection supplement and the classloader lookups. They fail for every class in a source-only project while the count stays correct, so reporting would fire for nearly every class without telling the user anything actionable. The genuine failure is reported by the surrounding catch. |
+
+`ExclusionConfig` is the one catch that neither reports nor stays silent, and it is correct as written:
+it rethrows `PatternSyntaxException` with the offending pattern and index, which is a better message
+than any diagnostic would be.
+
 ## Phase 1: class visitors report what they could not resolve (2026-09-16)
 
 ### TASK-102 — the 12 resolving class visitors stop swallowing failures — done

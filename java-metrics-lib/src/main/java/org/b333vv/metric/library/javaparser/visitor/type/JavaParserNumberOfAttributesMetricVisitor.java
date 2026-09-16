@@ -57,7 +57,10 @@ public class JavaParserNumberOfAttributesMetricVisitor extends JavaParserClassMe
                 }
             }
             return resolvedCount;
-        } catch (Exception ignored) {
+        } catch (Exception exception) {
+            // The class itself did not resolve, so fall back to reflection. The binding is unused: the
+            // diagnostic is emitted by the catch below, which is the one that knows both the symbol
+            // solver and reflection failed.
             // Try reflection-based fallback using FQN to include external library ancestors.
             String fullyQualifiedName = fullyQualifiedNameOf(declaration);
             try {
@@ -65,7 +68,7 @@ public class JavaParserNumberOfAttributesMetricVisitor extends JavaParserClassMe
                     Class<?> resolvedClass = loadClass(fullyQualifiedName);
                     return countFieldsByReflection(resolvedClass);
                 }
-            } catch (Throwable ignored2) {
+            } catch (Throwable unresolved) {
                 // Neither the symbol solver nor reflection could see the class, so the count is
                 // declared-only: exactly the case the user needs to know about.
                 collector.warnUnresolvedType(METRIC_CONTEXT, fullyQualifiedName, declaration);

@@ -63,19 +63,28 @@ visitor catch block
       → JSON "diagnostics" array / CLI output
 ```
 
-`AnalysisCollector` is created once per analysed class and shared by that class's class- and
-method-level visitors, so the same broken symbol is reported once per metric rather than once per AST
-node. After `AnalysisOptions.unresolvedSymbolDiagnosticCap` (default 20) individual diagnostics, the
-remainder is aggregated into one `UNRESOLVED_SYMBOL_BULK` / `UNRESOLVED_TYPE_BULK` entry carrying the
-suppressed count.
+`AnalysisCollector` is created once per analysed class and is what that class's class-level visitors
+report through, so the same broken symbol is reported once per metric rather than once per AST node.
+Each method then gets a **child collector** (`childCollector`) that writes to the same shared list but
+keeps its own dedup state and cap, so one method's findings are not suppressed by another's. After
+`AnalysisOptions.unresolvedSymbolDiagnosticCap` (default 20) individual diagnostics, the remainder is
+aggregated into one `UNRESOLVED_SYMBOL_BULK` / `UNRESOLVED_TYPE_BULK` entry carrying the suppressed
+count.
 
-Two properties are load-bearing and tested:
+Three properties are load-bearing and tested:
 
 - **Determinism** — classes are visited on a parallel stream, so diagnostics arrive in
   non-deterministic order. `MetricReport` sorts them by severity, code, message *and location*; the
   location is required because messages repeat across classes.
 - **No lost reports** — the collector synchronizes on the shared diagnostics list, matching the
   discipline the parser already uses.
+- **Flush after every producer, before the report** — aggregation happens in `flush()`, which is
+  idempotent and must run *after* the last thing that can report for a given collector. Every
+  collector owns its own flush: the analyzer flushes each method collector once its visitors have run,
+  and flushes the class collector only after the dependency snapshot and supertype list, which are the
+  last producers for a class. Getting this order wrong does not throw — the excess simply lands in an
+  aggregation that has already been emitted and disappears, which is the failure mode this whole
+  mechanism exists to prevent.
 
 #### What is worth reporting
 

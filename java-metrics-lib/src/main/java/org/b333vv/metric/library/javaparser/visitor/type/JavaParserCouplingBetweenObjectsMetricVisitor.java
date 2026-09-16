@@ -51,7 +51,7 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
             try {
                 String resolvedName = type.resolve().asReferenceType().getQualifiedName();
                 coupledClasses.add(resolvedName);
-            } catch (Exception ignored) {
+            } catch (Exception unresolved) {
                 // Unresolved type: the coupling it represents is missing from the count.
                 collector.warnUnresolvedType(METRIC_CONTEXT, type.asString(), type);
             }
@@ -63,7 +63,7 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
                 ResolvedMethodDeclaration resolvedMethod = methodCall.resolve();
                 ResolvedReferenceTypeDeclaration declaringType = resolvedMethod.declaringType();
                 coupledClasses.add(declaringType.getQualifiedName());
-            } catch (Exception ignored) {
+            } catch (Exception unresolved) {
                 // If method resolution fails, try to infer from scope. The inference recovers the
                 // coupling for a handful of well-known static receivers, so only the calls it cannot
                 // recover are actually missing from the metric — those are the ones worth reporting.
@@ -81,7 +81,7 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
             try {
                 String resolvedName = objectCreation.getType().resolve().asReferenceType().getQualifiedName();
                 coupledClasses.add(resolvedName);
-            } catch (Exception ignored) {
+            } catch (Exception unresolved) {
                 collector.warnUnresolvedType(METRIC_CONTEXT, objectCreation.getType().asString(), objectCreation);
             }
         });
@@ -92,7 +92,7 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
                 try {
                     String resolvedName = scopeExpression.resolve().asType().asReferenceType().getQualifiedName();
                     coupledClasses.add(resolvedName);
-                } catch (Exception ignored) {
+                } catch (Exception unresolved) {
                     // Same reasoning as method calls: the inference covers well-known receivers. The
                     // whole reference is reported, not just the scope, because the scope is often a
                     // type name that the solver would otherwise describe as an unresolved symbol.
@@ -110,7 +110,7 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
         declaration.walk(AnnotationExpr.class, annotation -> {
             try {
                 coupledClasses.add(annotation.resolve().getQualifiedName());
-            } catch (Exception ignored) {
+            } catch (Exception unresolved) {
                 String annotationName = annotation.getNameAsString();
                 if ("Override".equals(annotationName)) {
                     // java.lang is always on the solver's radar, so this fallback is value-equivalent
@@ -125,7 +125,7 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
         try {
             String currentClassName = declaration.resolve().getQualifiedName();
             coupledClasses.remove(currentClassName);
-        } catch (Exception ignored) {
+        } catch (Exception unresolved) {
             // Without the class's own name the self-coupling cannot be subtracted, so CBO is
             // inflated by one — a resolution failure that changes the value.
             collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);

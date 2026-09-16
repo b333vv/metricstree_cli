@@ -39,7 +39,7 @@ public class JavaParserForeignDataProvidersMetricVisitor extends JavaParserClass
                 });
             }
             collector.accept(MetricResult.of(MetricCode.FDP, foreignDataProviders.size()));
-        } catch (Exception ignored) {
+        } catch (Exception unresolved) {
             // As in LAA, the catch covers the class under analysis and the other classes scanned for
             // it; either way the provider set is incomplete, so FDP is reported as undefined.
             collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);

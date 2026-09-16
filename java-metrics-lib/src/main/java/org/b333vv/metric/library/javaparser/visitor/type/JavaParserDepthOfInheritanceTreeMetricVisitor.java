@@ -34,7 +34,7 @@ public class JavaParserDepthOfInheritanceTreeMetricVisitor extends JavaParserCla
                 return 1 + getDepth(javaParserClassDeclaration.getWrappedNode(), collector);
             }
             return 2;
-        } catch (Exception ignored) {
+        } catch (Exception unresolved) {
             // The supertype chain is cut here, so the depth is reported as if the class extended
             // Object directly — DIT understates by everything above this link.
             collector.warnUnresolvedType(

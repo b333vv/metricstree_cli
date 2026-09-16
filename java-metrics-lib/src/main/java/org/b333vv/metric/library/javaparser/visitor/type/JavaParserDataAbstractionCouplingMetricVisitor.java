@@ -26,7 +26,7 @@ public class JavaParserDataAbstractionCouplingMetricVisitor extends JavaParserCl
                     if (resolvedType.isReferenceType()) {
                         abstractDataTypes.add(resolvedType.asReferenceType().getQualifiedName());
                     }
-                } catch (Exception ignored) {
+                } catch (Exception unresolved) {
                     // The field's type is missing from the count, so DAC understates.
                     collector.warnUnresolvedType(
                             METRIC_CONTEXT, variable.getType().asString(), variable);

@@ -178,12 +178,14 @@ TASK-006 ──> TASK-105 (recommended order, formally independent)
 TASK-003…007, TASK-105, TASK-402: independent quick wins / phase tasks
 ```
 
-**Progress:** done — TASK-001, 002, 003, 004, 005, 006, 007, 101, 102. Open — TASK-103, 104, 105,
+**Progress:** done — TASK-001, 002, 003, 004, 005, 006, 007, 101, 102, 103. Open — TASK-104, 105,
 202, 203, 204, 205, 301, 302, 401, 402. (TASK-003 was pulled forward: TASK-001's goldens exposed
 DEBT-01. TASK-006 partially closes DEBT-03. TASK-101 delivered the DEBT-06 channel, TASK-102
-converted the class visitors; the method visitors and the analyzer's `tryResolve` are left for
-TASK-103. TASK-102 also produced a new finding, DEBT-09: diagnostics are capped per class, so they do
-not stay in the hundreds on a large project analysed without a classpath.)
+converted the class visitors, and TASK-103 finished it — method visitors, `tryResolve` and the solver
+factory — closing DEBT-06 with a full audit of every catch in the library module. TASK-102 also
+produced a new finding, DEBT-09: diagnostics are capped per class, so they do not stay in the hundreds
+on a large project analysed without a classpath; TASK-103 confirmed the cap is per class *and* per
+method, which makes it more relevant, not less.)
 
 ---
 
