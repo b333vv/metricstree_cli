@@ -1,12 +1,6 @@
 # Tech Debt Tracker
 
 ## Active Debt Items
-- **DEBT-01 — Halstead visitor race condition.**
-  `JavaParserHalsteadClassMetricVisitor` and `JavaParserHalsteadMethodMetricVisitor` keep
-  stateful `HashSet`/`ArrayList` fields (cleared at each `visit`) while being shared
-  singletons across parallel-stream threads in `JavaParserJavaMetricsAnalyzer` — concurrent
-  runs corrupt Halstead values. Fix planned in
-  [TASK-003](tasks/TASK-003-halstead-visitor-race-condition.md).
 - **DEBT-02 — ForkJoinPool leak.**
   Both custom `ForkJoinPool`s created per `analyze()` call (parse phase ~lines 308–323,
   visit phase ~lines 373–390) are never shut down. Fix planned in
@@ -32,7 +26,19 @@
   [TASK-103](tasks/TASK-103-method-visitor-analyzer-diagnostics.md).
 
 ## Resolved Debt Items
-- (none yet)
+- **DEBT-01 — Halstead visitor race condition.** Resolved by
+  [TASK-003](tasks/TASK-003-halstead-visitor-race-condition.md). Both Halstead visitors are now
+  stateless: operators/operands are accumulated by a `HalsteadTokenCollector` created per `visit`
+  (`java-metrics-lib/src/main/java/org/b333vv/metric/library/javaparser/visitor/HalsteadTokenCollector.java`),
+  so nothing is shared between the parallel-stream workers. The traversal rules are now defined once
+  instead of being duplicated in the two visitors.
+  Evidence: `JavaParserHalsteadParallelDeterminismTest` asserts bit-identical class- and
+  method-level Halstead values across 100 repeated parallel runs over a 12-class / 36-method
+  fixture — it failed within a few runs on the pre-fix code and passes now. The pre-existing
+  `JavaParserHalsteadMetricVisitorsRegressionTest` (single-threaded expected values) passes
+  unchanged. Audit sweep: no other shared visitor keeps mutable instance state
+  (`JavaParserNumberOfChildrenMetricVisitor` and `JavaParserForeignDataProvidersMetricVisitor` hold
+  constructor-injected immutable class lists and are instantiated per class).
 
 ## Tracking Rule
 Close a debt item only when automated checks prove the replacement path is active and stable.
