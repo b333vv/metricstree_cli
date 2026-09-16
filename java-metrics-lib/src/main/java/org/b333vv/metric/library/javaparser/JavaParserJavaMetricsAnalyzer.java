@@ -234,7 +234,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         TypeSolver typeSolver = typeSolverFactory.create(
                 parsedUnits,
                 request.sourceRoots().stream().map(SourceRoot::path).toList(),
-                request.classpathEntries().stream().map(ClasspathEntry::path).filter(Files::isRegularFile).toList(),
+                resolveClasspathEntries(request, diagnostics),
                 getClass().getClassLoader());
         EnhancedJavaParserContext enhancedContext = enhancedContextBuilder.build(parsedUnits, typeSolver);
         Map<String, Path> sourcePathByQualifiedName = buildSourcePathIndex(parsedSourceUnits);
@@ -340,6 +340,42 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     }
 
     private static final int PARALLELISM = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+
+    /**
+     * Keeps the classpath entries that can actually back symbol resolution and reports every entry it
+     * drops.
+     *
+     * <p>Entries used to be filtered with {@code Files::isRegularFile} and no diagnostics, so a user
+     * passing {@code --classpath /some/classes-dir} had no way to learn why resolution did not
+     * improve — the metrics were simply understated (DEBT-03). Directories are still not resolved
+     * against; making that limitation visible is this method's job, supporting them is TASK-105.
+     */
+    private List<Path> resolveClasspathEntries(AnalysisRequest request, List<AnalysisDiagnostic> diagnostics) {
+        List<Path> usableEntries = new ArrayList<>();
+        for (ClasspathEntry entry : request.classpathEntries()) {
+            Path path = entry.path();
+            if (!Files.exists(path)) {
+                addClasspathWarning(diagnostics, path, "it does not exist");
+            } else if (!Files.isRegularFile(path)) {
+                addClasspathWarning(diagnostics, path, Files.isDirectory(path)
+                        ? "it is a directory, and directories are not resolved against yet (see TASK-105)"
+                        : "it is not a regular file");
+            } else if (!Files.isReadable(path)) {
+                addClasspathWarning(diagnostics, path, "it is not readable");
+            } else {
+                usableEntries.add(path);
+            }
+        }
+        return List.copyOf(usableEntries);
+    }
+
+    private static void addClasspathWarning(List<AnalysisDiagnostic> diagnostics, Path path, String reason) {
+        diagnostics.add(new AnalysisDiagnostic(
+                "CLASSPATH_PROBLEM",
+                AnalysisSeverity.WARNING,
+                "Ignoring classpath entry " + path + ": " + reason,
+                new SourceLocation(path, 1, 1)));
+    }
 
     /**
      * How long {@code analyze()} waits for a dedicated pool to drain before forcing it down.

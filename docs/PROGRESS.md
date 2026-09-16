@@ -1,5 +1,23 @@
 # what has been done
 
+### TASK-006 — Warn instead of silently dropping classpath entries (DEBT-03) — done
+
+- `analyze()` filtered classpath entries with `Files::isRegularFile` and said nothing, so
+  `--classpath build/classes` silently did nothing and the user had no way to know why resolution
+  did not improve. Extraction into `resolveClasspathEntries(...)` now emits a `CLASSPATH_PROBLEM`
+  WARNING per dropped entry, naming the path and the reason (does not exist / is a directory / not a
+  regular file / not readable). Valid jars proceed exactly as before.
+- `JavaParserAnalyzerClasspathDiagnosticsTest`: directory, missing, unreadable, valid-jar and
+  mixed-list cases (the mixed case asserts the valid jar is *not* mentioned), plus a POSIX
+  permission test guarded by an assumption because root ignores the permission bits. The "valid jar"
+  fixture is a structurally valid empty zip, so `JarTypeSolver` does not fail and print to `stderr`.
+- Verified end-to-end through the installed CLI: both a directory and a missing jar appear in the
+  JSON `diagnostics` array while the analysis still completes.
+- `docs/RUN.md` gained a "`--classpath` limitations" section documenting that directories are not
+  resolved against yet and pointing at TASK-105.
+- DEBT-03 is only *partially* closed: the observability half is done, the directory-support half
+  stays open until TASK-105.
+
 ## Quick wins: dead code and debt cleanup (2026-09-16)
 
 ### TASK-005 — Remove dead CompilationUnit retention (DEBT-05) — done

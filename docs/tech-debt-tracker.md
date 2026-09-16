@@ -1,11 +1,15 @@
 # Tech Debt Tracker
 
 ## Active Debt Items
-- **DEBT-03 — `--classpath` directories silently dropped.**
-  `JavaParserJavaMetricsAnalyzer` filters classpath entries with `Files::isRegularFile`
-  (~lines 207–211); directories vanish without diagnostics. Warning diagnostics planned in
-  [TASK-006](tasks/TASK-006-classpath-dirs-diagnostics.md); actual directory-backed
-  resolution in [TASK-105](tasks/TASK-105-typesolver-improvements.md).
+- **DEBT-03 — `--classpath` directories silently dropped.** *Diagnostics part resolved by
+  [TASK-006](tasks/TASK-006-classpath-dirs-diagnostics.md); directory support still open.*
+  `JavaParserJavaMetricsAnalyzer.resolveClasspathEntries` now reports a `CLASSPATH_PROBLEM` WARNING
+  (path + reason: missing / directory / not a regular file / not readable) for every dropped entry
+  instead of filtering with `Files::isRegularFile` and staying quiet. Evidence:
+  `JavaParserAnalyzerClasspathDiagnosticsTest` covers directory, missing, unreadable, valid-jar and
+  mixed-list cases, and the warning is visible end-to-end in the `analyze` JSON output.
+  **Still open:** directories are not actually resolved against — that is
+  [TASK-105](tasks/TASK-105-typesolver-improvements.md), which is what will close this item.
 - **DEBT-04 — Dead `HAS_METHOD_RULE` in `class-level-rules.json`.**
   `Condition` (`cli/CombinationDefinition.java`) has no `value` field, so the rule can
   never match; `CombinationDetector` swallows the failure. Fix planned in

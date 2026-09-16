@@ -44,11 +44,33 @@ java-metrics-cli analyze [--exclude-file=<path>] [--project-name=<name>]
 |--------|-------------|
 | `--source-root=<path>` | Source root scanned recursively for `.java` files |
 | `--source-file=<path>` | Explicit Java source file to analyze |
-| `--classpath=<path>` | Additional classpath entry for symbol resolution |
+| `--classpath=<path>` | Additional classpath entry for symbol resolution. Must be a readable **file** (a jar) — see below |
 | `--project-name=<name>` | Project name written to the resulting report |
 | `--metric=<code>` | Restrict output to specific metric codes (e.g., `LOC`, `NOC`) |
 | `--output-file=<path>` | Write JSON output to the specified file instead of stdout |
 | `--pretty` | Pretty-print JSON output |
+
+#### `--classpath` limitations
+
+Only readable **regular files** (jars) are added to the symbol solver. An entry that is a directory,
+does not exist, or is not readable is skipped — and because skipping used to be silent, every dropped
+entry now produces a `CLASSPATH_PROBLEM` **warning** in the report's `diagnostics` array:
+
+```json
+{
+  "code": "CLASSPATH_PROBLEM",
+  "severity": "WARNING",
+  "message": "Ignoring classpath entry /tmp/classes-out: it is a directory, and directories are not resolved against yet (see TASK-105)",
+  "location": { "path": "/tmp/classes-out", "startLine": 1, "endLine": 1 }
+}
+```
+
+**Directories are not resolved against yet.** Pointing `--classpath` at a `build/classes` directory
+does not improve resolution; it only produces the warning above. Directory-backed resolution is
+tracked as [TASK-105](tasks/TASK-105-typesolver-improvements.md). Until then, package the classes
+into a jar (or rely on the sources being inside `--source-root`) if resolution accuracy matters.
+
+The analysis always completes: a bad classpath entry degrades resolution, it never aborts the run.
 
 ### Exclusions
 
