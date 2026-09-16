@@ -19,11 +19,20 @@ import com.github.javaparser.resolution.TypeSolver;
 import com.github.javaparser.resolution.declarations.ResolvedFieldDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
+import com.github.javaparser.resolution.declarations.ResolvedTypeDeclaration;
+import com.github.javaparser.resolution.types.ResolvedReferenceType;
+import com.github.javaparser.resolution.types.ResolvedType;
 import org.b333vv.metric.library.core.AnalysisDiagnostic;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.AnalysisSeverity;
+import org.b333vv.metric.library.core.AnalyzedClass;
+import org.b333vv.metric.library.core.AnalyzedMethod;
 import org.b333vv.metric.library.core.ClassReport;
+import org.b333vv.metric.library.core.CrossClassMetricCalculator;
+import org.b333vv.metric.library.core.DeclaredField;
+import org.b333vv.metric.library.core.DeclaredMethod;
+import org.b333vv.metric.library.core.DependencySnapshot;
 import org.b333vv.metric.library.core.ExclusionConfig;
 import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.library.core.DerivedMetricCalculator;
@@ -35,9 +44,9 @@ import org.b333vv.metric.library.core.MetricSelection;
 import org.b333vv.metric.library.core.PackageReport;
 import org.b333vv.metric.library.core.ProjectReport;
 import org.b333vv.metric.library.core.ResolutionStats;
-import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.library.core.SourceRoot;
 import org.b333vv.metric.library.core.SourceUnit;
+import org.b333vv.metric.library.core.Visibility;
 import org.b333vv.metric.model.metric.value.Value;
 import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
@@ -58,7 +67,6 @@ import org.b333vv.metric.library.javaparser.visitor.type.JavaParserAccessToForei
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserCouplingBetweenObjectsMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserDataAbstractionCouplingMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserDepthOfInheritanceTreeMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserForeignDataProvidersMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserHalsteadClassMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserLackOfCohesionOfMethodsMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserLocalityOfAttributeAccessesMetricVisitor;
@@ -169,6 +177,12 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     private final AnalysisPhaseListener phaseListener;
     private final List<JavaParserClassMetricVisitor> classVisitors;
     private final List<JavaParserMethodMetricVisitor> methodVisitors;
+
+    /**
+     * The global pass. Not injected: it is stateless, has no collaborators, and is covered by its own
+     * tests, so a seam here would only add constructor parameters to every overload.
+     */
+    private final CrossClassMetricCalculator crossClassMetricCalculator = new CrossClassMetricCalculator();
 
     public JavaParserJavaMetricsAnalyzer() {
         this(
@@ -283,17 +297,28 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         // One tally for the whole run, shared by every collector, so the coverage reported at the end
         // describes this analysis rather than one class. Never reused between runs.
         ResolutionStats resolutionStats = new ResolutionStats();
-        List<AnalyzedClass> analyzedClasses = analyzeClasses(
+        List<ClassAnalysis> classAnalyses = analyzeClasses(
                 enhancedContext,
                 sourcePathByQualifiedName,
                 metricSelection,
                 diagnostics,
                 resolutionStats,
                 options.unresolvedSymbolDiagnosticCap());
+        List<AnalyzedClass> analyzedClasses = classAnalyses.stream()
+                .map(ClassAnalysis::analyzedClass)
+                .toList();
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.VISIT, System.nanoTime() - phaseStart);
 
         phaseStart = System.nanoTime();
-        List<PackageReport> packageReports = buildPackageReports(analyzedClasses, metricSelection);
+        // The global pass. Everything from here on reads snapshots, never an AST: the cross-class
+        // metrics are computed from what each class recorded about itself while it was being
+        // analysed. FDP cannot know it is undefined until every class has been seen, so its
+        // diagnostics belong here rather than to the per-class pass that produced the snapshot.
+        Map<String, Map<MetricCode, Value>> crossClassMetrics = calculateCrossClassMetrics(classAnalyses);
+        List<PackageReport> packageReports = buildPackageReports(
+                analyzedClasses, crossClassMetrics, metricSelection);
+        // The project-level metrics do not include NOC or FDP — neither is aggregated upwards — so
+        // this pass needs the snapshots but not the cross-class results.
         ProjectReport projectReport = buildProjectReport(
                 request.projectName(), packageReports, analyzedClasses, metricSelection, resolutionStats);
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.AGGREGATE, System.nanoTime() - phaseStart);
@@ -428,6 +453,16 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
      */
     private static final String SUPERTYPES_CONTEXT = "SUPERTYPES";
 
+    /**
+     * Metric contexts for the two cross-class metrics. They are real metric codes rather than the
+     * neutral {@code DEPENDENCIES}/{@code SUPERTYPES} above: a failure reported under them says that
+     * this particular metric is understated, which is exactly what a reader of the report needs to
+     * know, and it is what the visitors that used to compute these metrics reported.
+     */
+    private static final String NUMBER_OF_CHILDREN_CONTEXT = MetricCode.NOC.name();
+
+    private static final String FOREIGN_DATA_PROVIDERS_CONTEXT = MetricCode.FDP.name();
+
     private List<ParsedSourceUnit> parseSourceFiles(List<Path> sourceFiles, List<AnalysisDiagnostic> diagnostics) {
         ParserConfiguration parserConfig = EnhancedJavaParserContextBuilder.createParserConfiguration();
 
@@ -523,15 +558,14 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         return sourcePathByQualifiedName;
     }
 
-    private List<AnalyzedClass> analyzeClasses(
+    private List<ClassAnalysis> analyzeClasses(
             EnhancedJavaParserContext enhancedContext,
             Map<String, Path> sourcePathByQualifiedName,
             MetricSelection metricSelection,
             List<AnalysisDiagnostic> diagnostics,
             ResolutionStats resolutionStats,
             int unresolvedSymbolDiagnosticCap) {
-        List<ClassOrInterfaceDeclaration> allClassDeclarations = enhancedContext.getAllClassDeclarations();
-        List<ClassOrInterfaceDeclaration> sortedClassDeclarations = allClassDeclarations.stream()
+        List<ClassOrInterfaceDeclaration> sortedClassDeclarations = enhancedContext.getAllClassDeclarations().stream()
                 .sorted(Comparator.comparing(this::classSortKey))
                 .toList();
 
@@ -539,7 +573,6 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 sortedClassDeclarations.parallelStream()
                         .map(classDeclaration -> analyzeSingleClass(
                                 classDeclaration,
-                                allClassDeclarations,
                                 sourcePathByQualifiedName,
                                 metricSelection,
                                 diagnostics,
@@ -549,9 +582,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         );
     }
 
-    private AnalyzedClass analyzeSingleClass(
+    private ClassAnalysis analyzeSingleClass(
             ClassOrInterfaceDeclaration classDeclaration,
-            List<ClassOrInterfaceDeclaration> allClassDeclarations,
             Map<String, Path> sourcePathByQualifiedName,
             MetricSelection metricSelection,
             List<AnalysisDiagnostic> diagnostics,
@@ -561,6 +593,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         Path sourcePath = sourcePathByQualifiedName.getOrDefault(
                 qualifiedName,
                 sourcePathByQualifiedName.getOrDefault(fallbackQualifiedName(classDeclaration), Path.of(".")));
+        SourceLocation sourceLocation = toSourceLocation(classDeclaration, sourcePath);
         Map<MetricCode, Value> classMetrics = new EnumMap<>(MetricCode.class);
 
         // One collector per class: class- and method-level visitors of this class share its dedup
@@ -571,14 +604,20 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 diagnostics,
                 resolutionStats,
                 qualifiedName,
-                toSourceLocation(classDeclaration, sourcePath),
+                sourceLocation,
                 unresolvedSymbolDiagnosticCap);
 
         for (JavaParserClassMetricVisitor visitor : classVisitors) {
             visitor.visit(classDeclaration, classCollector);
         }
-        new JavaParserNumberOfChildrenMetricVisitor(allClassDeclarations).visit(classDeclaration, classCollector);
-        new JavaParserForeignDataProvidersMetricVisitor(allClassDeclarations).visit(classDeclaration, classCollector);
+
+        // NOC and FDP are computed in the global pass from snapshots, but the diagnostics they used to
+        // raise are per-class facts and stay here, in the same position in the collector's key
+        // sequence — and therefore in the same cap slots — as the visitors that raised them.
+        String resolvedName = resolveClassName(classDeclaration, classCollector);
+        // A class that does not resolve aborted its child count before it could look at its own
+        // supertypes, so the extra NOC-context report only applies when the class itself resolved.
+        String numberOfChildrenContext = resolvedName == null ? null : NUMBER_OF_CHILDREN_CONTEXT;
 
         List<AnalyzedMethod> analyzedMethods = classDeclaration.getMethods().stream()
                 .sorted(Comparator.comparing(this::methodSignature))
@@ -605,36 +644,58 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 .map(packageDeclaration -> packageDeclaration.getNameAsString())
                 .orElse("");
 
-        // The dependency snapshot and the supertype list are the last producers of diagnostics for
-        // this class, so they must run before the flush below. Flushing first would send their
-        // findings into an aggregation that has already been emitted — a silent loss, which is the
-        // very failure mode this work exists to remove.
-        DependencySnapshot dependencySnapshot = collectDependencySnapshot(classDeclaration, classCollector);
-        Set<String> directSuperTypes = collectDirectSuperTypes(classDeclaration, classCollector);
+        // The dependency snapshot is the last producer of diagnostics for this class, so it must run
+        // before the flush. The flush itself is deferred to the global pass: FDP is the one
+        // cross-class metric that can only be reported once every class has been seen, and it must
+        // reach this class's own collector to be deduplicated and capped with the rest of its
+        // diagnostics rather than in a tally of its own.
+        DependencySnapshot snapshot = collectDependencySnapshot(
+                classDeclaration, resolvedName, numberOfChildrenContext, classCollector);
 
-        // Emits the aggregated diagnostics for whatever hit the cap; must happen after every producer
-        // has run and before the report is assembled from the collected classes. Idempotent.
-        classCollector.flush();
+        AnalyzedClass analyzedClass = AnalyzedClass.builder()
+                .packageName(packageName)
+                .className(classDeclaration.getNameAsString())
+                .qualifiedName(qualifiedName)
+                .sourcePath(sourcePath)
+                .sourceLocation(sourceLocation)
+                .rawMetrics(classMetrics)
+                .methods(analyzedMethods)
+                .snapshot(snapshot)
+                .declaredMethods(collectDeclaredMethods(classDeclaration))
+                .declaredFields(collectDeclaredFields(classDeclaration))
+                .modifiers(
+                        classDeclaration.isInterface(),
+                        classDeclaration.isAbstract(),
+                        classDeclaration.isStatic(),
+                        classDeclaration.isPublic(),
+                        classDeclaration.isProtected(),
+                        classDeclaration.isPrivate())
+                .build();
 
-        return new AnalyzedClass(
-                packageName,
-                classDeclaration.getNameAsString(),
-                qualifiedName,
-                sourcePath,
-                toSourceLocation(classDeclaration, sourcePath),
-                filterMetrics(classMetrics, metricSelection),
-                classMetrics,
-                analyzedMethods,
-                dependencySnapshot,
-                directSuperTypes,
-                collectDeclaredMethods(classDeclaration),
-                collectDeclaredFields(classDeclaration),
-                classDeclaration.isInterface(),
-                classDeclaration.isAbstract(),
-                classDeclaration.isStatic(),
-                classDeclaration.isPublic(),
-                classDeclaration.isProtected(),
-                classDeclaration.isPrivate());
+        return new ClassAnalysis(analyzedClass, classCollector);
+    }
+
+    /**
+     * The class's own name as the symbol solver resolved it, or {@code null} when it did not resolve.
+     *
+     * <p>Every cross-class metric needs this: it is the key a class is found under in the inheritance
+     * and field-access graphs. A class the solver cannot name cannot be placed in either graph, which
+     * is why the metrics report it as undefined rather than as a class with no neighbours — the
+     * visitors did the same, and reported the class when it happened.
+     */
+    private String resolveClassName(ClassOrInterfaceDeclaration classDeclaration, AnalysisCollector collector) {
+        try {
+            String resolvedName = classDeclaration.resolve().getQualifiedName();
+            if (resolvedName == null || resolvedName.isBlank()) {
+                // Unreachable for a top-level or nested named class, but a declaration the solver
+                // cannot name is just as unplaceable as one it cannot resolve at all.
+                return null;
+            }
+            return resolvedName;
+        } catch (Exception unresolved) {
+            collector.warnUnresolvedType(NUMBER_OF_CHILDREN_CONTEXT, classDeclaration.getNameAsString(), classDeclaration);
+            return null;
+        }
     }
 
     private AnalyzedMethod buildMethodReport(
@@ -647,11 +708,62 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 methodDeclaration.getNameAsString(),
                 methodDeclaration.getParameters().size(),
                 toSourceLocation(methodDeclaration, sourcePath),
-                filterMetrics(methodMetrics, metricSelection));
+                metricSelection.filter(methodMetrics));
         return new AnalyzedMethod(report, methodMetrics);
     }
 
-    private List<PackageReport> buildPackageReports(List<AnalyzedClass> analyzedClasses, MetricSelection metricSelection) {
+    /**
+     * The global pass: the metrics that need more than one class, computed from snapshots once every
+     * class has been analysed, together with the diagnostics only they can raise.
+     *
+     * <p>Both metrics used to be computed inside the per-class pass by visitors that walked every
+     * other class's AST — O(classes²) in resolution work, with every AST pinned for the whole run.
+     * The snapshots record the same facts once, so the metrics are now an inversion of two graphs and
+     * this pass touches no AST at all.
+     *
+     * <p>It also owns the per-class {@code flush()}. FDP is the one diagnostic that cannot be raised
+     * until every class has been seen, so the collectors created by the per-class pass are still open
+     * here and are closed as this pass walks them — in the order the classes were analysed, so the
+     * diagnostics list stays deterministic.
+     *
+     * @return the cross-class metrics of every class, keyed by qualified name
+     */
+    private Map<String, Map<MetricCode, Value>> calculateCrossClassMetrics(List<ClassAnalysis> classAnalyses) {
+        List<AnalyzedClass> analyzedClasses = classAnalyses.stream()
+                .map(ClassAnalysis::analyzedClass)
+                .toList();
+        Map<String, Value> numberOfChildren = crossClassMetricCalculator.numberOfChildren(analyzedClasses);
+        Map<String, Value> foreignDataProviders = crossClassMetricCalculator.foreignDataProviders(analyzedClasses);
+
+        Map<String, Map<MetricCode, Value>> crossClassMetrics = new LinkedHashMap<>();
+        for (ClassAnalysis classAnalysis : classAnalyses) {
+            AnalyzedClass analyzedClass = classAnalysis.analyzedClass();
+            String qualifiedName = analyzedClass.qualifiedName();
+            Value children = numberOfChildren.getOrDefault(qualifiedName, Value.UNDEFINED);
+            Value providers = foreignDataProviders.getOrDefault(qualifiedName, Value.UNDEFINED);
+
+            Map<MetricCode, Value> metrics = new EnumMap<>(MetricCode.class);
+            metrics.put(MetricCode.NOC, children);
+            metrics.put(MetricCode.FDP, providers);
+            crossClassMetrics.put(qualifiedName, metrics);
+
+            if (providers == Value.UNDEFINED) {
+                // The visitor reported the class it happened to be computing when its scan failed, so
+                // the diagnostic names this class and points at its declaration — even though the
+                // field access that broke the scan usually belongs to a different one. Preserved as
+                // it was; see CrossClassMetricCalculator for why it is a wart.
+                classAnalysis.collector().warnUnresolvedType(
+                        FOREIGN_DATA_PROVIDERS_CONTEXT, analyzedClass.className(), null);
+            }
+            classAnalysis.collector().flush();
+        }
+        return crossClassMetrics;
+    }
+
+    private List<PackageReport> buildPackageReports(
+            List<AnalyzedClass> analyzedClasses,
+            Map<String, Map<MetricCode, Value>> crossClassMetrics,
+            MetricSelection metricSelection) {
         Map<String, List<AnalyzedClass>> classesByPackage = analyzedClasses.stream()
                 .collect(Collectors.groupingBy(
                         AnalyzedClass::packageName,
@@ -662,7 +774,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         for (Map.Entry<String, List<AnalyzedClass>> entry : classesByPackage.entrySet()) {
             String packageName = entry.getKey();
             for (AnalyzedClass analyzedClass : entry.getValue()) {
-                for (String dependencyPackage : analyzedClass.dependencySnapshot().packages()) {
+                for (String dependencyPackage : analyzedClass.snapshot().packages()) {
                     if (!dependencyPackage.equals(packageName)) {
                         afferentPackagesByPackage.computeIfAbsent(dependencyPackage, ignored -> new LinkedHashSet<>())
                                 .add(packageName);
@@ -691,7 +803,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                     .count();
 
             Set<String> efferentPackages = packageClasses.stream()
-                    .flatMap(analyzedClass -> analyzedClass.dependencySnapshot().packages().stream())
+                    .flatMap(analyzedClass -> analyzedClass.snapshot().packages().stream())
                     .filter(dependencyPackage -> !dependencyPackage.equals(packageName))
                     .collect(Collectors.toCollection(TreeSet::new));
             Set<String> afferentPackages = afferentPackagesByPackage.getOrDefault(packageName, Set.of());
@@ -737,10 +849,12 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             putMetric(metrics, PAMI, packageMaintainabilityIndex);
 
             List<ClassReport> classReports = packageClasses.stream()
-                    .map(analyzedClass -> analyzedClass.toReport(metricSelection))
+                    .map(analyzedClass -> analyzedClass.toReport(
+                            metricSelection,
+                            crossClassMetrics.getOrDefault(analyzedClass.qualifiedName(), Map.of())))
                     .sorted(Comparator.comparing(ClassReport::qualifiedName))
                     .toList();
-            packageReports.add(new PackageReport(packageName, filterMetrics(metrics, metricSelection), classReports));
+            packageReports.add(new PackageReport(packageName, metricSelection.filter(metrics), classReports));
         }
 
         return packageReports.stream()
@@ -823,11 +937,28 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         Double resolutionCoverage = coverage.isPresent() ? coverage.getAsDouble() : null;
 
         return new ProjectReport(
-                projectName, filterMetrics(projectMetrics, metricSelection), packageReports, resolutionCoverage);
+                projectName, metricSelection.filter(projectMetrics), packageReports, resolutionCoverage);
     }
 
+    /**
+     * Everything one class contributes to the cross-class pass, gathered while its AST is still in
+     * hand.
+     *
+     * <p>The order matters. The dependency walk runs first and the supertype walk after it, as they
+     * did before the snapshot existed, so the diagnostics they raise land in the collector in the same
+     * order — and therefore occupy the same cap slots. The field-access walk runs last and reports
+     * nothing: the visitor it feeds never reported these failures, it only reacted to them, and the
+     * same nodes are already reported under {@code DEPENDENCIES} above.
+     *
+     * @param resolvedName           the class's own resolved name, or {@code null} if it did not resolve
+     * @param numberOfChildrenContext the extra metric context to report a broken {@code extends} under,
+     *                               or {@code null}; NOC cannot count children without those edges
+     */
     private DependencySnapshot collectDependencySnapshot(
-            ClassOrInterfaceDeclaration classDeclaration, AnalysisCollector collector) {
+            ClassOrInterfaceDeclaration classDeclaration,
+            String resolvedName,
+            String numberOfChildrenContext,
+            AnalysisCollector collector) {
         Set<String> dependencyPackages = new LinkedHashSet<>();
         Set<String> dependencyClassNames = new LinkedHashSet<>();
         String ownPackage = classDeclaration.findCompilationUnit()
@@ -862,7 +993,85 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                         .map(ResolvedMethodDeclaration::declaringType)
                         .ifPresent(typeDeclaration -> addDependency(typeDeclaration, ownPackage, dependencyPackages, dependencyClassNames)));
 
-        return new DependencySnapshot(Set.copyOf(dependencyPackages), Set.copyOf(dependencyClassNames));
+        Set<String> directlyExtendedTypes = collectResolvedSuperTypes(
+                classDeclaration.getExtendedTypes(), numberOfChildrenContext, collector);
+        Set<String> directlyImplementedTypes = collectResolvedSuperTypes(
+                classDeclaration.getImplementedTypes(), null, collector);
+
+        AccessedFields accessedFields = collectAccessedFieldOwners(classDeclaration);
+
+        return new DependencySnapshot(
+                dependencyPackages,
+                dependencyClassNames,
+                directlyExtendedTypes,
+                directlyImplementedTypes,
+                accessedFields.owners(),
+                resolvedName,
+                accessedFields.hasUnresolvableAccess());
+    }
+
+    /**
+     * The resolved field accesses of one class, which is FDP's input.
+     *
+     * <p>Unlike every other resolution in this method's caller, this one reports nothing and counts
+     * nothing. The visitor FDP used to run resolved each access silently inside its own try, and the
+     * same nodes are already reported under {@code DEPENDENCIES}; reporting them again here would
+     * double the diagnostics for one broken field access.
+     *
+     * <p>An access that cannot be resolved is not skipped: it is remembered, because it makes FDP
+     * undefined for the whole project rather than merely understating it — see
+     * {@link CrossClassMetricCalculator#foreignDataProviders}.
+     */
+    private AccessedFields collectAccessedFieldOwners(ClassOrInterfaceDeclaration classDeclaration) {
+        Set<String> owners = new LinkedHashSet<>();
+        boolean hasUnresolvableAccess = false;
+        for (FieldAccessExpr fieldAccess : classDeclaration.findAll(FieldAccessExpr.class)) {
+            try {
+                ResolvedValueDeclaration resolved = fieldAccess.resolve();
+                ResolvedFieldDeclaration field = resolved.asField();
+                ResolvedTypeDeclaration declaringType = field.declaringType();
+                String owner = declaringType.getQualifiedName();
+                if (owner == null) {
+                    // A declaring type without a qualified name made the original comparison
+                    // dereference null, which its catch treated as an unresolvable access.
+                    hasUnresolvableAccess = true;
+                } else {
+                    owners.add(owner);
+                }
+            } catch (Exception unresolved) {
+                hasUnresolvableAccess = true;
+            }
+        }
+        return new AccessedFields(owners, hasUnresolvableAccess);
+    }
+
+    /**
+     * Resolves a class's {@code extends} or {@code implements} clause into the qualified names of the
+     * types it names. An entry the solver cannot resolve is skipped, and the type is reported.
+     *
+     * @param extraFailureContext a second metric context to report the same failure under, or
+     *                            {@code null}. NOC counts children by walking every class's
+     *                            {@code extends} clause, so a clause it cannot resolve hides a child;
+     *                            the visitor reported that under {@code NOC} as well as under
+     *                            {@code SUPERTYPES}.
+     */
+    private Set<String> collectResolvedSuperTypes(
+            List<ClassOrInterfaceType> superTypes, String extraFailureContext, AnalysisCollector collector) {
+        Set<String> resolvedNames = new LinkedHashSet<>();
+        for (ClassOrInterfaceType type : superTypes) {
+            Optional<ResolvedReferenceType> resolved = tryResolve(
+                    SUPERTYPES_CONTEXT, type.asString(), type, collector, type::resolve, ReferenceKind.TYPE)
+                    .filter(resolvedType -> resolvedType.isReferenceType())
+                    .map(ResolvedType::asReferenceType);
+            if (resolved.isPresent()) {
+                resolved.map(reference -> reference.getTypeDeclaration().orElseThrow().getQualifiedName())
+                        .filter(name -> name != null && !name.isBlank())
+                        .ifPresent(resolvedNames::add);
+            } else if (extraFailureContext != null) {
+                collector.warnUnresolvedType(extraFailureContext, type.asString(), type);
+            }
+        }
+        return Set.copyOf(resolvedNames);
     }
 
     private Optional<Value> sumMetric(List<AnalyzedClass> analyzedClasses, MetricCode metricCode) {
@@ -979,18 +1188,6 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 totalLocValue));
     }
 
-    private Map<MetricCode, Value> filterMetrics(Map<MetricCode, Value> metrics, MetricSelection metricSelection) {
-        if (metrics.isEmpty()) {
-            return Map.of();
-        }
-        Map<MetricCode, Value> filtered = new EnumMap<>(MetricCode.class);
-        metrics.entrySet().stream()
-                .filter(entry -> metricSelection.includes(entry.getKey()))
-                .sorted(Map.Entry.comparingByKey())
-                .forEach(entry -> filtered.put(entry.getKey(), entry.getValue()));
-        return Map.copyOf(filtered);
-    }
-
     private void putMetric(Map<MetricCode, Value> metrics, MetricCode metricCode, long value) {
         metrics.put(metricCode, Value.of(value));
     }
@@ -1061,7 +1258,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 }
             }
 
-            totalCoupling += (int) analyzedClass.dependencySnapshot().classNames().stream()
+            totalCoupling += (int) analyzedClass.snapshot().classNames().stream()
                     .filter(dependencyClassName -> !dependencyClassName.equals(analyzedClass.qualifiedName()))
                     .filter(dependencyClassName -> !ancestors.contains(dependencyClassName))
                     .count();
@@ -1281,24 +1478,6 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         }
     }
 
-    private Set<String> collectDirectSuperTypes(
-            ClassOrInterfaceDeclaration classDeclaration, AnalysisCollector collector) {
-        Set<String> directSuperTypes = new LinkedHashSet<>();
-        classDeclaration.getExtendedTypes().forEach(type ->
-                tryResolve(SUPERTYPES_CONTEXT, type.asString(), type, collector, type::resolve, ReferenceKind.TYPE)
-                        .filter(resolvedType -> resolvedType.isReferenceType() && resolvedType.asReferenceType().getTypeDeclaration().isPresent())
-                        .map(resolvedType -> resolvedType.asReferenceType().getTypeDeclaration().orElseThrow().getQualifiedName())
-                        .filter(name -> name != null && !name.isBlank())
-                        .ifPresent(directSuperTypes::add));
-        classDeclaration.getImplementedTypes().forEach(type ->
-                tryResolve(SUPERTYPES_CONTEXT, type.asString(), type, collector, type::resolve, ReferenceKind.TYPE)
-                        .filter(resolvedType -> resolvedType.isReferenceType() && resolvedType.asReferenceType().getTypeDeclaration().isPresent())
-                        .map(resolvedType -> resolvedType.asReferenceType().getTypeDeclaration().orElseThrow().getQualifiedName())
-                        .filter(name -> name != null && !name.isBlank())
-                        .ifPresent(directSuperTypes::add));
-        return Set.copyOf(directSuperTypes);
-    }
-
     private List<DeclaredMethod> collectDeclaredMethods(ClassOrInterfaceDeclaration classDeclaration) {
         return classDeclaration.getMethods().stream()
                 .map(methodDeclaration -> new DeclaredMethod(
@@ -1481,56 +1660,20 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         }
     }
 
-    private record AnalyzedMethod(MethodReport report, Map<MetricCode, Value> rawMetrics) {
+    /**
+     * One class's analysis result plus the collector that produced it.
+     *
+     * <p>The collector travels with the class because its {@code flush()} is deferred to the global
+     * pass: FDP is the one diagnostic that cannot be raised until every class has been seen, and it
+     * has to go through the same collector to share the class's dedup state and cap.
+     */
+    private record ClassAnalysis(AnalyzedClass analyzedClass, AnalysisCollector collector) {
     }
 
-    private record AnalyzedClass(
-            String packageName,
-            String className,
-            String qualifiedName,
-            Path sourcePath,
-            SourceLocation sourceLocation,
-            Map<MetricCode, Value> metrics,
-            Map<MetricCode, Value> rawMetrics,
-            List<AnalyzedMethod> methods,
-            DependencySnapshot dependencySnapshot,
-            Set<String> directSuperTypes,
-            List<DeclaredMethod> declaredMethods,
-            List<DeclaredField> declaredFields,
-            boolean isInterface,
-            boolean isAbstract,
-            boolean isStatic,
-            boolean isPublic,
-            boolean isProtected,
-            boolean isPrivate) {
-
-        ClassReport toReport(MetricSelection metricSelection) {
-            return new ClassReport(
-                    className,
-                    qualifiedName,
-                    sourcePath,
-                    sourceLocation,
-                    metrics,
-                    methods.stream()
-                            .map(AnalyzedMethod::report)
-                            .sorted(Comparator.comparing(MethodReport::signature))
-                            .toList());
-        }
-    }
-
-    private record DependencySnapshot(Set<String> packages, Set<String> classNames) {
-    }
-
-    private record DeclaredMethod(String signatureKey, Visibility visibility, boolean isStatic) {
-    }
-
-    private record DeclaredField(String name, Visibility visibility, boolean isPrivate) {
-    }
-
-    private enum Visibility {
-        PRIVATE,
-        PROTECTED,
-        PACKAGE_PRIVATE,
-        PUBLIC
+    /**
+     * FDP's input for one class: the resolved declaring types of its field accesses, and whether any
+     * of them could not be resolved.
+     */
+    private record AccessedFields(Set<String> owners, boolean hasUnresolvableAccess) {
     }
 }

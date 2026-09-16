@@ -11,74 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class JavaParserCrossFileResolutionMetricVisitorsRegressionTest extends JavaParserVisitorTestSupport {
 
-    @Test
-    void numberOfChildrenUsesQualifiedTypeResolutionAcrossPackages() {
-        EnhancedJavaParserContext context = buildContext("""
-                package alpha;
-                class Parent {}
-                """, """
-                package beta;
-                class Parent {}
-                """, """
-                package sample;
-                import alpha.Parent;
-                class ChildOne extends Parent {}
-                """, """
-                package sample;
-                class ChildTwo extends alpha.Parent {}
-                """, """
-                package sample;
-                class OtherChild extends beta.Parent {}
-                """);
 
-        JavaParserNumberOfChildrenMetricVisitor visitor =
-                new JavaParserNumberOfChildrenMetricVisitor(context.getAllClassDeclarations());
-
-        ClassOrInterfaceDeclaration alphaParent = findClass(context, "alpha.Parent");
-        MetricResult alphaResult = collectMetric(visitor, alphaParent);
-        assertEquals(MetricCode.NOC, alphaResult.code());
-        assertEquals(2L, alphaResult.value().longValue());
-
-        ClassOrInterfaceDeclaration betaParent = findClass(context, "beta.Parent");
-        MetricResult betaResult = collectMetric(visitor, betaParent);
-        assertEquals(MetricCode.NOC, betaResult.code());
-        assertEquals(1L, betaResult.value().longValue());
-    }
-
-    @Test
-    void foreignDataProvidersCountsDistinctClassesForInheritedFieldAccessAcrossFiles() {
-        EnhancedJavaParserContext context = buildContext("""
-                package core;
-                class Provider {
-                    public int shared;
-                }
-                """, """
-                package api;
-                class ProviderChild extends core.Provider {}
-                """, """
-                package users;
-                class ConsumerA {
-                    int read(core.Provider provider) {
-                        return provider.shared;
-                    }
-                }
-                """, """
-                package users;
-                class ConsumerB {
-                    int read(api.ProviderChild provider) {
-                        return provider.shared + provider.shared;
-                    }
-                }
-                """);
-
-        ClassOrInterfaceDeclaration provider = findClass(context, "core.Provider");
-        MetricResult result = collectMetric(
-                new JavaParserForeignDataProvidersMetricVisitor(context.getAllClassDeclarations()),
-                provider);
-
-        assertEquals(MetricCode.FDP, result.code());
-        assertEquals(2L, result.value().longValue());
-    }
 
     @Test
     void depthOfInheritanceCapsAtTwoForLeafAboveExternalBaseBoundary() {

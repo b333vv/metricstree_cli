@@ -34,10 +34,16 @@ metricstree_cli/
 
 **library/core** — Domain models and public API
 - `MetricCode` — Enum of all supported metric codes (LOC, NOC, NOM, CBO, etc.)
+- `MetricSelection` — Which metrics to emit; also the single place the report map is filtered and ordered
 - `AnalysisRequest` — Input request with source roots, files, classpath
 - `AnalysisOptions` — Metric selection, exclusions, and the unresolved-symbol diagnostic cap
 - `MetricReport` — Analysis result containing project, packages, classes, methods, diagnostics
 - `ClassReport` / `PackageReport` / `MethodReport` — Metric containers
+- `AnalyzedClass` / `AnalyzedMethod` — The per-class and per-method snapshot: raw metrics, declarations, and the class's dependency facts
+- `DependencySnapshot` — What one class records about its own relationships, for the global pass (see below)
+- `DeclaredMethod` / `DeclaredField` / `Visibility` — Declaration summaries a snapshot carries
+- `CrossClassMetricCalculator` — The global pass: NOC and FDP computed from snapshots alone
+- `ResolutionStats` — Attempt/failure tally behind `resolutionCoverage`
 - `SourceLocation` — Source code position information
 - `Value` — Numeric metric value (handles Long/Double)
 - `AnalysisDiagnostic` / `AnalysisSeverity` — Non-fatal problem reported alongside a report
@@ -52,6 +58,45 @@ metricstree_cli/
 **library/javaparser/visitor** — Metric visitors
 - `AnalysisCollector` — Delivers metric values *and* resolution problems for one analysed class
 - `JavaParserClassMetricVisitor` / `JavaParserMethodMetricVisitor` — Visitor base classes
+
+### Two passes: per-class facts, then global inversion
+
+Most metrics are local — a class's own LOC, CBO or LCOM needs nothing but that class. Two are not:
+NOC and FDP are defined over *other* classes. Those used to be visitors that, while analysing one
+class, walked every other class's AST, which is O(classes²) in resolution work and forces every AST
+to stay reachable for the whole run.
+
+The analysis is now explicitly two passes:
+
+```
+pass 1 — per class (AST, resolver, parallel)
+  visitors → raw per-class and per-method metrics
+  snapshot build → DependencySnapshot: own resolved name, direct supertypes split by edge kind,
+                   accessed field owners, whether any field access failed
+  → AnalyzedClass   (no AST reference; this is the whole contract with pass 2)
+
+pass 2 — global (no AST, no resolver, sequential)
+  CrossClassMetricCalculator over List<AnalyzedClass>
+  → NOC = |{ X : X.directlyExtendedTypes contains Q }|
+  → FDP = |{ X ≠ Q : X.accessedFieldOwners contains Q }|
+  → merged into each class's ClassReport by MetricSelection.filter
+```
+
+The snapshot is therefore the *interface* between the two passes, and it is public API in
+`library/core` precisely so that pass 2 — and future incremental analysis — can be built on it
+without the analyzer. Three properties of the snapshot are deliberate:
+
+- **The two inheritance edges are stored apart.** `directlyExtendedTypes` and
+  `directlyImplementedTypes` have `directSuperTypes()` as their union for the DIT/descendants
+  traversal, but NOC counts *children*, and an implementer is a descendant rather than a child.
+  Collapsing the edges would silently over-count NOC.
+- **`accessedFieldOwners` holds target types, not field names.** No metric needs the field name, so
+  storing it would only widen the contract.
+- **`resolvedName` is nullable and `hasUnresolvableFieldAccess` is explicit.** "The solver could not
+  name this class" and "the field-access walk met something unresolvable" are the two ways the
+  snapshot can be incomplete, and both metrics report `Value.UNDEFINED` rather than a number when
+  they are set — see ADR `docs/adr/0001-analyzed-class-snapshot.md`, which also records the
+  inherited FDP behaviour this reproduces and the `resolutionCoverage` consequence.
 
 ### Diagnostics
 
@@ -105,7 +150,10 @@ Three properties are load-bearing and tested:
   and flushes the class collector only after the dependency snapshot and supertype list, which are the
   last producers for a class. Getting this order wrong does not throw — the excess simply lands in an
   aggregation that has already been emitted and disappears, which is the failure mode this whole
-  mechanism exists to prevent.
+  mechanism exists to prevent. Since the global pass runs last, a class collector is kept alongside
+  its `AnalyzedClass` and flushed only once NOC/FDP are known, so that FDP's own diagnostics go
+  through the same dedup and cap; the collectors are flushed in analysis order to keep the list
+  deterministic.
 
 #### What is worth reporting
 
@@ -117,11 +165,13 @@ cannot be acted on is noise. Two consequences are visible in the code:
   while being a perfectly good *type*; those must not be reported, and the collector checks before
   reporting. Coupling metrics are the mirror case: there the missing type really is missing from the
   number, so it is reported.
-- A visitor that scans classes other than the one being analysed must attribute a failure to the
-  class it belongs to, or the report grows with project size for no added information. `NOC` scans
-  every class to count children and therefore meets each broken supertype once per class analysed; it
-  reports only when the declaring class is the one under analysis (see DEBT-09 in the tech-debt
-  tracker for the volume this still leaves at project level).
+- A failure is attributed to the class that declares the broken thing, not to every class whose
+  analysis happened to walk past it. `NOC` counts children by looking at other classes' `extends`
+  clauses, so a broken supertype could be met once per class analysed — on the benchmark corpus that
+  was 34 323 diagnostics for 20 distinct facts. The snapshot is built once per class, so the failure
+  is now met exactly once, while the declaring class is being analysed, and is reported there and
+  nowhere else. The same rule is why the global pass reports FDP's `UNDEFINED` per class rather than
+  re-deriving a shared cause: the collector's dedup key is per class.
 
 ### Symbol resolution precedence
 
@@ -187,7 +237,8 @@ java-metrics validate -s <source> -t <thresholds.json> -o <report.json> [--stric
 
 1. CLI parses arguments → creates `AnalysisRequest`
 2. `JavaMetricsAnalyzer.analyze()` processes Java sources
-3. JavaParser visits AST, computes metrics
-4. Results returned as `MetricReport` tree
-5. For `analyze`: `MetricReportJsonWriter` serializes to JSON
-6. For `validate`: Compare metrics against thresholds, produce validation report
+3. **Pass 1 (per class):** JavaParser visits the AST, computes local metrics, builds the class's `DependencySnapshot`
+4. **Pass 2 (global):** `CrossClassMetricCalculator` inverts the snapshots into NOC/FDP
+5. Results assembled into an `AnalyzedClass` per class, then folded into the `MetricReport` tree
+6. For `analyze`: `MetricReportJsonWriter` serializes to JSON
+7. For `validate`: Compare metrics against thresholds, produce validation report

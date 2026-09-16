@@ -79,6 +79,12 @@
   trustworthy — but it does not make the array shorter, so **the project-level cap is still open** and
   is no longer claimed by any task. It is a reporting-policy decision: how many diagnostics of one
   code a reader wants before the rest become an aggregate.
+  TASK-202 (2026-09-16) removed the other NOC amplifier for good: with the AST-walking scan retired,
+  the broken-supertype failure is met once, while its declaring class is analysed, instead of once per
+  class. On the benchmark corpus `NOC` went 33 → 20 diagnostics. It also shifted the FDP count
+  (2,273 → 2,078) and the shared contexts (`DEPENDENCIES` 1,674 → 1,856, `SUPERTYPES` 142 → 152) for
+  a net 121,029 → 121,066 — the total barely moved, which confirms the array is bounded by the
+  per-class cap rather than by any single amplifier. **The project-level cap remains the fix.**
 
 ## Resolved Debt Items
 - **DEBT-04 — Dead `HAS_METHOD_RULE` in `class-level-rules.json`.** Resolved by
@@ -120,8 +126,9 @@
   fixture — it failed within a few runs on the pre-fix code and passes now. The pre-existing
   `JavaParserHalsteadMetricVisitorsRegressionTest` (single-threaded expected values) passes
   unchanged. Audit sweep: no other shared visitor keeps mutable instance state
-  (`JavaParserNumberOfChildrenMetricVisitor` and `JavaParserForeignDataProvidersMetricVisitor` hold
-  constructor-injected immutable class lists and are instantiated per class).
+  (`JavaParserNumberOfChildrenMetricVisitor` and `JavaParserForeignDataProvidersMetricVisitor` held
+  constructor-injected immutable class lists and were instantiated per class — both classes were
+  deleted by TASK-202, which is why that audit can no longer be repeated against them).
 - **DEBT-02 — ForkJoinPool leak.** Resolved by
   [TASK-004](tasks/TASK-004-forkjoinpool-lifecycle.md). Both phases now run through a single
   `runInDedicatedPool(Supplier<T>)` helper in `JavaParserJavaMetricsAnalyzer` that always tears the

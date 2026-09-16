@@ -1,5 +1,87 @@
 # what has been done
 
+## Phase 2: the snapshot becomes the global-analysis contract (2026-09-16)
+
+### TASK-202 — `DependencySnapshot` enrichment for AST-free global metrics — done
+
+NOC and FDP were the last two metrics that could not be computed from a class's own facts. Each was a
+visitor that, while analysing one class, walked **every other class's AST**: NOC resolved every
+`extends` clause in the project to count one class's children, FDP walked every `FieldAccessExpr` in
+the project to count one class's providers. Both are O(classes²) in resolution work and both kept the
+whole project's ASTs reachable for the entire run — the exact obstacle road-map Phase 2 has to remove,
+and the risk ("global metric accuracy") it named. Both visitors are now **deleted**.
+
+**The two-pass architecture.** Pass 1 walks one class's AST and records facts about it; pass 2 inverts
+those facts. The interface between them is the snapshot, now public API in `library/core` rather than
+a private record nested in the analyzer:
+
+- `AnalyzedClass` — a final class with a nested `Builder` (17 facts) rather than a record, because
+  most facts are optional and a record with 17 components is not a constructor anyone can call
+  correctly. It carries the raw metric map, the per-method results, the declaration summaries
+  (`DeclaredMethod` / `DeclaredField` / `Visibility`) and the `DependencySnapshot`, and exposes
+  `toReport(metricSelection, crossClassMetrics)` as the one place a `ClassReport` is assembled.
+- `DependencySnapshot` — what one class records about its own relationships: `packages`,
+  `classNames`, `directlyExtendedTypes`, `directlyImplementedTypes`, `accessedFieldOwners`,
+  `resolvedName`, `hasUnresolvableFieldAccess`.
+- `CrossClassMetricCalculator` (new) — pass 2, pure and AST-free: takes `List<AnalyzedClass>`, returns
+  `Map<String, Value>` per metric. It has no dependency on the analyzer, the parser or the resolver.
+- `MetricSelection.filter(Map<MetricCode, Value>)` — the report map's filtering and ordering moved out
+  of the analyzer's private `filterMetrics`, so both passes and the tests share one definition.
+
+**Four decisions worth recording** (full reasoning in [ADR 0001](adr/0001-analyzed-class-snapshot.md)):
+
+- **NOC counts `extends` only.** `|{ X ∈ allClasses : X.extends Q }|` — an implementer is a
+  *descendant*, not a *child*. This is why the snapshot keeps the two inheritance edges **apart** and
+  offers `directSuperTypes()` as their union for the DIT/descendants traversal: the union is right for
+  DIT and wrong for NOC, so collapsing the edges would silently over-count children.
+- **The FDP "poisoned scan" is reproduced, not fixed.** The retired visitor wrapped its *entire*
+  cross-class walk in one `try`, so the first unresolvable field access abandoned the provider set for
+  whichever class was under analysis — while skipping the class it was computing for. Net effect: one
+  unresolvable field access anywhere makes FDP `UNDEFINED` for every class except the one that
+  declares it. That is a wart, and fixing it is a *value change* across many classes; mixing a
+  semantic fix into an equivalence-preserving refactor would have made both unverifiable. It is
+  reproduced exactly, pinned by tests, and left to a follow-up that can change values on its own terms.
+- **The two metrics' diagnostics are attributed to NOC/FDP, not to the shared contexts.** The
+  failures the scans used to meet are now met once, during the snapshot build, and reported under
+  `MetricCode.NOC` / `MetricCode.FDP` so TASK-104's structured `metricCode` field keeps its meaning
+  instead of going null.
+- **The class collector is flushed in pass 2, not pass 1.** FDP's `UNDEFINED` cannot be known until
+  every class has been seen, but its diagnostic must still go through the class's own collector to
+  share that class's dedup and cap. `analyzeSingleClass` therefore returns an `AnalyzedClass` *and*
+  its collector, and `calculateCrossClassMetrics` flushes them in analysis order so the list stays
+  deterministic.
+
+**Equivalence was measured before the code was touched**, because "same values" is the acceptance
+criterion and a refactor this size cannot be trusted from unit tests alone. Baselines were captured
+from the pre-change build on two corpora:
+
+| Corpus | NOC/FDP value diffs | `resolutionCoverage` | Diagnostics | Wall time |
+|--------|--------------------|----------------------|-------------|-----------|
+| Golden fixture | 0 (one-line golden diff: coverage only) | `0.9522184300341296` → `0.9467680608365019` | identical | — |
+| Benchmark (4 074 files / 4 020 classes) | **0 across all 4 020 classes** | `0.9222126026432128` → `0.6520965502196913` | 121 029 → 121 066 | **58 s → 32 s** |
+
+Two purpose-built fixtures (`/tmp/xclass-clean`, `/tmp/xclass-poisoned`) were needed because the
+benchmark corpus's FDP is `UNDEFINED` for *all* 4 020 classes — the poison wart dominates — so the
+corpus cannot discriminate a correct FDP from a broken one. On both fixtures every NOC/FDP value and
+every NOC/FDP diagnostic is identical; only the coverage moved, by exactly the resolution attempts the
+removed scans used to contribute.
+
+**The coverage drop is a semantic consequence, not a regression.** The O(classes²) scans counted a
+great many *successful* resolutions — every class resolving every other class's supertypes and field
+accesses — and those attempts are gone. TASK-104's own definition says `resolutionCoverage` describes
+*this analysis* rather than the classpath, and the same project analysed by the same rules now
+performs fewer resolution operations, so the number correctly reports that. **Every metric value and
+every diagnostic is unchanged; only the tally moved.** A CI threshold calibrated against the old
+value must be recalibrated — recorded in the ADR.
+
+- Tests: `CrossClassMetricCalculatorTest` (11), `AnalyzedClassTest` (10), `DependencySnapshotTest` (8)
+  and `CrossClassMetricPipelineTest` (9, end-to-end through the analyzer over real files) replace the
+  two retired visitors' assertions. The four visitor suites that covered NOC/FDP lost exactly those
+  cases, not their other coverage.
+- `./gradlew check` green: 301 tests, 0 failures, 1 intentional skip.
+- `analyze.json` golden regenerated: **one line changed** — `resolutionCoverage` only. Every metric
+  value and all 12 diagnostics are byte-identical.
+
 ## Phase 1: classpath directories, module descriptors, solver precedence (2026-09-16)
 
 ### TASK-105 — TypeSolver: directories, `module-info`, fallback policy — done

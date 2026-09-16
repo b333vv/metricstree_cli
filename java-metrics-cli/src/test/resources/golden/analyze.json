@@ -1,7 +1,7 @@
 {
   "project" : {
     "projectName" : "golden-project",
-    "resolutionCoverage" : 0.9522184300341296,
+    "resolutionCoverage" : 0.9467680608365019,
     "metrics" : {
       "PRHVL" : "344.988",
       "PRHD" : "28.3167",

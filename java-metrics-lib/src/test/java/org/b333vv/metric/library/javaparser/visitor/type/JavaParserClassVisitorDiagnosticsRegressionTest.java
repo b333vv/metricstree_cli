@@ -103,22 +103,6 @@ class JavaParserClassVisitorDiagnosticsRegressionTest extends JavaParserVisitorT
                 lastDiagnosticSummaries());
     }
 
-    @Test
-    void foreignDataProvidersReportsTheClassItCouldNotResolveAndKeepsUndefined() {
-        ClassOrInterfaceDeclaration declaration = parseFirstClass("""
-                class ProviderSubject {
-                    int value;
-                }
-                """);
-
-        MetricResult result = collectMetric(
-                new JavaParserForeignDataProvidersMetricVisitor(List.of(declaration)), declaration);
-
-        assertEquals(MetricCode.FDP, result.code());
-        assertSame(Value.UNDEFINED, result.value());
-        assertEquals(List.of("UNRESOLVED_TYPE [FDP] Could not resolve type 'ProviderSubject'"),
-                lastDiagnosticSummaries());
-    }
 
     @Test
     void localityOfAttributeAccessesReportsTheClassItCouldNotResolveAndKeepsUndefined() {
@@ -200,50 +184,7 @@ class JavaParserClassVisitorDiagnosticsRegressionTest extends JavaParserVisitorT
                 lastDiagnosticSummaries());
     }
 
-    @Test
-    void numberOfChildrenReportsTheClassItCouldNotResolveAndKeepsUndefined() {
-        ClassOrInterfaceDeclaration declaration = parseFirstClass("""
-                class ParentSubject {
-                }
-                """);
 
-        MetricResult result = collectMetric(
-                new JavaParserNumberOfChildrenMetricVisitor(List.of(declaration)), declaration);
-
-        assertEquals(MetricCode.NOC, result.code());
-        assertSame(Value.UNDEFINED, result.value());
-        assertEquals(List.of("UNRESOLVED_TYPE [NOC] Could not resolve type 'ParentSubject'"),
-                lastDiagnosticSummaries());
-    }
-
-    @Test
-    void numberOfChildrenAttributesABrokenSupertypeToTheClassThatDeclaresIt() {
-        // Counting children means scanning every class in the project, so the same broken supertype is
-        // met once per class analysed. It must be reported once, for the class that declares it —
-        // otherwise a single broken supertype yields one diagnostic per class in the project.
-        EnhancedJavaParserContext context = buildContext("""
-                package sample;
-                class Child extends MissingBase {
-                }
-                """, """
-                package sample;
-                class Unrelated {
-                    int value;
-                }
-                """);
-        List<ClassOrInterfaceDeclaration> allClasses = context.getAllClassDeclarations();
-
-        collectMetric(new JavaParserNumberOfChildrenMetricVisitor(allClasses),
-                findClass(context, "sample.Unrelated"));
-        assertTrue(lastDiagnostics().isEmpty(),
-                () -> "a class that merely scans Child must not report Child's supertype, got "
-                        + lastDiagnosticSummaries());
-
-        collectMetric(new JavaParserNumberOfChildrenMetricVisitor(allClasses),
-                findClass(context, "sample.Child"));
-        assertEquals(List.of("UNRESOLVED_TYPE [NOC] Could not resolve type 'MissingBase'"),
-                lastDiagnosticSummaries());
-    }
 
     @Test
     void responseForClassReportsEachMethodItCouldNotResolve() {

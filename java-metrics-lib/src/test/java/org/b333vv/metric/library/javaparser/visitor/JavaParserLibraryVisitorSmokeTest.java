@@ -7,13 +7,9 @@ import org.b333vv.metric.library.core.MetricResult;
 import org.b333vv.metric.library.javaparser.EnhancedJavaParserContext;
 import org.b333vv.metric.library.javaparser.visitor.method.JavaParserMcCabeCyclomaticComplexityMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.support.JavaParserVisitorTestSupport;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserForeignDataProvidersMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfAttributesMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfChildrenMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserWeightedMethodCountMetricVisitor;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -93,54 +89,5 @@ class JavaParserLibraryVisitorSmokeTest extends JavaParserVisitorTestSupport {
 
         assertEquals(MetricCode.NOA, result.code());
         assertEquals(3L, result.value().longValue());
-    }
-
-    @Test
-    void numberOfChildrenCountsDirectExtenders() {
-        EnhancedJavaParserContext context = buildContext("""
-                package sample;
-
-                class Parent {}
-                class FirstChild extends Parent {}
-                class SecondChild extends Parent {}
-                """);
-
-        List<ClassOrInterfaceDeclaration> allClasses = context.getAllClassDeclarations();
-        ClassOrInterfaceDeclaration declaration = findClass(context, "sample.Parent");
-        MetricResult result = collectClassMetric(new JavaParserNumberOfChildrenMetricVisitor(allClasses), declaration);
-
-        assertEquals(MetricCode.NOC, result.code());
-        assertEquals(2L, result.value().longValue());
-    }
-
-    @Test
-    void foreignDataProvidersCountsDistinctClasses() {
-        EnhancedJavaParserContext context = buildContext("""
-                package sample;
-
-                class Provider {
-                    int shared;
-                }
-
-                class ConsumerA {
-                    int read(Provider provider) {
-                        return provider.shared;
-                    }
-                }
-
-                class ConsumerB {
-                    int read(Provider provider) {
-                        return provider.shared;
-                    }
-                }
-                """);
-
-        List<ClassOrInterfaceDeclaration> allClasses = context.getAllClassDeclarations();
-        ClassOrInterfaceDeclaration declaration = findClass(context, "sample.Provider");
-        MetricResult result = collectClassMetric(new JavaParserForeignDataProvidersMetricVisitor(allClasses),
-                declaration);
-
-        assertEquals(MetricCode.FDP, result.code());
-        assertEquals(2L, result.value().longValue());
     }
 }

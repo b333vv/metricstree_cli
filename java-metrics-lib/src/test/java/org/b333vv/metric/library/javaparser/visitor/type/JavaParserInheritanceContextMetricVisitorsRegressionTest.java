@@ -51,54 +51,5 @@ class JavaParserInheritanceContextMetricVisitorsRegressionTest extends JavaParse
         assertEquals(2L, noo.value().longValue());
     }
 
-    @Test
-    void numberOfChildrenCountsDirectDescendantsOnly() {
-        EnhancedJavaParserContext context = buildContext("""
-                package sample;
 
-                class Parent {}
-                class FirstChild extends Parent {}
-                class SecondChild extends Parent {}
-                class GrandChild extends FirstChild {}
-                """);
-
-        ClassOrInterfaceDeclaration declaration = findClass(context, "sample.Parent");
-        MetricResult result = collectMetric(
-                new JavaParserNumberOfChildrenMetricVisitor(context.getAllClassDeclarations()),
-                declaration);
-
-        assertEquals(MetricCode.NOC, result.code());
-        assertEquals(2L, result.value().longValue());
-    }
-
-    @Test
-    void foreignDataProvidersCountsDistinctReferencingClasses() {
-        EnhancedJavaParserContext context = buildContext("""
-                package sample;
-
-                class Provider {
-                    public int shared;
-                }
-
-                class ConsumerA {
-                    int read(Provider provider) {
-                        return provider.shared;
-                    }
-                }
-
-                class ConsumerB {
-                    int read(Provider provider) {
-                        return provider.shared + provider.shared;
-                    }
-                }
-                """);
-
-        ClassOrInterfaceDeclaration declaration = findClass(context, "sample.Provider");
-        MetricResult result = collectMetric(
-                new JavaParserForeignDataProvidersMetricVisitor(context.getAllClassDeclarations()),
-                declaration);
-
-        assertEquals(MetricCode.FDP, result.code());
-        assertEquals(2L, result.value().longValue());
-    }
 }
