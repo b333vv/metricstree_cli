@@ -1,0 +1,7 @@
+{
+  "WMC": { "min": 0, "max": 100 },
+  "NOM": { "min": 0, "max": 1 },
+  "DIT": { "min": 0, "max": 5 },
+  "CBO": { "max": 0 },
+  "NCSS": { "min": 0, "max": 40 }
+}

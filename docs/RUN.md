@@ -281,3 +281,52 @@ Detect with both class and package rules, plus exclusions:
 ```bash
 java-metrics-cli detect -s src/main/java --class-rules rules.json --package-rules pkg-rules.json -o report.json --exclude-file exclusions.yml
 ```
+
+## JSON Contract Golden Tests
+
+The JSON output of `analyze`, `validate` and `detect` is locked by golden (snapshot) tests in
+`JsonContractGoldenTest` (`java-metrics-cli/src/test/java/org/b333vv/metric/cli/`). They run the real
+pipeline in-process over the synthetic fixture project and compare the result with checked-in files.
+
+| Path | Purpose |
+|------|---------|
+| `java-metrics-cli/src/test/resources/golden-project/src/` | Fixture project: inheritance, interfaces, static calls, nested/inner classes, one deliberately unresolvable reference, packages `a` and `a.b` |
+| `java-metrics-cli/src/test/resources/golden-config/` | Inputs for the fixture: `thresholds.json`, `class-rules.json`, `package-rules.json` |
+| `java-metrics-cli/src/test/resources/golden/` | Checked-in goldens: `analyze.json`, `validate.json`, `detect.json` |
+
+Run them as part of the normal test suite:
+
+```bash
+./gradlew :java-metrics-cli:test
+```
+
+### Regenerating the golden files
+
+Regeneration is an **explicit developer action** and must be reviewed in the PR diff like any other
+code change — a golden that nobody looks at turns this suite into a rubber stamp:
+
+```bash
+./gradlew :java-metrics-cli:test --tests '*JsonContractGoldenTest' -Dgoldens.update=true
+```
+
+This rewrites `java-metrics-cli/src/test/resources/golden/*.json` and passes. The `-D` switch is
+forwarded to the test JVM by the `test` task in `java-metrics-cli/build.gradle.kts`;
+`-Pgoldens.update=true` works as well.
+
+If the flag is **not** set, a missing or changed golden fails the test with the first differing
+lines (`golden:` vs `actual:`) so the change is visible in CI without opening the report.
+
+### Why the output is deterministic
+
+Two normalisations keep the comparison stable across machines:
+
+- **Absolute paths** — the path of the fixture project is replaced with the `<GOLDEN_PROJECT>`
+  placeholder and path separators are normalised to `/`, so the checkout location and the operating
+  system do not matter.
+- **Locale** — metric values are strings produced by `Value.toString()`, which formats doubles with
+  a `DecimalFormat` built from the default locale. The `test` task pins `user.language=en` /
+  `user.country=US`; otherwise a Russian locale would emit `"53,8887"` instead of `"53.8887"`. The
+  underlying contract defect is tracked as DEBT-07 in `docs/tech-debt-tracker.md`.
+
+Everything else is compared verbatim; JSON is only pretty-printed (key order and values preserved)
+to keep the golden files and failure diffs readable.

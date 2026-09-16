@@ -51,6 +51,25 @@ application {
 
 tasks.test {
     useJUnitPlatform()
+
+    // Metric values are serialized as strings produced by Value.toString(), which formats doubles
+    // with a DecimalFormat created from the default locale (see DEBT-07). Pinning the locale keeps
+    // the JSON contract goldens reproducible on machines with a non-English locale.
+    systemProperty("user.language", "en")
+    systemProperty("user.country", "US")
+
+    // Golden (snapshot) tests of the JSON output contract resolve their fixtures from the source
+    // tree, so the module directory is passed explicitly instead of relying on the working
+    // directory. See org.b333vv.metric.cli.JsonContractGoldenTest.
+    systemProperty("goldenCliProjectDir", layout.projectDirectory.asFile.absolutePath)
+
+    // Regeneration of the golden files is an explicit developer action:
+    //   ./gradlew :java-metrics-cli:test -Dgoldens.update=true
+    // Gradle does not forward command-line -D properties to test JVMs, so do it here.
+    providers.gradleProperty("goldens.update")
+            .orElse(providers.systemProperty("goldens.update"))
+            .orNull
+            ?.let { systemProperty("goldens.update", it) }
 }
 
 tasks.register<Test>("integrationTest") {

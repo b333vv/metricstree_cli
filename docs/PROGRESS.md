@@ -1,5 +1,51 @@
 # what has been done
 
+## Stage 0 safety net: JSON contract goldens + DEBT-01 fix (2026-09-16)
+
+### TASK-003 — Halstead visitor race condition (DEBT-01) — done, pulled forward
+
+TASK-001's acceptance criteria ("golden tests green in CI", "the golden project must produce
+deterministic output") turned out to be unreachable on the current code: the golden comparison failed
+2 out of 6 runs, and the diff was always the Halstead family (PRHVL/PRHD/PRCHL/PRCHEF/PRCHVC/PRCHER,
+PAHVL/PAHD/…, CHVL/CHD/…, HVL/HD/…) — exactly DEBT-01. TASK-003 was therefore pulled forward (the
+implementation plan allows quick wins to be pulled forward at any time).
+
+- New `HalsteadTokenCollector` (`java-metrics-lib/.../javaparser/visitor/`) — a per-visit accumulator
+  (`VoidVisitorAdapter<Void>`) created for each class/method visit. The traversal rules (28 node
+  types) are now defined once instead of being duplicated in both Halstead visitors.
+- `JavaParserHalsteadClassMetricVisitor` and `JavaParserHalsteadMethodMetricVisitor` are now
+  stateless (262 → 45 lines each); nothing is shared between parallel-stream workers.
+- New `JavaParserHalsteadParallelDeterminismTest` — 12 classes / 36 methods analyzed 100 times at
+  high parallelism, comparing Halstead values via `doubleToRawLongBits`. Verified to fail within a
+  few runs against the pre-fix code and to pass now.
+- Existing single-threaded `JavaParserHalsteadMetricVisitorsRegressionTest` values unchanged.
+- Audit sweep: no other shared visitor keeps mutable instance state
+  (`JavaParserNumberOfChildrenMetricVisitor`, `JavaParserForeignDataProvidersMetricVisitor` hold
+  constructor-injected immutable class lists and are instantiated per class).
+- `docs/tech-debt-tracker.md`: DEBT-01 moved to Resolved.
+
+### TASK-001 — JSON contract golden tests — done
+
+- Fixture project `java-metrics-cli/src/test/resources/golden-project/src/` — 6 files / 8 classes
+  covering inheritance, interfaces, static calls, nested + inner classes, one deliberately
+  unresolvable reference (`a.Unresolvable` → `missing.dependency.AbsentService`) and packages `a`
+  and `a.b`.
+- Fixture inputs `java-metrics-cli/src/test/resources/golden-config/` — `thresholds.json` (mixed
+  PASSED/FAILED, plus a `max`-only entry pinning the `Double.MIN_VALUE` default),
+  `class-rules.json` (matched, unmatched, AND-combined and unknown-metric rules),
+  `package-rules.json`.
+- `JsonContractGoldenTest` runs all three commands in-process over the fixture and compares against
+  `src/test/resources/golden/{analyze,validate,detect}.json`; 8 qualified names are asserted first so
+  the fixture cannot silently degrade into an empty report.
+- Regeneration is an explicit switch: `-Dgoldens.update=true` (forwarded to the test JVM from
+  `java-metrics-cli/build.gradle.kts`), documented in `docs/RUN.md` and the test class javadoc.
+- Determinism: absolute paths are canonicalised to `<GOLDEN_PROJECT>` with `/` separators, and the
+  `test` task pins `user.language=en` / `user.country=US` (see DEBT-07). 15/15 consecutive
+  comparison runs green after the DEBT-01 fix.
+- New finding registered as DEBT-07: metric values are formatted with a locale-dependent
+  `DecimalFormat`, so the same input yields `"312,7522"` on a Russian locale and `"312.7522"` on an
+  English one — a real hole in the "stable JSON schema for CI" goal. Fix belongs to TASK-302.
+
 ## Road-map implementation planning (2026-09-08)
 
 Documentation-only session (no code changes):

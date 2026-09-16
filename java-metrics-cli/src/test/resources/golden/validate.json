@@ -1,0 +1,286 @@
+{
+  "status" : "WARNING",
+  "results" : [ {
+    "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
+    "metric" : "WMC",
+    "value" : 4.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 100.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
+    "metric" : "DIT",
+    "value" : 1.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 5.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
+    "metric" : "CBO",
+    "value" : 3.0,
+    "expectedMin" : 4.9E-324,
+    "expectedMax" : 0.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
+    "metric" : "NOM",
+    "value" : 4.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 1.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
+    "metric" : "NCSS",
+    "value" : 10.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 40.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
+    "metric" : "WMC",
+    "value" : 4.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 100.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
+    "metric" : "DIT",
+    "value" : 2.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 5.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
+    "metric" : "CBO",
+    "value" : 4.0,
+    "expectedMin" : 4.9E-324,
+    "expectedMax" : 0.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
+    "metric" : "NOM",
+    "value" : 3.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 1.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
+    "metric" : "NCSS",
+    "value" : 10.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 40.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
+    "metric" : "WMC",
+    "value" : 2.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 100.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
+    "metric" : "DIT",
+    "value" : 1.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 5.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
+    "metric" : "CBO",
+    "value" : 1.0,
+    "expectedMin" : 4.9E-324,
+    "expectedMax" : 0.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
+    "metric" : "NOM",
+    "value" : 2.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 1.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
+    "metric" : "NCSS",
+    "value" : 4.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 40.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "WMC",
+    "value" : 2.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 100.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "DIT",
+    "value" : 1.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 5.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "CBO",
+    "value" : 3.0,
+    "expectedMin" : 4.9E-324,
+    "expectedMax" : 0.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "NOM",
+    "value" : 2.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 1.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "NCSS",
+    "value" : 6.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 40.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "WMC",
+    "value" : 1.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 100.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "DIT",
+    "value" : 1.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 5.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "CBO",
+    "value" : 0.0,
+    "expectedMin" : 4.9E-324,
+    "expectedMax" : 0.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "NOM",
+    "value" : 1.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 1.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "NCSS",
+    "value" : 3.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 40.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "WMC",
+    "value" : 2.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 100.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "DIT",
+    "value" : 1.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 5.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "CBO",
+    "value" : 1.0,
+    "expectedMin" : 4.9E-324,
+    "expectedMax" : 0.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "NOM",
+    "value" : 2.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 1.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "metric" : "NCSS",
+    "value" : 6.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 40.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+    "metric" : "WMC",
+    "value" : 2.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 100.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+    "metric" : "DIT",
+    "value" : 1.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 5.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+    "metric" : "CBO",
+    "value" : 2.0,
+    "expectedMin" : 4.9E-324,
+    "expectedMax" : 0.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+    "metric" : "NOM",
+    "value" : 2.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 1.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+    "metric" : "NCSS",
+    "value" : 6.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 40.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
+    "metric" : "WMC",
+    "value" : 2.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 100.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
+    "metric" : "DIT",
+    "value" : 1.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 5.0,
+    "status" : "PASSED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
+    "metric" : "CBO",
+    "value" : 4.0,
+    "expectedMin" : 4.9E-324,
+    "expectedMax" : 0.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
+    "metric" : "NOM",
+    "value" : 2.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 1.0,
+    "status" : "FAILED"
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
+    "metric" : "NCSS",
+    "value" : 6.0,
+    "expectedMin" : 0.0,
+    "expectedMax" : 40.0,
+    "status" : "PASSED"
+  } ],
+  "passed" : 25,
+  "failed" : 15
+}

@@ -1,0 +1,75 @@
+{
+  "status" : "COMPLETED",
+  "classRules" : [ {
+    "name" : "ComplexClass",
+    "matchCount" : 2,
+    "matches" : [ {
+      "className" : "Base",
+      "qualifiedName" : "a.Base",
+      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Base.java"
+    }, {
+      "className" : "Derived",
+      "qualifiedName" : "a.Derived",
+      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Derived.java"
+    } ]
+  }, {
+    "name" : "LargeAndDense",
+    "matchCount" : 2,
+    "matches" : [ {
+      "className" : "Base",
+      "qualifiedName" : "a.Base",
+      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Base.java"
+    }, {
+      "className" : "Derived",
+      "qualifiedName" : "a.Derived",
+      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Derived.java"
+    } ]
+  }, {
+    "name" : "SmallClass",
+    "matchCount" : 6,
+    "matches" : [ {
+      "className" : "Marker",
+      "qualifiedName" : "a.Marker",
+      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Marker.java"
+    }, {
+      "className" : "Outer",
+      "qualifiedName" : "a.Outer",
+      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Outer.java"
+    }, {
+      "className" : "Inner",
+      "qualifiedName" : "a.Outer.Inner",
+      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Outer.java"
+    }, {
+      "className" : "Nested",
+      "qualifiedName" : "a.Outer.Nested",
+      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Outer.java"
+    }, {
+      "className" : "Unresolvable",
+      "qualifiedName" : "a.Unresolvable",
+      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java"
+    }, {
+      "className" : "Helper",
+      "qualifiedName" : "a.b.Helper",
+      "sourcePath" : "<GOLDEN_PROJECT>/src/a/b/Helper.java"
+    } ]
+  } ],
+  "packageRules" : [ {
+    "name" : "LargePackage",
+    "matchCount" : 2,
+    "matches" : [ {
+      "packageName" : "a"
+    }, {
+      "packageName" : "a.b"
+    } ]
+  } ],
+  "summary" : {
+    "classRules" : {
+      "total" : 5,
+      "matched" : 3
+    },
+    "packageRules" : {
+      "total" : 2,
+      "matched" : 1
+    }
+  }
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "name": "LargePackage",
+    "conditions": [
+      { "metric": "PLOC", "min": 1 }
+    ]
+  },
+  {
+    "name": "EmptyPackage",
+    "conditions": [
+      { "metric": "PLOC", "min": 1000000 }
+    ]
+  }
+]

@@ -24,6 +24,18 @@
   [TASK-101](tasks/TASK-101-diagnostics-channel.md) →
   [TASK-102](tasks/TASK-102-class-visitor-diagnostics.md) →
   [TASK-103](tasks/TASK-103-method-visitor-analyzer-diagnostics.md).
+- **DEBT-07 — Locale-dependent metric values in the JSON contract.**
+  Found while building the TASK-001 goldens (2026-09-16). `Value.toString()` formats doubles with a
+  `static final DecimalFormat("0.0###")` created from the JVM default locale, and the JSON writers
+  emit metric values through it. On a Russian locale `analyze` prints `"PRHVL": "312,7522"`; on an
+  English locale the same run prints `"312.7522"`. The same input therefore produces different JSON
+  on different machines, and the comma form is not parseable as a number by consumers
+  (`Double.parseDouble` fails), which defeats the "stable JSON schema for CI integrations" goal.
+  Workaround in place: the `test` task pins `user.language=en` / `user.country=US` so the goldens are
+  reproducible. Real fix (format with `Locale.ROOT`, or emit numbers instead of pre-formatted
+  strings) belongs to the serialization consolidation in
+  [TASK-302](tasks/TASK-302-jackson-serialization.md) and must be an explicit, reviewed golden
+  update.
 
 ## Resolved Debt Items
 - **DEBT-01 — Halstead visitor race condition.** Resolved by

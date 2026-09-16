@@ -1,0 +1,35 @@
+[
+  {
+    "name": "ComplexClass",
+    "description": "Weighted method count of 4 or more",
+    "conditions": [
+      { "metric": "WMC", "min": 4 }
+    ]
+  },
+  {
+    "name": "LargeAndDense",
+    "description": "All conditions must hold (AND semantics)",
+    "conditions": [
+      { "metric": "NOM", "min": 3 },
+      { "metric": "NCSS", "min": 10 }
+    ]
+  },
+  {
+    "name": "SmallClass",
+    "conditions": [
+      { "metric": "WMC", "max": 2 }
+    ]
+  },
+  {
+    "name": "UnmatchedClass",
+    "conditions": [
+      { "metric": "WMC", "min": 100000 }
+    ]
+  },
+  {
+    "name": "UnknownMetricNeverMatches",
+    "conditions": [
+      { "metric": "NOT_A_METRIC_CODE", "min": 0 }
+    ]
+  }
+]
