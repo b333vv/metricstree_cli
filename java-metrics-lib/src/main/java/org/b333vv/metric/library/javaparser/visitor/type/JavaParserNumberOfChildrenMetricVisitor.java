@@ -3,11 +3,11 @@ package org.b333vv.metric.library.javaparser.visitor.type;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 import org.b333vv.metric.model.metric.value.Value;
 
 import java.util.List;
-import java.util.function.Consumer;
 
 public class JavaParserNumberOfChildrenMetricVisitor extends JavaParserClassMetricVisitor {
     private final List<ClassOrInterfaceDeclaration> allClasses;
@@ -17,7 +17,7 @@ public class JavaParserNumberOfChildrenMetricVisitor extends JavaParserClassMetr
     }
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
         try {
             String currentClassQualifiedName = declaration.resolve().getQualifiedName();

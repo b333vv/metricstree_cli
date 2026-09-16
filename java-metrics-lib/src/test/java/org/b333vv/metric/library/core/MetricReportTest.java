@@ -37,6 +37,43 @@ class MetricReportTest {
         assertFalse(report.hasErrors());
     }
 
+    /**
+     * Diagnostics are collected from a parallel stream, and the channel introduced by TASK-101 makes
+     * messages repeat across classes (the same unresolved symbol reported as {@code [CBO] Could not
+     * resolve symbol 'foo()'} in two different classes). Sorting by severity/code/message alone leaves
+     * those as ties, which a stable sort resolves by insertion order — i.e. by thread scheduling, which
+     * would make the report and the TASK-001 goldens flaky. Location must complete the ordering.
+     */
+    @Test
+    void diagnosticsWithIdenticalTextShouldBeOrderedByLocationNotInsertionOrder() {
+        AnalysisDiagnostic inBeta = new AnalysisDiagnostic(
+                "UNRESOLVED_SYMBOL", AnalysisSeverity.WARNING, "[CBO] Could not resolve symbol 'foo()'",
+                new SourceLocation(Path.of("src/beta/Beta.java"), 10, 10));
+        AnalysisDiagnostic inAlpha = new AnalysisDiagnostic(
+                "UNRESOLVED_SYMBOL", AnalysisSeverity.WARNING, "[CBO] Could not resolve symbol 'foo()'",
+                new SourceLocation(Path.of("src/alpha/Alpha.java"), 20, 20));
+        AnalysisDiagnostic withoutLocation = new AnalysisDiagnostic(
+                "UNRESOLVED_SYMBOL", AnalysisSeverity.WARNING, "[CBO] Could not resolve symbol 'foo()'", null);
+
+        MetricReport forward = reportWithDiagnostics(List.of(inBeta, inAlpha, withoutLocation));
+        MetricReport backward = reportWithDiagnostics(List.of(withoutLocation, inAlpha, inBeta));
+
+        assertEquals(
+                forward.diagnostics(),
+                backward.diagnostics(),
+                "The report order must not depend on the order diagnostics were added in");
+        assertEquals(
+                List.of(withoutLocation, inAlpha, inBeta),
+                forward.diagnostics(),
+                "Location is the tiebreaker; a diagnostic without one sorts first");
+    }
+
+    private static MetricReport reportWithDiagnostics(List<AnalysisDiagnostic> diagnostics) {
+        return new MetricReport(
+                new ProjectReport("demo", Map.of(MetricCode.PRMI, Value.of(1.0)), List.of()),
+                diagnostics);
+    }
+
     @Test
     void flattenedViewsAndLookupHelpersShouldUseDeterministicOrder() {
         MethodReport alphaMethod = new MethodReport("alpha()", "alpha", 0, null, Map.of(MetricCode.NOPM, Value.of(0L)));

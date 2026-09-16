@@ -1,5 +1,37 @@
 # what has been done
 
+## Phase 1: diagnostics channel into the metric visitors (2026-09-16)
+
+### TASK-101 — `AnalysisCollector`, the visitor→report diagnostics channel — done
+
+Visitors had no way to say anything about what they could not resolve. TASK-101 delivers the
+channel only; no visitor behavior changed.
+
+- New `AnalysisCollector` (`...library.javaparser.visitor`): implements `Consumer<MetricResult>`
+  so it is a drop-in replacement for the visitor's collector parameter, and adds
+  `warn(AnalysisDiagnostic)` / `warnUnresolved(...)` / `warnUnresolvedType(...)`. One instance per
+  class-analysis task, backed by the analyzer's shared `diagnostics` list under the same
+  `synchronized (diagnostics)` discipline `parseSingleFile` already used.
+- Dedup and cap live in the collector: a per-collector key of `code|metricContext|name`, and a cap
+  shared across codes (the first N distinct names are individual diagnostics, the remainder is
+  folded into one `UNRESOLVED_SYMBOL_BULK` / `UNRESOLVED_TYPE_BULK` carrying the suppressed count).
+  The cap is configurable via `AnalysisOptions.unresolvedSymbolDiagnosticCap`, default 20.
+- `JavaParserClassMetricVisitor` / `JavaParserMethodMetricVisitor` and all 37 concrete visitors
+  changed generic argument `Consumer<MetricResult>` → `AnalysisCollector`. The diff is strictly
+  mechanical apart from `JavaParserWeightedMethodCountMetricVisitor`, which delegates to the McCabe
+  visitor internally and therefore has to hand it `collector.childCollector(...)` so the delegated
+  run reports through the same channel without double-counting.
+- `analyzeSingleClass` builds one collector per class, hands `childCollector(...)` to method
+  visitors and calls `flush()` before assembling the report. A test-seam constructor taking the
+  visitor lists lets a test prove the path end-to-end without touching a production visitor.
+- Determinism fix found by the new tests: `MetricReport` sorted diagnostics by
+  (severity, code, message), which leaves identical messages from different classes tied and
+  therefore resolved by thread scheduling. The comparator now falls through to location
+  (path, start line, end line).
+- Tests: `AnalysisCollectorTest` (13), `AnalysisCollectorPipelineTest` (4, visitor → report),
+  `MetricReportJsonWriterDiagnosticsTest` (4, report → JSON), plus the ordering case in
+  `MetricReportTest`. Metric values are unchanged on the golden corpus — the goldens did not move.
+
 ## Quick wins: rules, classpath, dead code (2026-09-16)
 
 ### TASK-007 — Dead `HAS_METHOD_RULE` and silent rule failures (DEBT-04) — done

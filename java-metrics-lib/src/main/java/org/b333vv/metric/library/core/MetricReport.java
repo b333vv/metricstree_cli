@@ -1,5 +1,6 @@
 package org.b333vv.metric.library.core;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -8,16 +9,40 @@ import java.util.Optional;
  */
 public record MetricReport(ProjectReport project, List<AnalysisDiagnostic> diagnostics) {
 
+    /**
+     * Total order over diagnostics.
+     *
+     * <p>Severity, code and message are not enough on their own: the TASK-101 channel reports the same
+     * message from different classes (e.g. {@code [CBO] Could not resolve symbol 'foo()'}), and the list
+     * is filled from a parallel stream. Equal keys would leave the order to the (stable) sort's input
+     * order, i.e. to thread scheduling, making reports and golden files flaky. The location completes
+     * the order; a diagnostic without a location sorts before any located one.
+     */
+    private static final Comparator<AnalysisDiagnostic> DIAGNOSTIC_ORDER =
+            Comparator.comparing(AnalysisDiagnostic::severity)
+                    .thenComparing(AnalysisDiagnostic::code)
+                    .thenComparing(AnalysisDiagnostic::message)
+                    .thenComparing(diagnostic -> locationPath(diagnostic.location()))
+                    .thenComparingInt(diagnostic -> locationStartLine(diagnostic.location()))
+                    .thenComparingInt(diagnostic -> locationEndLine(diagnostic.location()));
+
     public MetricReport {
         if (project == null) {
             throw new IllegalArgumentException("Project report must not be null");
         }
-        diagnostics = ReportSupport.copySortedList(
-                diagnostics,
-                java.util.Comparator
-                        .comparing(AnalysisDiagnostic::severity)
-                        .thenComparing(AnalysisDiagnostic::code)
-                        .thenComparing(AnalysisDiagnostic::message));
+        diagnostics = ReportSupport.copySortedList(diagnostics, DIAGNOSTIC_ORDER);
+    }
+
+    private static String locationPath(SourceLocation location) {
+        return location == null ? "" : location.path().toString();
+    }
+
+    private static int locationStartLine(SourceLocation location) {
+        return location == null ? 0 : location.startLine();
+    }
+
+    private static int locationEndLine(SourceLocation location) {
+        return location == null ? 0 : location.endLine();
     }
 
     /**

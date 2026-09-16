@@ -7,16 +7,16 @@ import com.github.javaparser.ast.stmt.ForStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisitor;
 
-import java.util.function.Consumer;
 
 public class JavaParserLoopNestingDepthMetricVisitor extends JavaParserMethodMetricVisitor {
     private int depth;
     private int maxDepth;
 
     @Override
-    public void visit(MethodDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(MethodDeclaration declaration, AnalysisCollector collector) {
         depth = 0;
         maxDepth = 0;
         super.visit(declaration, collector);
@@ -35,28 +35,28 @@ public class JavaParserLoopNestingDepthMetricVisitor extends JavaParserMethodMet
     }
 
     @Override
-    public void visit(ForStmt statement, Consumer<MetricResult> collector) {
+    public void visit(ForStmt statement, AnalysisCollector collector) {
         enter();
         super.visit(statement, collector);
         exit();
     }
 
     @Override
-    public void visit(ForEachStmt statement, Consumer<MetricResult> collector) {
+    public void visit(ForEachStmt statement, AnalysisCollector collector) {
         enter();
         super.visit(statement, collector);
         exit();
     }
 
     @Override
-    public void visit(WhileStmt statement, Consumer<MetricResult> collector) {
+    public void visit(WhileStmt statement, AnalysisCollector collector) {
         enter();
         super.visit(statement, collector);
         exit();
     }
 
     @Override
-    public void visit(DoStmt statement, Consumer<MetricResult> collector) {
+    public void visit(DoStmt statement, AnalysisCollector collector) {
         enter();
         super.visit(statement, collector);
         exit();

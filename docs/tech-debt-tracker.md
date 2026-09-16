@@ -10,13 +10,20 @@
   mixed-list cases, and the warning is visible end-to-end in the `analyze` JSON output.
   **Still open:** directories are not actually resolved against — that is
   [TASK-105](tasks/TASK-105-typesolver-improvements.md), which is what will close this item.
-- **DEBT-06 — Silent resolution failures in visitors.**
+- **DEBT-06 — Silent resolution failures in visitors.** *Channel delivered by
+  [TASK-101](tasks/TASK-101-diagnostics-channel.md); the visitor conversions are still open.*
   15 of 35 visitors (~44 sites) plus analyzer `tryResolve` and
   `JavaParserTypeSolverFactory` (`System.err`) swallow symbol-resolution exceptions;
-  metrics are understated without a trace. Fix planned in
-  [TASK-101](tasks/TASK-101-diagnostics-channel.md) →
-  [TASK-102](tasks/TASK-102-class-visitor-diagnostics.md) →
-  [TASK-103](tasks/TASK-103-method-visitor-analyzer-diagnostics.md).
+  metrics are understated without a trace.
+  **Done:** the `AnalysisCollector` channel exists and is wired end-to-end (visitor →
+  `MetricReport.diagnostics` → JSON), with per-class dedup, a configurable cap
+  (`AnalysisOptions.unresolvedSymbolDiagnosticCap`, default 20) and `*_BULK` aggregation for the
+  suppressed remainder. All 35 visitors now receive the collector; their catch blocks are still
+  untouched, so no production diagnostic is emitted yet — which is why this item stays open.
+  **Remaining:** convert the 12 resolving class visitors
+  ([TASK-102](tasks/TASK-102-class-visitor-diagnostics.md)) and the method visitors plus the
+  analyzer/`JavaParserTypeSolverFactory`
+  ([TASK-103](tasks/TASK-103-method-visitor-analyzer-diagnostics.md)).
 - **DEBT-07 — Locale-dependent metric values in the JSON contract.**
   Found while building the TASK-001 goldens (2026-09-16). `Value.toString()` formats doubles with a
   `static final DecimalFormat("0.0###")` created from the JVM default locale, and the JSON writers

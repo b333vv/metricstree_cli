@@ -5,14 +5,14 @@ import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclar
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserClassDeclaration;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 
-import java.util.function.Consumer;
 
 public class JavaParserDepthOfInheritanceTreeMetricVisitor extends JavaParserClassMetricVisitor {
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
         int depth = getDepth(declaration);
         collector.accept(MetricResult.of(MetricCode.DIT, depth));

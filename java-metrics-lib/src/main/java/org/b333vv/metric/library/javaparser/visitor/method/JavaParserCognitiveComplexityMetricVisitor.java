@@ -15,16 +15,16 @@ import com.github.javaparser.ast.stmt.SwitchStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisitor;
 
-import java.util.function.Consumer;
 
 public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethodMetricVisitor {
     private int complexity;
     private int nesting;
 
     @Override
-    public void visit(MethodDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(MethodDeclaration declaration, AnalysisCollector collector) {
         complexity = 0;
         nesting = 0;
         super.visit(declaration, collector);
@@ -32,7 +32,7 @@ public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethod
     }
 
     @Override
-    public void visit(IfStmt statement, Consumer<MetricResult> collector) {
+    public void visit(IfStmt statement, AnalysisCollector collector) {
         complexity += 1 + nesting;
         nesting++;
         super.visit(statement, collector);
@@ -40,7 +40,7 @@ public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethod
     }
 
     @Override
-    public void visit(ForStmt statement, Consumer<MetricResult> collector) {
+    public void visit(ForStmt statement, AnalysisCollector collector) {
         complexity += 1 + nesting;
         nesting++;
         super.visit(statement, collector);
@@ -48,7 +48,7 @@ public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethod
     }
 
     @Override
-    public void visit(ForEachStmt statement, Consumer<MetricResult> collector) {
+    public void visit(ForEachStmt statement, AnalysisCollector collector) {
         complexity += 1 + nesting;
         nesting++;
         super.visit(statement, collector);
@@ -56,7 +56,7 @@ public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethod
     }
 
     @Override
-    public void visit(WhileStmt statement, Consumer<MetricResult> collector) {
+    public void visit(WhileStmt statement, AnalysisCollector collector) {
         complexity += 1 + nesting;
         nesting++;
         super.visit(statement, collector);
@@ -64,7 +64,7 @@ public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethod
     }
 
     @Override
-    public void visit(DoStmt statement, Consumer<MetricResult> collector) {
+    public void visit(DoStmt statement, AnalysisCollector collector) {
         complexity += 1 + nesting;
         nesting++;
         super.visit(statement, collector);
@@ -72,7 +72,7 @@ public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethod
     }
 
     @Override
-    public void visit(CatchClause catchClause, Consumer<MetricResult> collector) {
+    public void visit(CatchClause catchClause, AnalysisCollector collector) {
         complexity += 1 + nesting;
         nesting++;
         super.visit(catchClause, collector);
@@ -80,7 +80,7 @@ public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethod
     }
 
     @Override
-    public void visit(SwitchStmt statement, Consumer<MetricResult> collector) {
+    public void visit(SwitchStmt statement, AnalysisCollector collector) {
         complexity += 1 + nesting;
         nesting++;
         super.visit(statement, collector);
@@ -88,7 +88,7 @@ public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethod
     }
 
     @Override
-    public void visit(BreakStmt statement, Consumer<MetricResult> collector) {
+    public void visit(BreakStmt statement, AnalysisCollector collector) {
         if (statement.getLabel().isPresent()) {
             complexity++;
         }
@@ -96,7 +96,7 @@ public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethod
     }
 
     @Override
-    public void visit(ContinueStmt statement, Consumer<MetricResult> collector) {
+    public void visit(ContinueStmt statement, AnalysisCollector collector) {
         if (statement.getLabel().isPresent()) {
             complexity++;
         }
@@ -104,7 +104,7 @@ public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethod
     }
 
     @Override
-    public void visit(ConditionalExpr expression, Consumer<MetricResult> collector) {
+    public void visit(ConditionalExpr expression, AnalysisCollector collector) {
         complexity += 1 + nesting;
         nesting++;
         super.visit(expression, collector);
@@ -112,14 +112,14 @@ public class JavaParserCognitiveComplexityMetricVisitor extends JavaParserMethod
     }
 
     @Override
-    public void visit(LambdaExpr expression, Consumer<MetricResult> collector) {
+    public void visit(LambdaExpr expression, AnalysisCollector collector) {
         nesting++;
         super.visit(expression, collector);
         nesting--;
     }
 
     @Override
-    public void visit(BinaryExpr expression, Consumer<MetricResult> collector) {
+    public void visit(BinaryExpr expression, AnalysisCollector collector) {
         BinaryExpr.Operator operator = expression.getOperator();
         if (operator == BinaryExpr.Operator.AND || operator == BinaryExpr.Operator.OR) {
             boolean parentIsSameOperator = expression.getParentNode()

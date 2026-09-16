@@ -5,19 +5,19 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 import org.b333vv.metric.model.metric.value.Value;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class JavaParserLocalityOfAttributeAccessesMetricVisitor extends JavaParserClassMetricVisitor {
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
         long localMethods = 0;
         List<BodyDeclaration<?>> methodsAndConstructors = Stream.concat(

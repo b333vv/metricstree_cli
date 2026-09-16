@@ -1,0 +1,240 @@
+package org.b333vv.metric.library.javaparser.visitor;
+
+import com.github.javaparser.ast.Node;
+import com.github.javaparser.Range;
+import org.b333vv.metric.library.core.AnalysisDiagnostic;
+import org.b333vv.metric.library.core.AnalysisSeverity;
+import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.core.SourceLocation;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+
+/**
+ * Hands a metric visitor both jobs it needs: delivering metric values, and reporting the resolution
+ * problems that make those values understated.
+ *
+ * <p>Before this channel existed, visitors had no way to reach {@code MetricReport.diagnostics} at
+ * all, so a symbol the symbol solver could not resolve simply lowered a metric with no trace. A
+ * collector is created per analysed class by the analyzer, is passed to every class- and method-level
+ * visitor of that class, and forwards both metrics and diagnostics to the report.
+ *
+ * <h2>Dedup and cap</h2>
+ * A single unresolvable type typically fails in several AST nodes, and several metrics may trip over
+ * it, so reporting every failure verbatim would drown the report. A collector therefore
+ * <ul>
+ *   <li>reports a given {@code (code, metric context, symbol)} triple at most once per class, and</li>
+ *   <li>emits at most {@code cap} individual diagnostics, then aggregates the remainder into one
+ *       {@code *_BULK} diagnostic carrying the suppressed count.</li>
+ * </ul>
+ * The metric context is part of the dedup key on purpose: deduping across metrics would leave
+ * whichever visitor happened to run first as the only reporter, making the surviving message depend
+ * on thread scheduling.
+ *
+ * <p>{@link #flush()} must be called once per class, after all visitors have run, to emit the
+ * aggregated diagnostics. It is idempotent.
+ *
+ * <h2>Thread-safety</h2>
+ * The analyzer visits classes on a parallel stream, so the shared diagnostics list is written
+ * concurrently; every write goes through {@link #publish} which synchronizes on that list, matching
+ * the discipline already used by the parser. The collector's own bookkeeping is synchronized too, so
+ * the cap holds exactly even under contention.
+ */
+public final class AnalysisCollector implements Consumer<MetricResult> {
+
+    /**
+     * A method, field or constructor reference that the symbol solver could not resolve.
+     */
+    public static final String UNRESOLVED_SYMBOL = "UNRESOLVED_SYMBOL";
+
+    /**
+     * A type reference that the symbol solver could not resolve.
+     */
+    public static final String UNRESOLVED_TYPE = "UNRESOLVED_TYPE";
+
+    /**
+     * Aggregate for {@link #UNRESOLVED_SYMBOL} diagnostics suppressed by the per-class cap.
+     */
+    public static final String UNRESOLVED_SYMBOL_BULK = "UNRESOLVED_SYMBOL_BULK";
+
+    /**
+     * Aggregate for {@link #UNRESOLVED_TYPE} diagnostics suppressed by the per-class cap.
+     */
+    public static final String UNRESOLVED_TYPE_BULK = "UNRESOLVED_TYPE_BULK";
+
+    private final Consumer<MetricResult> metricConsumer;
+    private final List<AnalysisDiagnostic> diagnostics;
+    private final String subject;
+    private final SourceLocation fallbackLocation;
+    private final int cap;
+
+    private final Set<String> reportedKeys = ConcurrentHashMap.newKeySet();
+    private final Map<String, Integer> suppressedCounts = new ConcurrentHashMap<>();
+
+    private boolean flushed;
+
+    /**
+     * @param metricConsumer   where metric values go
+     * @param diagnostics      the analyzer's shared diagnostics list
+     * @param subject          what is being analysed (class qualified name, or method signature),
+     *                         used in aggregated messages
+     * @param fallbackLocation location used when a reported node has no range of its own
+     * @param cap              how many individual unresolved-symbol diagnostics this class may emit
+     *                         before aggregating; must not be negative
+     */
+    public AnalysisCollector(
+            Consumer<MetricResult> metricConsumer,
+            List<AnalysisDiagnostic> diagnostics,
+            String subject,
+            SourceLocation fallbackLocation,
+            int cap) {
+        if (metricConsumer == null) {
+            throw new IllegalArgumentException("Metric consumer must not be null");
+        }
+        if (diagnostics == null) {
+            throw new IllegalArgumentException("Diagnostics list must not be null");
+        }
+        if (fallbackLocation == null) {
+            throw new IllegalArgumentException("Fallback location must not be null");
+        }
+        if (cap < 0) {
+            throw new IllegalArgumentException("Diagnostic cap must not be negative, got " + cap);
+        }
+        this.metricConsumer = metricConsumer;
+        this.diagnostics = diagnostics;
+        this.subject = subject == null || subject.isBlank() ? "<unknown>" : subject;
+        this.fallbackLocation = fallbackLocation;
+        this.cap = cap;
+    }
+
+    @Override
+    public void accept(MetricResult result) {
+        metricConsumer.accept(result);
+    }
+
+    /**
+     * Creates a collector for a nested computation — a visitor that runs another visitor internally to
+     * derive its own metric (as WMC does with the McCabe visitor).
+     *
+     * <p>The child writes diagnostics to the same shared list, so nothing is silently dropped, and
+     * inherits the parent's cap. It keeps its own dedup state, so the child's findings are not
+     * suppressed by the parent's.
+     */
+    public AnalysisCollector childCollector(Consumer<MetricResult> metricConsumer, String subject) {
+        return new AnalysisCollector(metricConsumer, diagnostics, subject, fallbackLocation, cap);
+    }
+
+    /**
+     * Reports a diagnostic verbatim, bypassing dedup and the cap. Intended for problems that are not
+     * per-symbol; per-symbol resolution failures should use {@link #warnUnresolved} /
+     * {@link #warnUnresolvedType} so they are deduplicated.
+     */
+    public void warn(AnalysisDiagnostic diagnostic) {
+        publish(diagnostic);
+    }
+
+    /**
+     * Reports that {@code symbolName} could not be resolved, anchored at {@code at} when it has a
+     * range.
+     */
+    public void warnUnresolved(String symbolName, Node at) {
+        warnUnresolved(null, symbolName, at);
+    }
+
+    /**
+     * Reports that {@code symbolName} could not be resolved while computing {@code metricContext}
+     * (e.g. {@code "CBO"}).
+     */
+    public void warnUnresolved(String metricContext, String symbolName, Node at) {
+        report(UNRESOLVED_SYMBOL, metricContext, symbolName, at, "Could not resolve symbol '" + symbolName + "'");
+    }
+
+    /**
+     * Reports that the type {@code typeName} could not be resolved while computing
+     * {@code metricContext}.
+     */
+    public void warnUnresolvedType(String metricContext, String typeName, Node at) {
+        report(UNRESOLVED_TYPE, metricContext, typeName, at, "Could not resolve type '" + typeName + "'");
+    }
+
+    /**
+     * Emits one aggregated diagnostic per code that hit the cap. Called once per class by the
+     * analyzer; calling it again does nothing.
+     */
+    public synchronized void flush() {
+        if (flushed) {
+            return;
+        }
+        flushed = true;
+
+        // TreeMap so the order of aggregated diagnostics does not depend on hash iteration order.
+        new TreeMap<>(suppressedCounts).forEach((code, count) -> {
+            if (count > 0) {
+                publish(new AnalysisDiagnostic(
+                        bulkCodeFor(code),
+                        AnalysisSeverity.WARNING,
+                        "Suppressed " + count + " additional unresolved-symbol diagnostic(s) for " + subject
+                                + " (per-class cap: " + cap + ")",
+                        fallbackLocation));
+            }
+        });
+    }
+
+    private synchronized void report(String code, String metricContext, String name, Node at, String message) {
+        String key = code + '|' + (metricContext == null ? "" : metricContext) + '|' + name;
+        if (!reportedKeys.add(key)) {
+            return;
+        }
+        if (reportedKeys.size() <= cap) {
+            publish(new AnalysisDiagnostic(
+                    code,
+                    AnalysisSeverity.WARNING,
+                    decorate(metricContext, message),
+                    locationOf(at)));
+        } else {
+            suppressedCounts.merge(code, 1, Integer::sum);
+        }
+    }
+
+    private void publish(AnalysisDiagnostic diagnostic) {
+        synchronized (diagnostics) {
+            diagnostics.add(diagnostic);
+        }
+    }
+
+    private static String decorate(String metricContext, String message) {
+        return metricContext == null || metricContext.isBlank() ? message : "[" + metricContext + "] " + message;
+    }
+
+    /**
+     * Points at the offending node when it has a range, otherwise at the enclosing class. The node
+     * lives in the class's file, so the path always comes from {@code fallbackLocation}.
+     */
+    private SourceLocation locationOf(Node at) {
+        if (at != null) {
+            Optional<Range> range = at.getRange();
+            if (range.isPresent()) {
+                return new SourceLocation(
+                        fallbackLocation.path(),
+                        range.get().begin.line,
+                        range.get().end.line);
+            }
+        }
+        return fallbackLocation;
+    }
+
+    private static String bulkCodeFor(String code) {
+        if (UNRESOLVED_SYMBOL.equals(code)) {
+            return UNRESOLVED_SYMBOL_BULK;
+        }
+        if (UNRESOLVED_TYPE.equals(code)) {
+            return UNRESOLVED_TYPE_BULK;
+        }
+        return code + "_BULK";
+    }
+}

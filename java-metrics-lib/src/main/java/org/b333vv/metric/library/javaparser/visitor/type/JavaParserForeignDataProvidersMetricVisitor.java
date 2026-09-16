@@ -4,13 +4,13 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 import org.b333vv.metric.model.metric.value.Value;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Consumer;
 
 public class JavaParserForeignDataProvidersMetricVisitor extends JavaParserClassMetricVisitor {
     private final List<ClassOrInterfaceDeclaration> allClasses;
@@ -20,7 +20,7 @@ public class JavaParserForeignDataProvidersMetricVisitor extends JavaParserClass
     }
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
         try {
             Set<String> foreignDataProviders = new HashSet<>();

@@ -8,6 +8,7 @@ import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 
 import java.util.ArrayList;
@@ -18,7 +19,6 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
 
 public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserClassMetricVisitor {
 
@@ -26,7 +26,7 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
             "toString", "equals", "hashCode", "finalize", "clone", "readObject", "writeObject");
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
         List<MethodDeclaration> methods = declaration.getMethods();
         List<FieldDeclaration> fields = declaration.getFields();

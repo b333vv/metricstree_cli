@@ -178,6 +178,11 @@ TASK-006 ──> TASK-105 (recommended order, formally independent)
 TASK-003…007, TASK-105, TASK-402: independent quick wins / phase tasks
 ```
 
+**Progress:** done — TASK-001, 002, 003, 004, 005, 006, 007, 101. Open — TASK-102, 103, 104, 105,
+202, 203, 204, 205, 301, 302, 401, 402. (TASK-003 was pulled forward: TASK-001's goldens exposed
+DEBT-01. TASK-006 partially closes DEBT-03; TASK-101 delivers the DEBT-06 channel without converting
+any visitor yet.)
+
 ---
 
 ## 5. Success Metrics (mapped to road-map §5)

@@ -3,10 +3,10 @@ package org.b333vv.metric.library.javaparser.visitor.method;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.HalsteadTokenCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisitor;
 
-import java.util.function.Consumer;
 
 /**
  * Method-level Halstead metrics (HVL/HD/HL/HEF/HVC/HER).
@@ -19,7 +19,7 @@ import java.util.function.Consumer;
 public class JavaParserHalsteadMethodMetricVisitor extends JavaParserMethodMetricVisitor {
 
     @Override
-    public void visit(MethodDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(MethodDeclaration declaration, AnalysisCollector collector) {
         HalsteadTokenCollector tokens = HalsteadTokenCollector.collect(declaration);
 
         int n1 = tokens.distinctOperators();

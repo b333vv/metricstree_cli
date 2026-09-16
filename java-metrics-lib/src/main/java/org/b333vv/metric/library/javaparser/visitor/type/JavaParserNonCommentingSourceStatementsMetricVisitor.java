@@ -16,15 +16,15 @@ import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.VariableDeclarationExpr;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class JavaParserNonCommentingSourceStatementsMetricVisitor extends JavaParserClassMetricVisitor {
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
 
         // Base: count executable statements (exclude EmptyStmt and BlockStmt), scoped to this class only.

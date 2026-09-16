@@ -7,14 +7,14 @@ import com.github.javaparser.ast.stmt.ForStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisitor;
 
-import java.util.function.Consumer;
 
 public class JavaParserNumberOfLoopsMetricVisitor extends JavaParserMethodMetricVisitor {
 
     @Override
-    public void visit(MethodDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(MethodDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
 
         long loops = declaration.findAll(ForStmt.class).size()

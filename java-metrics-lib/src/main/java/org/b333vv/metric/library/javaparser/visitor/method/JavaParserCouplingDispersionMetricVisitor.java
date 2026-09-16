@@ -6,17 +6,17 @@ import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclar
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisitor;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Consumer;
 
 public class JavaParserCouplingDispersionMetricVisitor extends JavaParserMethodMetricVisitor {
 
     @Override
-    public void visit(MethodDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(MethodDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
         Set<Integer> depths = new HashSet<>();
         declaration.walk(MethodCallExpr.class, methodCall -> {

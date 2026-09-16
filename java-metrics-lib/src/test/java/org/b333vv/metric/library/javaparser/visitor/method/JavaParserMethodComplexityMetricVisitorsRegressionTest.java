@@ -56,7 +56,7 @@ class JavaParserMethodComplexityMetricVisitorsRegressionTest extends JavaParserV
         JavaParserMcCabeCyclomaticComplexityMetricVisitor visitor = new JavaParserMcCabeCyclomaticComplexityMetricVisitor();
 
         List<MetricResult> metrics = new ArrayList<>();
-        visitor.visit(constructor, metrics::add);
+        visitor.visit(constructor, newCollector(metrics));
 
         assertEquals(1, metrics.size());
         assertEquals(MetricCode.CC, metrics.get(0).code());

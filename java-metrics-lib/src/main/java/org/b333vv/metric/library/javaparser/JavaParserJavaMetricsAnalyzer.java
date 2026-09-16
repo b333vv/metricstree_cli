@@ -37,6 +37,7 @@ import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.library.core.SourceRoot;
 import org.b333vv.metric.library.core.SourceUnit;
 import org.b333vv.metric.model.metric.value.Value;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.method.JavaParserCognitiveComplexityMetricVisitor;
@@ -198,12 +199,31 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             EnhancedJavaParserContextBuilder enhancedContextBuilder,
             DerivedMetricCalculator derivedMetricCalculator,
             AnalysisPhaseListener phaseListener) {
+        this(typeSolverFactory, enhancedContextBuilder, derivedMetricCalculator, phaseListener, null, null);
+    }
+
+    /**
+     * Builds an analyzer with an explicit visitor set. Production always passes {@code null} for both
+     * lists and gets the full set from {@link #buildClassVisitors()} / {@link #buildMethodVisitors()}.
+     *
+     * <p>Passing a visitor set is a test seam: it is the only way to drive a visitor that deliberately
+     * reports a resolution problem through the whole pipeline and assert that the diagnostic reaches
+     * {@code MetricReport.diagnostics} and the JSON output, without adding a fake problem to a
+     * production visitor.
+     */
+    JavaParserJavaMetricsAnalyzer(
+            JavaParserTypeSolverFactory typeSolverFactory,
+            EnhancedJavaParserContextBuilder enhancedContextBuilder,
+            DerivedMetricCalculator derivedMetricCalculator,
+            AnalysisPhaseListener phaseListener,
+            List<JavaParserClassMetricVisitor> classVisitors,
+            List<JavaParserMethodMetricVisitor> methodVisitors) {
         this.typeSolverFactory = typeSolverFactory;
         this.enhancedContextBuilder = enhancedContextBuilder;
         this.derivedMetricCalculator = derivedMetricCalculator;
         this.phaseListener = phaseListener == null ? AnalysisPhaseListener.NO_OP : phaseListener;
-        this.classVisitors = buildClassVisitors();
-        this.methodVisitors = buildMethodVisitors();
+        this.classVisitors = classVisitors == null ? buildClassVisitors() : List.copyOf(classVisitors);
+        this.methodVisitors = methodVisitors == null ? buildMethodVisitors() : List.copyOf(methodVisitors);
     }
 
     @Override
@@ -244,7 +264,9 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         List<AnalyzedClass> analyzedClasses = analyzeClasses(
                 enhancedContext,
                 sourcePathByQualifiedName,
-                metricSelection);
+                metricSelection,
+                diagnostics,
+                options.unresolvedSymbolDiagnosticCap());
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.VISIT, System.nanoTime() - phaseStart);
 
         phaseStart = System.nanoTime();
@@ -480,7 +502,9 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     private List<AnalyzedClass> analyzeClasses(
             EnhancedJavaParserContext enhancedContext,
             Map<String, Path> sourcePathByQualifiedName,
-            MetricSelection metricSelection) {
+            MetricSelection metricSelection,
+            List<AnalysisDiagnostic> diagnostics,
+            int unresolvedSymbolDiagnosticCap) {
         List<ClassOrInterfaceDeclaration> allClassDeclarations = enhancedContext.getAllClassDeclarations();
         List<ClassOrInterfaceDeclaration> sortedClassDeclarations = allClassDeclarations.stream()
                 .sorted(Comparator.comparing(this::classSortKey))
@@ -488,7 +512,13 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
         return runInDedicatedPool(() ->
                 sortedClassDeclarations.parallelStream()
-                        .map(classDeclaration -> analyzeSingleClass(classDeclaration, allClassDeclarations, sourcePathByQualifiedName, metricSelection))
+                        .map(classDeclaration -> analyzeSingleClass(
+                                classDeclaration,
+                                allClassDeclarations,
+                                sourcePathByQualifiedName,
+                                metricSelection,
+                                diagnostics,
+                                unresolvedSymbolDiagnosticCap))
                         .toList()
         );
     }
@@ -497,32 +527,49 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             ClassOrInterfaceDeclaration classDeclaration,
             List<ClassOrInterfaceDeclaration> allClassDeclarations,
             Map<String, Path> sourcePathByQualifiedName,
-            MetricSelection metricSelection) {
+            MetricSelection metricSelection,
+            List<AnalysisDiagnostic> diagnostics,
+            int unresolvedSymbolDiagnosticCap) {
         String qualifiedName = classDeclaration.getFullyQualifiedName().orElseGet(() -> fallbackQualifiedName(classDeclaration));
         Path sourcePath = sourcePathByQualifiedName.getOrDefault(
                 qualifiedName,
                 sourcePathByQualifiedName.getOrDefault(fallbackQualifiedName(classDeclaration), Path.of(".")));
         Map<MetricCode, Value> classMetrics = new EnumMap<>(MetricCode.class);
-        Consumer<MetricResult> classMetricCollector = result -> classMetrics.put(result.code(), result.value());
+
+        // One collector per class: class- and method-level visitors of this class share its dedup
+        // state and cap, so a single broken symbol is reported once per metric rather than once per
+        // AST node (see AnalysisCollector).
+        AnalysisCollector classCollector = new AnalysisCollector(
+                result -> classMetrics.put(result.code(), result.value()),
+                diagnostics,
+                qualifiedName,
+                toSourceLocation(classDeclaration, sourcePath),
+                unresolvedSymbolDiagnosticCap);
 
         for (JavaParserClassMetricVisitor visitor : classVisitors) {
-            visitor.visit(classDeclaration, classMetricCollector);
+            visitor.visit(classDeclaration, classCollector);
         }
-        new JavaParserNumberOfChildrenMetricVisitor(allClassDeclarations).visit(classDeclaration, classMetricCollector);
-        new JavaParserForeignDataProvidersMetricVisitor(allClassDeclarations).visit(classDeclaration, classMetricCollector);
+        new JavaParserNumberOfChildrenMetricVisitor(allClassDeclarations).visit(classDeclaration, classCollector);
+        new JavaParserForeignDataProvidersMetricVisitor(allClassDeclarations).visit(classDeclaration, classCollector);
 
         List<AnalyzedMethod> analyzedMethods = classDeclaration.getMethods().stream()
                 .sorted(Comparator.comparing(this::methodSignature))
                 .map(methodDeclaration -> {
                     Map<MetricCode, Value> methodMetrics = new EnumMap<>(MetricCode.class);
-                    Consumer<MetricResult> methodMetricCollector = result -> methodMetrics.put(result.code(), result.value());
+                    AnalysisCollector methodCollector = classCollector.childCollector(
+                            result -> methodMetrics.put(result.code(), result.value()),
+                            qualifiedName + "#" + methodSignature(methodDeclaration));
                     for (JavaParserMethodMetricVisitor visitor : methodVisitors) {
-                        visitor.visit(methodDeclaration, methodMetricCollector);
+                        visitor.visit(methodDeclaration, methodCollector);
                     }
                     addDerivedMethodMetrics(methodMetrics);
                     return buildMethodReport(methodDeclaration, sourcePath, methodMetrics, metricSelection);
                 })
                 .toList();
+
+        // Emits the aggregated diagnostics for whatever hit the cap; must happen before the report is
+        // built, and is idempotent.
+        classCollector.flush();
 
         addDerivedClassMetrics(classMetrics, analyzedMethods);
         String packageName = classDeclaration.findCompilationUnit()

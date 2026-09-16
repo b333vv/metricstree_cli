@@ -13,17 +13,17 @@ import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Consumer;
 
 public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserClassMetricVisitor {
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
         Set<String> coupledClasses = new HashSet<>();
 

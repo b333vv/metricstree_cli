@@ -4,14 +4,14 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 
-import java.util.function.Consumer;
 
 public class JavaParserNumberOfAccessorMethodsMetricVisitor extends JavaParserClassMetricVisitor {
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
         long numberOfAccessorMethods = declaration.getMethods().stream().filter(this::isAccessor).count();
         collector.accept(MetricResult.of(MetricCode.NOAC, numberOfAccessorMethods));

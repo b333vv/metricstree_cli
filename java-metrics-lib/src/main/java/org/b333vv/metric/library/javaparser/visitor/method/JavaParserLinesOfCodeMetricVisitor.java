@@ -4,15 +4,15 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisitor;
 
 import java.util.Optional;
-import java.util.function.Consumer;
 
 public class JavaParserLinesOfCodeMetricVisitor extends JavaParserMethodMetricVisitor {
 
     @Override
-    public void visit(MethodDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(MethodDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
         long linesOfCode = 0;
         Optional<BlockStmt> body = declaration.getBody();

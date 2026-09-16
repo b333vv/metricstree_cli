@@ -17,17 +17,17 @@ import com.github.javaparser.ast.stmt.ExplicitConstructorInvocationStmt;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 import org.b333vv.metric.model.metric.value.Value;
 
 import java.util.HashSet;
 import java.util.Set;
-import java.util.function.Consumer;
 
 public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetricVisitor {
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
         if (declaration.isInterface()) {
             collector.accept(MetricResult.of(MetricCode.RFC, Value.UNDEFINED));

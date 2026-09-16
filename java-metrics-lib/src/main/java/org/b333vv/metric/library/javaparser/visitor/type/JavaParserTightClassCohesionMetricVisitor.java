@@ -9,6 +9,7 @@ import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.ThisExpr;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 
 import java.util.Collections;
@@ -17,7 +18,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class JavaParserTightClassCohesionMetricVisitor extends JavaParserClassMetricVisitor {
@@ -26,7 +26,7 @@ public class JavaParserTightClassCohesionMetricVisitor extends JavaParserClassMe
             "toString", "equals", "hashCode", "finalize", "clone", "readObject", "writeObject");
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration declaration, Consumer<MetricResult> collector) {
+    public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
         List<MethodDeclaration> methods = declaration.getMethods().stream()
                 .filter(method -> !method.isStatic())

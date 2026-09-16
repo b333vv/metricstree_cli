@@ -6,18 +6,25 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.resolution.TypeSolver;
+import org.b333vv.metric.library.core.AnalysisDiagnostic;
+import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.library.javaparser.EnhancedJavaParserContext;
 import org.b333vv.metric.library.javaparser.EnhancedJavaParserContextBuilder;
 import org.b333vv.metric.library.javaparser.JavaParserTypeSolverFactory;
+import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisitor;
 import org.junit.jupiter.api.Assertions;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
 public abstract class JavaParserVisitorTestSupport {
+
+    private final List<AnalysisDiagnostic> lastDiagnostics = new ArrayList<>();
 
     protected CompilationUnit parse(String sourceCode) {
         JavaParser parser = new JavaParser();
@@ -72,14 +79,14 @@ public abstract class JavaParserVisitorTestSupport {
 
     protected MetricResult collectMetric(JavaParserClassMetricVisitor visitor, ClassOrInterfaceDeclaration declaration) {
         List<MetricResult> metrics = new ArrayList<>();
-        visitor.visit(declaration, metrics::add);
+        collect(visitor, declaration, metrics);
         Assertions.assertEquals(1, metrics.size());
         return metrics.get(0);
     }
 
     protected MetricResult collectMetric(JavaParserMethodMetricVisitor visitor, MethodDeclaration declaration) {
         List<MetricResult> metrics = new ArrayList<>();
-        visitor.visit(declaration, metrics::add);
+        collect(visitor, declaration, metrics);
         Assertions.assertEquals(1, metrics.size());
         return metrics.get(0);
     }
@@ -96,14 +103,50 @@ public abstract class JavaParserVisitorTestSupport {
     protected List<MetricResult> collectClassMetrics(JavaParserClassMetricVisitor visitor,
             ClassOrInterfaceDeclaration declaration) {
         List<MetricResult> metrics = new ArrayList<>();
-        visitor.visit(declaration, metrics::add);
+        collect(visitor, declaration, metrics);
         return metrics;
     }
 
     protected List<MetricResult> collectMethodMetrics(JavaParserMethodMetricVisitor visitor,
             MethodDeclaration declaration) {
         List<MetricResult> metrics = new ArrayList<>();
-        visitor.visit(declaration, metrics::add);
+        collect(visitor, declaration, metrics);
         return metrics;
+    }
+
+    /**
+     * Diagnostics reported by the most recent {@code collect*Metric(s)} call, so tests can assert what
+     * a visitor observed as well as what it measured (TASK-101 channel, used from TASK-102 onwards).
+     */
+    protected List<AnalysisDiagnostic> lastDiagnostics() {
+        return List.copyOf(lastDiagnostics);
+    }
+
+    private void collect(JavaParserClassMetricVisitor visitor, ClassOrInterfaceDeclaration declaration,
+            List<MetricResult> metrics) {
+        AnalysisCollector collector = newCollector(metrics);
+        visitor.visit(declaration, collector);
+        collector.flush();
+    }
+
+    private void collect(JavaParserMethodMetricVisitor visitor, MethodDeclaration declaration,
+            List<MetricResult> metrics) {
+        AnalysisCollector collector = newCollector(metrics);
+        visitor.visit(declaration, collector);
+        collector.flush();
+    }
+
+    /**
+     * Builds a collector for a test that drives a visitor directly — e.g. for a node type the
+     * {@code collect*Metric(s)} helpers do not cover. Diagnostics land in {@link #lastDiagnostics()}.
+     */
+    protected AnalysisCollector newCollector(List<MetricResult> metrics) {
+        lastDiagnostics.clear();
+        return new AnalysisCollector(
+                metrics::add,
+                lastDiagnostics,
+                "test-subject",
+                new SourceLocation(Path.of("Test.java"), 1, 1),
+                AnalysisOptions.DEFAULT_UNRESOLVED_SYMBOL_DIAGNOSTIC_CAP);
     }
 }
