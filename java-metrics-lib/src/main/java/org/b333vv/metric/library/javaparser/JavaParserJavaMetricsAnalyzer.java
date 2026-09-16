@@ -162,6 +162,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     private final JavaParserTypeSolverFactory typeSolverFactory;
     private final EnhancedJavaParserContextBuilder enhancedContextBuilder;
     private final DerivedMetricCalculator derivedMetricCalculator;
+    private final AnalysisPhaseListener phaseListener;
     private final List<JavaParserClassMetricVisitor> classVisitors;
     private final List<JavaParserMethodMetricVisitor> methodVisitors;
 
@@ -169,16 +170,38 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         this(
                 new JavaParserTypeSolverFactory(),
                 new EnhancedJavaParserContextBuilder(),
-                new DerivedMetricCalculator());
+                new DerivedMetricCalculator(),
+                AnalysisPhaseListener.NO_OP);
+    }
+
+    /**
+     * Creates an analyzer that reports the duration of every analysis phase to {@code phaseListener}.
+     * The listener is purely observational and must not change the produced report.
+     */
+    public JavaParserJavaMetricsAnalyzer(AnalysisPhaseListener phaseListener) {
+        this(
+                new JavaParserTypeSolverFactory(),
+                new EnhancedJavaParserContextBuilder(),
+                new DerivedMetricCalculator(),
+                phaseListener);
     }
 
     JavaParserJavaMetricsAnalyzer(
             JavaParserTypeSolverFactory typeSolverFactory,
             EnhancedJavaParserContextBuilder enhancedContextBuilder,
             DerivedMetricCalculator derivedMetricCalculator) {
+        this(typeSolverFactory, enhancedContextBuilder, derivedMetricCalculator, AnalysisPhaseListener.NO_OP);
+    }
+
+    JavaParserJavaMetricsAnalyzer(
+            JavaParserTypeSolverFactory typeSolverFactory,
+            EnhancedJavaParserContextBuilder enhancedContextBuilder,
+            DerivedMetricCalculator derivedMetricCalculator,
+            AnalysisPhaseListener phaseListener) {
         this.typeSolverFactory = typeSolverFactory;
         this.enhancedContextBuilder = enhancedContextBuilder;
         this.derivedMetricCalculator = derivedMetricCalculator;
+        this.phaseListener = phaseListener == null ? AnalysisPhaseListener.NO_OP : phaseListener;
         this.classVisitors = buildClassVisitors();
         this.methodVisitors = buildMethodVisitors();
     }
@@ -189,7 +212,10 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         AnalysisOptions options = request.options();
         MetricSelection metricSelection = options.metricSelection();
 
+        long phaseStart = System.nanoTime();
         List<Path> sourceFiles = resolveSourceFiles(request, diagnostics);
+        phaseListener.onPhaseCompleted(
+                AnalysisPhaseListener.Phase.RESOLVE_SOURCES, System.nanoTime() - phaseStart);
         if (sourceFiles.isEmpty()) {
             diagnostics.add(new AnalysisDiagnostic(
                     "NO_SOURCE_FILES",
@@ -199,6 +225,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             return new MetricReport(new ProjectReport(request.projectName(), Map.of(), List.of()), diagnostics);
         }
 
+        phaseStart = System.nanoTime();
         List<ParsedSourceUnit> parsedSourceUnits = parseSourceFiles(sourceFiles, diagnostics);
         List<CompilationUnit> parsedUnits = parsedSourceUnits.stream()
                 .map(ParsedSourceUnit::compilationUnit)
@@ -211,13 +238,20 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 getClass().getClassLoader());
         EnhancedJavaParserContext enhancedContext = enhancedContextBuilder.build(parsedUnits, typeSolver);
         Map<String, Path> sourcePathByQualifiedName = buildSourcePathIndex(parsedSourceUnits);
+        phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.PARSE, System.nanoTime() - phaseStart);
 
+        phaseStart = System.nanoTime();
         List<AnalyzedClass> analyzedClasses = analyzeClasses(
                 enhancedContext,
                 sourcePathByQualifiedName,
                 metricSelection);
+        phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.VISIT, System.nanoTime() - phaseStart);
+
+        phaseStart = System.nanoTime();
         List<PackageReport> packageReports = buildPackageReports(analyzedClasses, metricSelection);
         ProjectReport projectReport = buildProjectReport(request.projectName(), packageReports, analyzedClasses, metricSelection);
+        phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.AGGREGATE, System.nanoTime() - phaseStart);
+
         return new MetricReport(projectReport, diagnostics);
     }
 

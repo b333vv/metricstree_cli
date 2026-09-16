@@ -1,5 +1,35 @@
 # what has been done
 
+## Stage 0: performance baseline (2026-09-16)
+
+### TASK-002 — Performance and memory baseline — done
+
+- New `AnalysisPhaseListener` (`java-metrics-lib/.../javaparser/`) — a functional interface with a
+  `Phase` enum (`RESOLVE_SOURCES`, `PARSE`, `VISIT`, `AGGREGATE`) and a `NO_OP` default. The analyzer
+  gained a constructor taking a listener; the default constructor keeps the old behaviour, so no
+  library consumer changes.
+- `JavaParserJavaMetricsAnalyzer.analyze()` now times each of the four phases with `System.nanoTime()`
+  and reports them. The listener is purely observational — it cannot change the report, which the
+  TASK-001 goldens confirm (they stayed green across the change).
+- `PerformanceRunner` rewritten: the corpus is no longer a hardcoded absolute path but a
+  `-Dbenchmark.sourceRoot=<path>` system property. Output now has a phase table with wall time,
+  **peak heap** and **heap after GC** per phase, plus corpus size, machine/JVM description and
+  throughput.
+- Peak heap is sampled by a daemon thread polling `MemoryMXBean.getHeapMemoryUsage()` every 10 ms
+  instead of the old single after-GC delta, so transient peaks inside a phase are visible. The
+  sampler label is advanced when a phase *completes*, so each phase's peak is attributed correctly.
+- `PerformanceBenchmarkTest` now **skips** cleanly when no corpus is configured (clear message
+  pointing at the property) instead of failing, and asserts only that the harness works. No timing
+  or memory thresholds — those would be flaky in CI.
+- `java-metrics-lib/build.gradle.kts`: the `benchmark` task runs with `-Xmx4g` (matching the `test`
+  task, so the numbers are comparable) and forwards `benchmark.sourceRoot` to both the `test` and
+  `benchmark` JVMs (Gradle does not propagate command-line `-D` properties to forked JVMs).
+- Baseline recorded in `docs/prd/implementation-plan.md` §5 → "Baseline (2026-09)" and the command
+  documented in `docs/RUN.md`. Corpus: 4 074 files / 4 020 classes / 19 994 methods. Total 46 161 ms,
+  overall peak heap 3 815 MB of the 4 096 MB ceiling, of which VISIT alone is 41 273 ms / 3 815 MB —
+  the analysis runs within ~7% of an `OutOfMemoryError`, which is what the −30% criterion must widen.
+  Heap after GC stays at ~1 949 MB, so roughly half the visit-phase peak is reachable garbage.
+
 ## Stage 0 safety net: JSON contract goldens + DEBT-01 fix (2026-09-16)
 
 ### TASK-003 — Halstead visitor race condition (DEBT-01) — done, pulled forward

@@ -330,3 +330,55 @@ Two normalisations keep the comparison stable across machines:
 
 Everything else is compared verbatim; JSON is only pretty-printed (key order and values preserved)
 to keep the golden files and failure diffs readable.
+
+## Performance Benchmark
+
+`PerformanceRunner` measures wall time and peak heap per analysis phase on a real corpus. The corpus
+is **external to the repository**, so it is passed as a system property and nothing is hardcoded:
+
+```bash
+./gradlew :java-metrics-lib:benchmark -Dbenchmark.sourceRoot=/path/to/big/project/src/main/java
+```
+
+Example output:
+
+```
+=== Java Metrics performance benchmark ===
+Source root : /Users/vadim/code/core/src/main/java
+Machine     : Mac OS X aarch64, 8 cores
+JVM         : 21.0.3 (OpenJDK 64-Bit Server VM)
+Max heap    : 4096 MB
+Project     : 4074 files, 289665 lines, 4020 classes, 19994 methods, 1318 packages
+
+  Phase               Time (ms) Peak heap (MB) Heap after GC (MB)
+  RESOLVE_SOURCES            99              9                  2
+  PARSE                    3295           1065                864
+  VISIT                   41273           3815               1949
+  AGGREGATE                 167           2013               1958
+  ----------------------------------------------------------------
+  Total                   46161           3815
+```
+
+- **Phases** come from the analyzer's `AnalysisPhaseListener`: `RESOLVE_SOURCES` (walk the source
+  roots), `PARSE` (parse + build the symbol solver context), `VISIT` (per-class and per-method
+  visitors), `AGGREGATE` (package/project rollups and MOOD metrics).
+- **Peak heap** is sampled every 10 ms by a daemon thread reading `MemoryMXBean`, so it catches
+  transient peaks that a single after-GC reading misses. `Heap after GC` is an explicit `System.gc()`
+  reading taken at the phase boundary.
+- The `benchmark` task runs with `-Xmx4g`; if peak heap approaches that ceiling the run is measuring
+  the heap limit rather than the analyzer.
+
+The recorded reference numbers live in
+[`docs/prd/implementation-plan.md`](prd/implementation-plan.md#baseline-2026-09). Compare new runs on
+the **same machine** — these are wall-clock and heap figures, not normalized units.
+
+`PerformanceBenchmarkTest` wraps the same runner for CI. It **skips** (does not fail) when no corpus
+is configured, so a plain `./gradlew check` stays green:
+
+```bash
+./gradlew :java-metrics-lib:test -Dbenchmark.sourceRoot=/path/to/big/project/src/main/java
+```
+
+The test only asserts that the harness itself works (files and classes found, every phase measured,
+non-zero peaks). It deliberately contains **no timing or memory thresholds** — those would be flaky
+in CI; the −30% gate is evaluated manually against the recorded baseline.

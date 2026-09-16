@@ -22,6 +22,12 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
     jvmArgs("-Xmx4g")
+
+    // The benchmark corpus is optional: without -Dbenchmark.sourceRoot=... PerformanceBenchmarkTest
+    // skips cleanly. Gradle does not forward command-line -D properties to test JVMs, so do it here.
+    providers.systemProperty("benchmark.sourceRoot").orNull?.let {
+        systemProperty("benchmark.sourceRoot", it)
+    }
 }
 
 tasks.register<JavaExec>("benchmark") {
@@ -29,4 +35,12 @@ tasks.register<JavaExec>("benchmark") {
     description = "Run performance benchmark"
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("org.b333vv.metric.library.javaparser.PerformanceRunner")
+
+    // Same heap as the test task, so the recorded peak heap is comparable between the two.
+    maxHeapSize = "4g"
+
+    // See the test task above: -D properties are not inherited by the forked JVM.
+    providers.systemProperty("benchmark.sourceRoot").orNull?.let {
+        systemProperty("benchmark.sourceRoot", it)
+    }
 }

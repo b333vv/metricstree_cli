@@ -192,6 +192,64 @@ TASK-003…007, TASK-105, TASK-402: independent quick wins / phase tasks
 Additional in-session acceptance gates for every task: `./gradlew check` green,
 TASK-001 goldens unchanged (unless the task's purpose is to change the contract).
 
+### Baseline (2026-09)
+
+Recorded by [TASK-002](../tasks/TASK-002-performance-baseline.md). This is the reference point for
+criterion 1 (peak heap −30%) and for the TASK-204 memory gate. Always compare on the same machine.
+
+**Command** (the corpus is external, so it is passed as a property; the `benchmark` task does not
+read it from the repository):
+
+```
+./gradlew :java-metrics-lib:benchmark -Dbenchmark.sourceRoot=/Users/vadim/code/core/src/main/java
+```
+
+**Environment**
+
+| | |
+|---|---|
+| Machine | MacBook Air, Apple Silicon (aarch64), 8 cores |
+| OS | Mac OS X 26 (Darwin), JDK 21.0.3 (OpenJDK 64-Bit Server VM) |
+| Gradle JVM heap | `-Xmx4g` (`benchmark` task and `test` task share this setting) |
+| Analyzer parallelism | `availableProcessors - 1` = 7 |
+
+**Corpus**
+
+| Metric | Value |
+|---|---|
+| Java files | 4 074 |
+| Lines | 289 665 |
+| Classes analysed | 4 020 |
+| Methods analysed | 19 994 |
+| Packages | 1 318 |
+
+**Per-phase results**
+
+| Phase | Time (ms) | Peak heap (MB) | Heap after GC (MB) |
+|---|---|---|---|
+| RESOLVE_SOURCES | 99 | 9 | 2 |
+| PARSE | 3 295 | 1 065 | 864 |
+| VISIT | 41 273 | 3 815 | 1 949 |
+| AGGREGATE | 167 | 2 013 | 1 958 |
+| **Total** | **46 161** | **3 815** (of 4 096 max) | |
+
+Throughput: 88.26 files/s, 87.09 classes/s, 433.14 methods/s.
+
+**How to read these numbers**
+
+- The **VISIT** phase dominates both time (89%) and memory: peak heap 3 815 MB of the 4 096 MB
+  configured maximum, i.e. the analysis runs within ~7% of an `OutOfMemoryError`. This is the
+  head-room the −30% criterion must widen, and the reason TASK-203 (AST lifecycle) is the
+  load-bearing task of Phase 2.
+- Heap **after** GC stays at ~1 949 MB, so roughly half of the visit-phase peak is reachable
+  garbage (per-class visitors, resolution caches), not live data. The PARSE→VISIT delta (1 065 →
+  3 815 MB) is what TASK-204's two-pass pipeline targets.
+- Per-phase peaks are sampled by a 10 ms daemon thread reading `MemoryMXBean`; because the sampler
+  is advanced when a phase *completes*, each row is the peak observed during that phase. Treat the
+  values as ±5% rather than exact.
+- Run-to-run variance on this machine is a few percent (an earlier run of the same revision
+  measured 47 812 ms / 3 806 MB), so only differences well above that are meaningful.
+
 ---
 
 ## 6. Risks & Mitigations

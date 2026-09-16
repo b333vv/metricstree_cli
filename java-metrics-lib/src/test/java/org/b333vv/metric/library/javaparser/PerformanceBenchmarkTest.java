@@ -1,94 +1,50 @@
 package org.b333vv.metric.library.javaparser;
 
-import org.b333vv.metric.library.core.AnalysisRequest;
-import org.b333vv.metric.library.core.MetricReport;
-import org.b333vv.metric.library.core.SourceRoot;
-import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Runs the TASK-002 baseline measurement as part of the normal test suite when a corpus is
+ * configured, and skips cleanly otherwise.
+ *
+ * <pre>{@code
+ * ./gradlew :java-metrics-lib:test --tests '*PerformanceBenchmarkTest' -Dbenchmark.sourceRoot=/path/to/project/src/main/java
+ * }</pre>
+ *
+ * <p>The test deliberately asserts nothing about speed or memory: timings are machine-specific and
+ * would make CI flaky. It only checks that the measurement produced a usable result — the numbers
+ * are the deliverable, and they are recorded in {@code docs/prd/implementation-plan.md}.
+ */
 class PerformanceBenchmarkTest {
 
-    private static final Path SOURCE_ROOT = Paths.get("/Users/vadim/code/core/src/main/java");
-
     @Test
-    @DisplayName("Performance benchmark on medium project")
-    void benchmarkMediumProject_ActualTest() throws Exception {
-        long startTime = System.nanoTime();
-        long memBefore = getUsedMemory();
+    void measuresTheConfiguredCorpus() {
+        Path sourceRoot = PerformanceRunner.resolveSourceRoot(new String[0]);
+        Assumptions.assumeTrue(
+                sourceRoot != null,
+                "Skipping benchmark: no corpus configured, pass -D"
+                        + PerformanceRunner.SOURCE_ROOT_PROPERTY + "=<path to a source root>");
 
-        JavaMetricsAnalyzer analyzer = new JavaParserJavaMetricsAnalyzer();
-        MetricReport report = analyzer.analyze(AnalysisRequest.of("benchmark", List.of(new SourceRoot(SOURCE_ROOT))));
+        PerformanceRunner.BenchmarkResult result = PerformanceRunner.measure(sourceRoot, System.out);
 
-        long endTime = System.nanoTime();
-        long memAfter = getUsedMemory();
+        assertTrue(result.files() > 0, "Corpus must contain Java files");
+        assertTrue(result.classes() > 0, "Analysis must report classes");
+        assertEquals(
+                AnalysisPhaseListener.Phase.values().length,
+                result.durationByPhase().size(),
+                "Every analysis phase must be measured");
+        assertTrue(result.totalMillis() > 0, "Total duration must be measured");
 
-        long totalFiles = countJavaFiles(SOURCE_ROOT);
-        long totalLines = countLines(SOURCE_ROOT);
-        long totalClasses = report.classes().size();
-        long totalMethods = report.classes().stream().mapToLong(c -> c.methods().size()).sum();
-        long totalPackages = report.packages().size();
-
-        long totalTimeMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
-        double filesPerSec = totalFiles * 1000.0 / totalTimeMs;
-        double linesPerSec = totalLines * 1000.0 / totalTimeMs;
-        double classesPerSec = totalClasses * 1000.0 / totalTimeMs;
-        double methodsPerSec = totalMethods * 1000.0 / totalTimeMs;
-        long peakMemoryMb = (memAfter - memBefore) / (1024 * 1024);
-
-        System.out.println("=== Performance Benchmark ===");
-        System.out.println("Source: " + SOURCE_ROOT);
-        System.out.println("Files: " + totalFiles);
-        System.out.println("Lines: " + totalLines);
-        System.out.println("Classes: " + totalClasses);
-        System.out.println("Methods: " + totalMethods);
-        System.out.println("Packages: " + totalPackages);
-        System.out.println();
-        System.out.println("Total Time: " + totalTimeMs + " ms");
-        System.out.println("Files/sec: " + String.format("%.2f", filesPerSec));
-        System.out.println("Lines/sec: " + String.format("%.2f", linesPerSec));
-        System.out.println("Classes/sec: " + String.format("%.2f", classesPerSec));
-        System.out.println("Methods/sec: " + String.format("%.2f", methodsPerSec));
-        System.out.println("Memory (delta): " + peakMemoryMb + " MB");
-    }
-
-    private long countJavaFiles(Path root) {
-        try (Stream<Path> stream = Files.walk(root)) {
-            return stream.filter(p -> p.toString().endsWith(".java")).count();
-        } catch (Exception e) {
-            return 0;
+        Map<AnalysisPhaseListener.Phase, Long> peakByPhase = result.peakByPhase();
+        for (AnalysisPhaseListener.Phase phase : AnalysisPhaseListener.Phase.values()) {
+            assertTrue(peakByPhase.getOrDefault(phase, 0L) > 0,
+                    "Peak heap must be sampled during " + phase);
         }
-    }
-
-    private long countLines(Path root) {
-        try (Stream<Path> stream = Files.walk(root)) {
-            return stream.filter(p -> p.toString().endsWith(".java"))
-                    .mapToLong(p -> {
-                        try {
-                            return Files.lines(p).count();
-                        } catch (Exception e) {
-                            return 0L;
-                        }
-                    })
-                    .sum();
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
-    private long getUsedMemory() {
-        System.gc();
-        System.runFinalization();
-        try {
-            TimeUnit.MILLISECONDS.sleep(100);
-        } catch (InterruptedException ignored) {}
-        Runtime runtime = Runtime.getRuntime();
-        return runtime.totalMemory() - runtime.freeMemory();
     }
 }
