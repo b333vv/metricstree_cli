@@ -341,19 +341,56 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
     private static final int PARALLELISM = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
 
+    /**
+     * How long {@code analyze()} waits for a dedicated pool to drain before forcing it down.
+     * Deliberately short: the pool only ever runs tasks that {@code analyze()} has already
+     * joined, so a healthy pool terminates almost immediately; a longer wait would only stall
+     * the caller after a failure.
+     */
+    private static final long POOL_SHUTDOWN_TIMEOUT_SECONDS = 5L;
+
     private List<ParsedSourceUnit> parseSourceFiles(List<Path> sourceFiles, List<AnalysisDiagnostic> diagnostics) {
         ParserConfiguration parserConfig = EnhancedJavaParserContextBuilder.createParserConfiguration();
 
-        var customParallelism = new java.util.concurrent.ForkJoinPool(PARALLELISM);
-        List<ParsedSourceUnit> parsedSourceUnits = customParallelism.submit(() ->
+        return runInDedicatedPool(() ->
                 sourceFiles.parallelStream()
                         .map(sourceFile -> parseSingleFile(sourceFile, parserConfig, diagnostics))
                         .filter(java.util.Optional::isPresent)
                         .map(java.util.Optional::get)
                         .toList()
-        ).join();
+        );
+    }
 
-        return parsedSourceUnits;
+    /**
+     * Runs {@code task} on a dedicated {@link java.util.concurrent.ForkJoinPool} sized like the
+     * analysis parallelism, and always shuts that pool down.
+     *
+     * <p>The pool used to be created per phase and never shut down, so every {@code analyze()} call
+     * leaked its worker threads — visible for repeated analyses in one JVM (IntelliJ plugin, CLI
+     * batch runs). Teardown is deliberately quiet: this runs in a {@code finally} block, and a
+     * shutdown failure must never mask the analysis failure that caused the unwinding (DEBT-02).
+     */
+    private static <T> T runInDedicatedPool(java.util.function.Supplier<T> task) {
+        java.util.concurrent.ForkJoinPool pool = new java.util.concurrent.ForkJoinPool(PARALLELISM);
+        try {
+            return pool.submit(() -> task.get()).join();
+        } finally {
+            shutdownQuietly(pool);
+        }
+    }
+
+    private static void shutdownQuietly(java.util.concurrent.ForkJoinPool pool) {
+        try {
+            pool.shutdown();
+            if (!pool.awaitTermination(POOL_SHUTDOWN_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)) {
+                pool.shutdownNow();
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            pool.shutdownNow();
+        } catch (RuntimeException ignored) {
+            // Never replace the original analysis failure with a pool teardown failure.
+        }
     }
 
     private java.util.Optional<ParsedSourceUnit> parseSingleFile(Path sourceFile, ParserConfiguration parserConfig, List<AnalysisDiagnostic> diagnostics) {
@@ -413,14 +450,11 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 .sorted(Comparator.comparing(this::classSortKey))
                 .toList();
 
-        var customParallelism = new java.util.concurrent.ForkJoinPool(PARALLELISM);
-        List<AnalyzedClass> analyzedClasses = customParallelism.submit(() ->
+        return runInDedicatedPool(() ->
                 sortedClassDeclarations.parallelStream()
                         .map(classDeclaration -> analyzeSingleClass(classDeclaration, allClassDeclarations, sourcePathByQualifiedName, metricSelection))
                         .toList()
-        ).join();
-
-        return analyzedClasses;
+        );
     }
 
     private AnalyzedClass analyzeSingleClass(

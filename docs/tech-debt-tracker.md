@@ -1,10 +1,6 @@
 # Tech Debt Tracker
 
 ## Active Debt Items
-- **DEBT-02 — ForkJoinPool leak.**
-  Both custom `ForkJoinPool`s created per `analyze()` call (parse phase ~lines 308–323,
-  visit phase ~lines 373–390) are never shut down. Fix planned in
-  [TASK-004](tasks/TASK-004-forkjoinpool-lifecycle.md).
 - **DEBT-03 — `--classpath` directories silently dropped.**
   `JavaParserJavaMetricsAnalyzer` filters classpath entries with `Files::isRegularFile`
   (~lines 207–211); directories vanish without diagnostics. Warning diagnostics planned in
@@ -51,6 +47,19 @@
   unchanged. Audit sweep: no other shared visitor keeps mutable instance state
   (`JavaParserNumberOfChildrenMetricVisitor` and `JavaParserForeignDataProvidersMetricVisitor` hold
   constructor-injected immutable class lists and are instantiated per class).
+- **DEBT-02 — ForkJoinPool leak.** Resolved by
+  [TASK-004](tasks/TASK-004-forkjoinpool-lifecycle.md). Both phases now run through a single
+  `runInDedicatedPool(Supplier<T>)` helper in `JavaParserJavaMetricsAnalyzer` that always tears the
+  pool down in a `finally` block. Teardown uses `shutdown()` + a 5 s bounded `awaitTermination`
+  followed by `shutdownNow()`, and swallows `RuntimeException` so a pool failure can never mask the
+  analysis failure that caused the unwinding (the `InterruptedException` path restores the interrupt
+  flag). Parallelism is unchanged (`PARALLELISM = availableProcessors - 1`).
+  Evidence: `JavaParserAnalyzerPoolLifecycleTest` runs `analyze()` 10 times on a 6-class fixture and
+  compares the count of unnamed-`ForkJoinPool` worker threads before and after, matching threads by
+  the `ForkJoinPool-<id>-worker-<n>` name so the JDK common pool is excluded. On the pre-fix code it
+  reports growth from 13 to 151 workers; with the fix it reports no growth. The assertion is
+  growth-based, not absolute, so the alternative "one pool owned by the analyzer" design allowed by
+  TASK-004 would still pass.
 
 ## Tracking Rule
 Close a debt item only when automated checks prove the replacement path is active and stable.

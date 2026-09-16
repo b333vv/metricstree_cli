@@ -1,6 +1,6 @@
 # what has been done
 
-## Stage 0: performance baseline (2026-09-16)
+## Stage 0: performance baseline + DEBT-02 fix (2026-09-16)
 
 ### TASK-002 — Performance and memory baseline — done
 
@@ -29,6 +29,23 @@
   overall peak heap 3 815 MB of the 4 096 MB ceiling, of which VISIT alone is 41 273 ms / 3 815 MB —
   the analysis runs within ~7% of an `OutOfMemoryError`, which is what the −30% criterion must widen.
   Heap after GC stays at ~1 949 MB, so roughly half the visit-phase peak is reachable garbage.
+
+### TASK-004 — ForkJoinPool lifecycle leak (DEBT-02) — done
+
+- Both per-call `ForkJoinPool`s (parse phase and visit phase) are now created through a single
+  `runInDedicatedPool(Supplier<T>)` helper that always tears the pool down in a `finally` block.
+- Teardown is defensive: `shutdown()` → bounded `awaitTermination(5 s)` → `shutdownNow()`, with
+  `InterruptedException` restoring the interrupt flag and `RuntimeException` swallowed so a pool
+  failure can never mask the analysis failure that caused the unwinding. The 5 s bound exists because
+  the pool only ever runs tasks `analyze()` has already joined, so a healthy pool terminates at once.
+- Parallelism is unchanged (`PARALLELISM = availableProcessors - 1`).
+- New `JavaParserAnalyzerPoolLifecycleTest` — runs `analyze()` 10 times over a 6-class fixture and
+  compares the count of unnamed-`ForkJoinPool` worker threads before and after, matching by the
+  `ForkJoinPool-<id>-worker-<n>` name so the JDK common pool is excluded and waiting for the count to
+  settle between samples. Verified to fail against the leaking code (13 → 151 workers) and pass with
+  the fix. The assertion is deliberately **growth-based**, not absolute, so the alternative
+  "one pool owned by the analyzer" design allowed by TASK-004 would also pass.
+- `docs/tech-debt-tracker.md`: DEBT-02 moved to Resolved.
 
 ## Stage 0 safety net: JSON contract goldens + DEBT-01 fix (2026-09-16)
 
