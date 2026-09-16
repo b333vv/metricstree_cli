@@ -1,15 +1,20 @@
 # Tech Debt Tracker
 
 ## Active Debt Items
-- **DEBT-03 — `--classpath` directories silently dropped.** *Diagnostics part resolved by
-  [TASK-006](tasks/TASK-006-classpath-dirs-diagnostics.md); directory support still open.*
-  `JavaParserJavaMetricsAnalyzer.resolveClasspathEntries` now reports a `CLASSPATH_PROBLEM` WARNING
-  (path + reason: missing / directory / not a regular file / not readable) for every dropped entry
-  instead of filtering with `Files::isRegularFile` and staying quiet. Evidence:
-  `JavaParserAnalyzerClasspathDiagnosticsTest` covers directory, missing, unreadable, valid-jar and
-  mixed-list cases, and the warning is visible end-to-end in the `analyze` JSON output.
-  **Still open:** directories are not actually resolved against — that is
-  [TASK-105](tasks/TASK-105-typesolver-improvements.md), which is what will close this item.
+- **DEBT-03 — `--classpath` directories silently dropped.** *Resolved (TASK-006 + TASK-105).*
+  Entries were filtered with `Files::isRegularFile` and nothing was said, so
+  `--classpath build/classes/java/main` — the most common way to point at a dependency — silently did
+  nothing and the affected metrics were understated with no trace. TASK-006 made every dropped entry
+  produce a `CLASSPATH_PROBLEM` WARNING (path + reason) instead of staying quiet; TASK-105 made the
+  directories actually resolve, so most entries are no longer dropped at all.
+  `ClasspathInspector` classifies each entry (jar / directory of sources / directory of compiled
+  classes) and reports only what can back nothing; `JavaParserTypeSolverFactory` builds the matching
+  solver, and the chain order is now documented and tested. Evidence:
+  `JavaParserAnalyzerClasspathDiagnosticsTest` (dropped entries are still reported),
+  `ClasspathInspectorTest` (the classification, including the sources+classes and neither cases),
+  `DirectoryClasspathResolutionTest` (end to end: coverage `0.548…` → `1.0` once the directory is
+  passed), `TypeSolverPrecedenceTest` (the resolution order). Documented in `docs/RUN.md` and
+  `docs/ARCHITECTURE.md`.
 - **DEBT-06 — Silent resolution failures in visitors.** *Resolved (TASK-101, TASK-102, TASK-103).*
   All 35 visitors, the analyzer's `tryResolve` and `JavaParserTypeSolverFactory` used to swallow
   symbol-resolution exceptions, so metrics were understated without a trace. Every catch in

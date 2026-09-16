@@ -18,6 +18,8 @@ import org.b333vv.metric.library.core.AnalysisSeverity;
 import org.b333vv.metric.library.core.SourceLocation;
 
 import java.io.IOException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
@@ -30,6 +32,12 @@ import java.util.function.Consumer;
  * {@link AnalysisDiagnostic} channel the visitors use (TASK-103) instead of printing to
  * {@code System.out}/{@code System.err}, where a library caller — and a JSON consumer — would never
  * see them.
+ *
+ * <p>The order in which solvers are registered is the resolution policy, and it is load-bearing:
+ * {@link CombinedTypeSolver} returns the first solved reference and never revisits an earlier solver.
+ * The order, and why it is that order, is documented in {@code docs/ARCHITECTURE.md}; the short version
+ * is that the project's own sources come first and the JDK comes last, so a user-supplied entry is
+ * never shadowed by whatever the analyzer happens to have been built with.
  */
 public class JavaParserTypeSolverFactory {
 
@@ -43,7 +51,7 @@ public class JavaParserTypeSolverFactory {
 
     public TypeSolver create(List<CompilationUnit> allUnits, List<Path> sourceRoots, List<Path> libraryJars,
             ClassLoader classLoader) {
-        return create(allUnits, sourceRoots, libraryJars, classLoader, DISCARD);
+        return create(allUnits, sourceRoots, UsableClasspath.ofJars(libraryJars), classLoader, DISCARD);
     }
 
     /**
@@ -52,16 +60,23 @@ public class JavaParserTypeSolverFactory {
      */
     public TypeSolver create(List<CompilationUnit> allUnits, List<Path> sourceRoots, List<Path> libraryJars,
             ClassLoader classLoader, Consumer<AnalysisDiagnostic> diagnostics) {
-        CombinedTypeSolver combinedTypeSolver = new CombinedTypeSolver();
-        combinedTypeSolver.add(new ReflectionTypeSolver());
-        if (classLoader != null) {
-            combinedTypeSolver.add(new ClassLoaderTypeSolver(classLoader));
-        }
+        return create(allUnits, sourceRoots, UsableClasspath.ofJars(libraryJars), classLoader, diagnostics);
+    }
 
+    /**
+     * @param classpath what {@link ClasspathInspector} decided each requested entry can contribute
+     */
+    public TypeSolver create(List<CompilationUnit> allUnits, List<Path> sourceRoots, UsableClasspath classpath,
+            ClassLoader classLoader, Consumer<AnalysisDiagnostic> diagnostics) {
+        CombinedTypeSolver combinedTypeSolver = new CombinedTypeSolver();
+
+        // 1. The project's own parsed declarations. Highest fidelity — exact AST, ranges and comments —
+        //    and the answer the user is actually asking about when a name is declared in their sources.
         MemoryTypeSolver memoryTypeSolver = new MemoryTypeSolver();
         populateMemoryTypeSolver(allUnits, combinedTypeSolver, memoryTypeSolver, diagnostics);
         combinedTypeSolver.add(memoryTypeSolver);
 
+        // 2. The project's source roots, for declarations the in-memory pass above did not index.
         for (Path sourceRoot : sourceRoots) {
             try {
                 combinedTypeSolver.add(new JavaParserTypeSolver(sourceRoot));
@@ -75,7 +90,8 @@ public class JavaParserTypeSolverFactory {
             }
         }
 
-        for (Path libraryJar : libraryJars) {
+        // 3. User-supplied jars.
+        for (Path libraryJar : classpath.jars()) {
             try {
                 combinedTypeSolver.add(new JarTypeSolver(libraryJar));
             } catch (IOException exception) {
@@ -83,6 +99,47 @@ public class JavaParserTypeSolverFactory {
                         + " could not be opened and is skipped: " + exception.getMessage(), libraryJar);
             }
         }
+
+        // 4. User-supplied directories holding sources, before the same directories' compiled output:
+        //    a source file is the more precise of the two answers.
+        for (Path sourceDirectory : classpath.sourceDirectories()) {
+            try {
+                combinedTypeSolver.add(new JavaParserTypeSolver(sourceDirectory));
+            } catch (RuntimeException exception) {
+                report(diagnostics, "Class directory " + sourceDirectory
+                        + " cannot be indexed and is skipped: " + exception.getMessage(), sourceDirectory);
+            }
+        }
+
+        // 5. User-supplied directories holding compiled classes. A directory of .class files cannot be
+        //    read by JarTypeSolver, so it is loaded through a classloader rooted at the directories.
+        //
+        //    One loader for all of them, not one each: a class in the first directory that extends a
+        //    class in the second has to be definable, and a loader that only sees its own directory
+        //    would fail with NoClassDefFoundError on the supertype.
+        if (!classpath.classDirectories().isEmpty()) {
+            List<Path> classDirectories = classpath.classDirectories();
+            try {
+                URL[] urls = new URL[classDirectories.size()];
+                for (int index = 0; index < urls.length; index++) {
+                    urls[index] = classDirectories.get(index).toUri().toURL();
+                }
+                combinedTypeSolver.add(new ClassLoaderTypeSolver(new DirectoryFirstClassLoader(urls, classLoader)));
+            } catch (IOException | RuntimeException exception) {
+                report(diagnostics, "Class directories " + classDirectories
+                        + " could not be indexed and are skipped: " + exception.getMessage(),
+                        classDirectories.get(0));
+            }
+        }
+
+        // 6. The analyzer's own runtime classpath — how the tool resolves its own dependencies. It sits
+        //    after everything the user supplied so it can never shadow a user-supplied answer.
+        if (classLoader != null) {
+            combinedTypeSolver.add(new ClassLoaderTypeSolver(classLoader));
+        }
+
+        // 7. The JDK. Last resort by design: anything the project or the user's classpath declares wins.
+        combinedTypeSolver.add(new ReflectionTypeSolver());
 
         return combinedTypeSolver;
     }
@@ -147,5 +204,62 @@ public class JavaParserTypeSolverFactory {
         return at.getRange()
                 .map(range -> new SourceLocation(path, range.begin.line, range.end.line))
                 .orElseGet(() -> new SourceLocation(path, 1, 1));
+    }
+
+    /**
+     * Loads classes from the user's class directories <em>before</em> asking the parent loader, which is
+     * the opposite of the delegation {@link URLClassLoader} does by default.
+     *
+     * <p>Parent-first would quietly defeat the point of the precedence policy: a project that depends on
+     * JavaParser — or on anything else the analyzer is built with — would have those types resolved from
+     * the analyzer's own copy, and the metrics would describe a class the user never wrote. Child-first
+     * makes the user's directory authoritative for the names it actually contains.
+     *
+     * <p>It is still a fallback, not a replacement: a name the directories do not hold is delegated to
+     * the parent as usual, so a class in a directory whose supertype lives on the analyzer's classpath
+     * still defines cleanly.
+     *
+     * <p>Nothing closes this loader, and nothing needs to: it is reachable only from the solver, so it
+     * becomes garbage with the analysis, and a directory URL holds no file descriptor open — unlike a jar
+     * URL, which is exactly why only directories take this route.
+     */
+    private static final class DirectoryFirstClassLoader extends URLClassLoader {
+
+        DirectoryFirstClassLoader(URL[] urls, ClassLoader parent) {
+            super(urls, parent);
+        }
+
+        @Override
+        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            synchronized (getClassLoadingLock(name)) {
+                Class<?> loaded = findLoadedClass(name);
+                if (loaded == null) {
+                    loaded = findInTheDirectories(name);
+                    if (loaded == null) {
+                        loaded = super.loadClass(name, false);
+                    }
+                }
+                if (resolve) {
+                    resolveClass(loaded);
+                }
+                return loaded;
+            }
+        }
+
+        /**
+         * @return the class from the directories, or {@code null} when they do not hold it
+         */
+        private Class<?> findInTheDirectories(String name) {
+            if (name.startsWith("java.")) {
+                // The JVM refuses to let anyone define a java.* class, so searching for one would only
+                // turn a clean miss into a SecurityException.
+                return null;
+            }
+            try {
+                return findClass(name);
+            } catch (ClassNotFoundException | LinkageError notInTheDirectories) {
+                return null;
+            }
+        }
     }
 }

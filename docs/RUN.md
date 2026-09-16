@@ -44,33 +44,64 @@ java-metrics-cli analyze [--exclude-file=<path>] [--project-name=<name>]
 |--------|-------------|
 | `--source-root=<path>` | Source root scanned recursively for `.java` files |
 | `--source-file=<path>` | Explicit Java source file to analyze |
-| `--classpath=<path>` | Additional classpath entry for symbol resolution. Must be a readable **file** (a jar) — see below |
+| `--classpath=<path>` | Additional classpath entry for symbol resolution. A jar, or a directory holding sources or compiled classes — see below |
 | `--project-name=<name>` | Project name written to the resulting report |
 | `--metric=<code>` | Restrict output to specific metric codes (e.g., `LOC`, `NOC`) |
 | `--output-file=<path>` | Write JSON output to the specified file instead of stdout |
 | `--pretty` | Pretty-print JSON output |
 
-#### `--classpath` limitations
+#### `--classpath` entries
 
-Only readable **regular files** (jars) are added to the symbol solver. An entry that is a directory,
-does not exist, or is not readable is skipped — and because skipping used to be silent, every dropped
-entry now produces a `CLASSPATH_PROBLEM` **warning** in the report's `diagnostics` array:
+Three kinds of entry can back symbol resolution:
+
+| Entry | How it is used |
+|-------|----------------|
+| A readable **jar** | Registered with `JarTypeSolver` |
+| A **directory** holding `.java` sources | Registered with `JavaParserTypeSolver`, the same way a source root is |
+| A **directory** holding compiled `.class` files | Loaded through a classloader rooted at that directory |
+
+A directory holding both is registered both ways, and the source side wins — a source file is the more
+precise answer than its own compiled output. Name the directory whose *children* are the packages, the
+way `-cp` works: `--classpath build/classes/java/main`, not `--classpath build`.
+
+An entry that can back nothing — it does not exist, is not readable, or is a directory holding neither
+sources nor classes — is skipped, and every skipped entry produces a `CLASSPATH_PROBLEM` **warning** in
+the report's `diagnostics` array:
 
 ```json
 {
   "code": "CLASSPATH_PROBLEM",
   "severity": "WARNING",
-  "message": "Ignoring classpath entry /tmp/classes-out: it is a directory, and directories are not resolved against yet (see TASK-105)",
+  "message": "Ignoring classpath entry /tmp/classes-out: it is a directory that holds neither Java sources nor compiled classes",
   "location": { "path": "/tmp/classes-out", "startLine": 1, "endLine": 1 }
 }
 ```
 
-**Directories are not resolved against yet.** Pointing `--classpath` at a `build/classes` directory
-does not improve resolution; it only produces the warning above. Directory-backed resolution is
-tracked as [TASK-105](tasks/TASK-105-typesolver-improvements.md). Until then, package the classes
-into a jar (or rely on the sources being inside `--source-root`) if resolution accuracy matters.
+The analysis always completes: a bad classpath entry degrades resolution, it never aborts the run. To
+see whether an entry helped, compare `resolutionCoverage` (below) before and after adding it — that is
+exactly what the number is for.
 
-The analysis always completes: a bad classpath entry degrades resolution, it never aborts the run.
+Entries are resolved in a fixed order, so the same inputs always give the same answer: project sources
+first, then jars, then directories, then the analyzer's own runtime classpath, then the JDK. In
+practice that means a type declared in your project is never resolved to a same-named type inside one
+of your dependencies. The full policy is in
+[ARCHITECTURE.md](ARCHITECTURE.md#symbol-resolution-precedence).
+
+##### Modular projects
+
+A `module-info.java` inside a source root is parsed and validated like any other source file, but it is
+never reported as a class or a package, and it needs no extra flags: types in the module's own packages
+resolve normally.
+
+Module visibility is deliberately **not** enforced. The solver resolves types by qualified name, and
+layering JPMS access rules on top could only ever remove answers — a type in a non-exported package
+would become unresolved, which would lower `resolutionCoverage` and produce diagnostics about perfectly
+ordinary code. `requires` is not read back into a classpath either: locating the jar for a module name
+needs a module path, which this tool does not take. If a module you require is not on `--classpath`, its
+types stay unresolved and `resolutionCoverage` says so.
+
+A source root holding nothing but a module descriptor yields an empty report, explained by a
+`MODULE_DESCRIPTOR_ONLY` informational diagnostic rather than silently returning nothing.
 
 #### Reading `resolutionCoverage`
 
@@ -111,6 +142,7 @@ array, so a metric that is lower than expected can be told apart from a metric t
 |------|---------|
 | `PARSE_PROBLEM` | A source file could not be parsed; it is excluded from the report |
 | `CLASSPATH_PROBLEM` | A `--classpath` entry or source root was ignored or only partly usable (see above) |
+| `MODULE_DESCRIPTOR_ONLY` | The source roots hold nothing but `module-info.java`, so there are no classes to analyse |
 | `UNRESOLVED_TYPE` | A type reference could not be resolved while computing a metric |
 | `UNRESOLVED_SYMBOL` | A method, field or constructor reference could not be resolved |
 | `UNRESOLVED_TYPE_BULK` | Aggregate for `UNRESOLVED_TYPE` entries dropped by the per-class cap |

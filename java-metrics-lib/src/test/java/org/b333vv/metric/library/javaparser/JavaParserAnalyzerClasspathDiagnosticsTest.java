@@ -30,7 +30,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * {@code --classpath /some/classes-dir} silently degraded metric accuracy. Every dropped entry now
  * produces a {@code CLASSPATH_PROBLEM} warning naming the path and the reason.
  *
- * <p>Directory support itself is TASK-105 — these tests only pin that the limitation is *visible*.
+ * <p>Directory entries are supported since TASK-105 — a directory holding sources or compiled classes
+ * resolves types (see {@link DirectoryClasspathResolutionTest}) — so the directories here are
+ * deliberately empty: what is left to pin is that an entry which can back *nothing* is still reported
+ * rather than quietly ignored.
  */
 class JavaParserAnalyzerClasspathDiagnosticsTest {
 
@@ -40,7 +43,7 @@ class JavaParserAnalyzerClasspathDiagnosticsTest {
     Path tempDir;
 
     @Test
-    void warnsAboutDirectoryEntriesAndStillCompletesTheAnalysis() throws IOException {
+    void warnsAboutDirectoryEntriesThatHoldNothing() throws IOException {
         Path sourceRoot = writeSourceRoot();
         Path classesDirectory = Files.createDirectories(tempDir.resolve("build/classes/java/main"));
 
@@ -97,7 +100,6 @@ class JavaParserAnalyzerClasspathDiagnosticsTest {
         Path validJar = writeEmptyJar(tempDir.resolve("libs/valid.jar"));
         Path classesDirectory = Files.createDirectories(tempDir.resolve("out"));
         Path missing = tempDir.resolve("libs/missing.jar");
-
         MetricReport report = analyze(sourceRoot, List.of(validJar, classesDirectory, missing));
 
         List<AnalysisDiagnostic> warnings = classpathDiagnostics(report);

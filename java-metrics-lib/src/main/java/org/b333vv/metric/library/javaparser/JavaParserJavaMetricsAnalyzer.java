@@ -25,7 +25,7 @@ import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.AnalysisSeverity;
 import org.b333vv.metric.library.core.ClassReport;
 import org.b333vv.metric.library.core.ExclusionConfig;
-import org.b333vv.metric.library.core.ClasspathEntry;
+import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.library.core.DerivedMetricCalculator;
 import org.b333vv.metric.library.core.MethodReport;
 import org.b333vv.metric.library.core.MetricCode;
@@ -250,14 +250,29 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
         phaseStart = System.nanoTime();
         List<ParsedSourceUnit> parsedSourceUnits = parseSourceFiles(sourceFiles, diagnostics);
-        List<CompilationUnit> parsedUnits = parsedSourceUnits.stream()
+        // A module descriptor is a source unit but never a type declaration, so it is parsed — a syntax
+        // error in module-info.java is still worth reporting — and then kept out of the type pipeline,
+        // which has nothing to do with it. See ModuleDescriptorAnalysisTest for what this guarantees.
+        List<ParsedSourceUnit> typeDeclaringUnits = parsedSourceUnits.stream()
+                .filter(unit -> !unit.moduleDescriptor())
+                .toList();
+        List<CompilationUnit> parsedUnits = typeDeclaringUnits.stream()
                 .map(ParsedSourceUnit::compilationUnit)
                 .toList();
+        if (parsedUnits.isEmpty() && !parsedSourceUnits.isEmpty()) {
+            diagnostics.add(new AnalysisDiagnostic(
+                    MODULE_DESCRIPTOR_ONLY,
+                    AnalysisSeverity.INFO,
+                    "The source roots contain only module descriptors (" + moduleNames(parsedSourceUnits)
+                            + "), so there are no classes to analyse",
+                    new SourceLocation(sourceFiles.get(0), 1, 1)));
+        }
 
+        UsableClasspath classpath = ClasspathInspector.inspect(request.classpathEntries(), diagnostics::add);
         TypeSolver typeSolver = typeSolverFactory.create(
                 parsedUnits,
                 request.sourceRoots().stream().map(SourceRoot::path).toList(),
-                resolveClasspathEntries(request, diagnostics),
+                classpath,
                 getClass().getClassLoader(),
                 diagnostics::add);
         EnhancedJavaParserContext enhancedContext = enhancedContextBuilder.build(parsedUnits, typeSolver);
@@ -373,39 +388,24 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     private static final int PARALLELISM = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
 
     /**
-     * Keeps the classpath entries that can actually back symbol resolution and reports every entry it
-     * drops.
-     *
-     * <p>Entries used to be filtered with {@code Files::isRegularFile} and no diagnostics, so a user
-     * passing {@code --classpath /some/classes-dir} had no way to learn why resolution did not
-     * improve — the metrics were simply understated (DEBT-03). Directories are still not resolved
-     * against; making that limitation visible is this method's job, supporting them is TASK-105.
+     * Explains a report that is empty for a legitimate reason: the source roots hold nothing but module
+     * descriptors. Without this the user gets a report with no classes, no metrics and no diagnostics,
+     * and nothing to distinguish "your module declares no types" from "the tool found nothing to do".
      */
-    private List<Path> resolveClasspathEntries(AnalysisRequest request, List<AnalysisDiagnostic> diagnostics) {
-        List<Path> usableEntries = new ArrayList<>();
-        for (ClasspathEntry entry : request.classpathEntries()) {
-            Path path = entry.path();
-            if (!Files.exists(path)) {
-                addClasspathWarning(diagnostics, path, "it does not exist");
-            } else if (!Files.isRegularFile(path)) {
-                addClasspathWarning(diagnostics, path, Files.isDirectory(path)
-                        ? "it is a directory, and directories are not resolved against yet (see TASK-105)"
-                        : "it is not a regular file");
-            } else if (!Files.isReadable(path)) {
-                addClasspathWarning(diagnostics, path, "it is not readable");
-            } else {
-                usableEntries.add(path);
-            }
-        }
-        return List.copyOf(usableEntries);
-    }
+    private static final String MODULE_DESCRIPTOR_ONLY = "MODULE_DESCRIPTOR_ONLY";
 
-    private static void addClasspathWarning(List<AnalysisDiagnostic> diagnostics, Path path, String reason) {
-        diagnostics.add(new AnalysisDiagnostic(
-                JavaParserTypeSolverFactory.CLASSPATH_PROBLEM,
-                AnalysisSeverity.WARNING,
-                "Ignoring classpath entry " + path + ": " + reason,
-                new SourceLocation(path, 1, 1)));
+    /**
+     * The module names declared by the given source units, for the message above. Falls back to the
+     * file path when a descriptor parsed far enough to be a source unit but not far enough to name a
+     * module — a syntax error, in practice.
+     */
+    private static String moduleNames(List<ParsedSourceUnit> parsedSourceUnits) {
+        return parsedSourceUnits.stream()
+                .map(unit -> unit.compilationUnit().getModule()
+                        .map(module -> module.getNameAsString())
+                        .orElseGet(() -> unit.path().getFileName().toString()))
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(", "));
     }
 
     /**
@@ -489,7 +489,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                                 new SourceLocation(sourceFile, 1, 1)));
                     }
                 }
-                return java.util.Optional.of(new ParsedSourceUnit(sourceFile, parseResult.getResult().orElseThrow()));
+                return java.util.Optional.of(ParsedSourceUnit.of(sourceFile, parseResult.getResult().orElseThrow()));
             }
             synchronized (diagnostics) {
                 diagnostics.add(new AnalysisDiagnostic(
@@ -1469,7 +1469,16 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         T resolve();
     }
 
-    private record ParsedSourceUnit(Path path, CompilationUnit compilationUnit) {
+    /**
+     * @param moduleDescriptor a {@code module-info.java} — a source unit that declares no types. It is
+     *                        read from the AST rather than the file name, so a descriptor that failed to
+     *                        parse is not mistaken for one.
+     */
+    private record ParsedSourceUnit(Path path, CompilationUnit compilationUnit, boolean moduleDescriptor) {
+
+        static ParsedSourceUnit of(Path path, CompilationUnit compilationUnit) {
+            return new ParsedSourceUnit(path, compilationUnit, compilationUnit.getModule().isPresent());
+        }
     }
 
     private record AnalyzedMethod(MethodReport report, Map<MetricCode, Value> rawMetrics) {

@@ -1,5 +1,96 @@
 # what has been done
 
+## Phase 1: classpath directories, module descriptors, solver precedence (2026-09-16)
+
+### TASK-105 — TypeSolver: directories, `module-info`, fallback policy — done
+
+`--classpath build/classes/java/main` — the most common way to point at a dependency — was inspected,
+rejected and reported. TASK-006 made that visible; this task makes it work, and pins the resolution
+order that was previously whatever order the factory happened to add solvers in.
+
+**Directory classpath entries.**
+
+- `ClasspathInspector` (new) classifies every requested entry and reports the ones it cannot use:
+  readable regular file → jar; directory → scanned for `.java` and `.class` anywhere beneath it
+  (early-exit once both are seen, so an exploded build output costs almost nothing). A directory that
+  is unreadable, or holds neither, is reported with the reason. A directory that is *unusable* still
+  warns exactly as TASK-006 specified — that guarantee is preserved and tested.
+- `UsableClasspath` (new) carries the result as three buckets (`jars`, `sourceDirectories`,
+  `classDirectories`) rather than one flat list, so the decision about what is usable is made once, in
+  the inspector, and the factory only has to know how to build a solver per kind. A directory holding
+  both sources and classes lands in both buckets.
+- `JavaParserTypeSolverFactory` builds the solvers: `JavaParserTypeSolver` for a source directory, and
+  for a directory of `.class` files a `ClassLoaderTypeSolver` over a `URLClassLoader` — a directory
+  cannot be read by `JarTypeSolver`. **All** class directories share one loader, because a class in the
+  first directory that extends a class in the second has to be definable.
+
+**Solver precedence.** Reordered to: project sources → jars → directories → the tool's own runtime
+classpath → the JDK. The previous order put `ReflectionTypeSolver` *first*, which meant a project that
+depends on JavaParser resolved `com.github.javaparser.ast.Node` to the analyzer's copy — the metrics
+described a class the user never wrote. The full table, and the reasoning per row, is in
+`docs/ARCHITECTURE.md#symbol-resolution-precedence`; `TypeSolverPrecedenceTest` pins each edge by
+declaring the same qualified name in two places with differently named methods and asserting which one
+the resolved declaration carries.
+
+Two details that make the order actually hold:
+
+- **Class directories load child-first.** A default `URLClassLoader` asks its parent before its own
+  URLs, which would reintroduce the shadowing the reorder exists to remove — a project's own JavaParser
+  classes would lose to the analyzer's. The loader still falls back to the parent for names the
+  directories do not hold, so a directory class whose supertype lives on the analyzer's classpath still
+  defines cleanly. This was the second attempt: one loader per directory was the first, and it fails
+  with `NoClassDefFoundError` as soon as a class extends one from a sibling entry.
+- **`ReflectionTypeSolver` is JDK-only.** Its default `jreOnly` filter rejects any name not starting
+  with `java.`/`javax.`, so putting it last cannot lose a project type. Verified against the 3.25.10
+  bytecode, along with `CombinedTypeSolver`'s first-solved-wins iteration order and the fact that every
+  solver in the chain returns *unsolved* (rather than throwing) for a name it does not have.
+
+**`module-info.java`.** Probed first, and the honest finding is that resolution already worked: a
+modularized fixture resolved at coverage `1.0` with no extra flags, and the descriptor never became a
+class. So the task's module work is a decision plus two small hardenings rather than a rewrite.
+
+- `ParsedSourceUnit` now carries `moduleDescriptor`, read from the AST (`CompilationUnit.getModule()`)
+  rather than the file name, so a descriptor that failed to parse is not mistaken for one. Descriptors
+  are parsed — a syntax error in `module-info.java` is still reported — and then kept out of the type
+  pipeline, which has nothing to do with them.
+- A source root holding *only* descriptors used to produce a report with no classes, no metrics and no
+  diagnostics, and nothing to distinguish "your module declares no types" from "the tool found nothing
+  to do". It now emits `MODULE_DESCRIPTOR_ONLY`, naming the module.
+- **Decision: JPMS visibility is not enforced, and `requires` is not read back into a classpath.** The
+  solver resolves by qualified name; layering `exports` on top could only ever *remove* answers, lowering
+  `resolutionCoverage` and producing diagnostics about ordinary code. Reading a module name back to a jar
+  needs a module path, which is out of scope. Both are documented in `docs/RUN.md`, and
+  `ModuleDescriptorAnalysisTest` pins that a `requires` naming an absent module stays visible as reduced
+  coverage rather than being silently invented.
+
+**Before/after measurements.**
+
+| Scenario | Before | After |
+|----------|--------|-------|
+| TASK-105 fixture, no classpath | `0.5483870967741935` | unchanged |
+| TASK-105 fixture, `--classpath <dir of .class>` | `0.5483870967741935` + `CLASSPATH_PROBLEM` | **`1.0`**, 0 diagnostics |
+| TASK-105 fixture, `--classpath <dir of .java>` | `0.5483870967741935` + `CLASSPATH_PROBLEM` | **`1.0`**, 0 diagnostics |
+| TASK-105 fixture, `--classpath <empty dir>` | `0.5483870967741935` + warning | unchanged (still warns) |
+| Golden corpus | `0.9522184300341296`, 12 diagnostics | **unchanged** |
+| Tool's own `java-metrics-lib/src/main/java` | `0.8416484716157205`, 1477 diagnostics | `0.8416211790393013`, 1477 diagnostics |
+
+The golden corpus needed no regeneration: it resolves against its own sources and the analyzer's
+runtime classpath, and reordering solvers changes *which* solver answers a name, not whether one does.
+Nothing in the corpus collides with the JDK or with the tool's own dependencies, so every metric value
+and diagnostic is byte-identical — confirmed by `git status` on the golden directory and by the golden
+test passing unmodified. On the tool's own sources the directory entry adds nothing measurable (the
+project's sources are already fully in the memory solver) but the `CLASSPATH_PROBLEM` warning it used to
+produce is gone, which is the observable change.
+
+- Tests: `ClasspathInspectorTest` (8 — sources/classes/both/neither, missing, unreadable, regular file,
+  mixed list), `DirectoryClasspathResolutionTest` (6, end to end through `resolutionCoverage`),
+  `ModuleDescriptorAnalysisTest` (6), `TypeSolverPrecedenceTest` (6), plus
+  `support/Fixtures` (compiles fixture sources with the JDK compiler and zips a jar, because resolution
+  against a jar or a directory cannot be faked with an in-memory AST). One TASK-006 test was reframed:
+  its directories are now deliberately empty, since "a directory entry is unusable" is no longer true in
+  general — "a directory that can back nothing is still reported" is what survives.
+- `./gradlew check` green: 274 tests, 0 failures, 1 intentional skip.
+
 ## Phase 1: one number for analysis quality (2026-09-16)
 
 ### TASK-104 — `resolutionCoverage` and the structured diagnostic fields — done

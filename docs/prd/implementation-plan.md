@@ -178,15 +178,19 @@ TASK-006 ──> TASK-105 (recommended order, formally independent)
 TASK-003…007, TASK-105, TASK-402: independent quick wins / phase tasks
 ```
 
-**Progress:** done — TASK-001, 002, 003, 004, 005, 006, 007, 101, 102, 103, 104. Open — TASK-105,
-202, 203, 204, 205, 301, 302, 401, 402. (TASK-003 was pulled forward: TASK-001's goldens exposed
+**Progress:** done — TASK-001, 002, 003, 004, 005, 006, 007, 101, 102, 103, 104, 105. Open — TASK-202,
+203, 204, 205, 301, 302, 401, 402. (TASK-003 was pulled forward: TASK-001's goldens exposed
 DEBT-01. TASK-006 partially closes DEBT-03. TASK-101 delivered the DEBT-06 channel, TASK-102
 converted the class visitors, and TASK-103 finished it — method visitors, `tryResolve` and the solver
 factory — closing DEBT-06 with a full audit of every catch in the library module. TASK-104 added
 `resolutionCoverage`, which is the mitigation the risks table below names for the diagnostics flood:
-the array can now be long, but one number says whether it matters. TASK-102 also produced DEBT-09, the
-project-level diagnostics cap, which TASK-104 did **not** close — the coverage summary is a different
-answer to the same question and the cap remains a reporting-policy decision.)
+the array can now be long, but one number says whether it matters. TASK-105 closed the rest of DEBT-03:
+directory classpath entries now resolve, `module-info.java` is handled deliberately, and the solver
+chain's order — previously incidental — is now a documented, tested policy. The goldens needed no
+regeneration: the corpus resolves against its own sources and the analyzer's runtime classpath, and
+reordering solvers changes *which* solver answers a name, not whether one does. TASK-102 also produced
+DEBT-09, the project-level diagnostics cap, which TASK-104 did **not** close — the coverage summary is a
+different answer to the same question and the cap remains a reporting-policy decision.)
 
 ---
 
@@ -195,7 +199,7 @@ answer to the same question and the cap remains a reporting-policy decision.)
 | # | Criterion | Measured by | Task |
 |---|---|---|---|
 | 1 | Peak heap −30% on a 500+ class project | TASK-002 baseline vs TASK-204 benchmark run | 002, 204 |
-| 2 | `diagnostics` section warns on unresolved symbols; CBO/LCOM match reference values with full classpath | golden corpus + diagnostics assertions | 102–104 |
+| 2 | `diagnostics` section warns on unresolved symbols; CBO/LCOM match reference values with full classpath | golden corpus + diagnostics assertions | 102–105 |
 | 3 | New simple metric = 1 visitor class + 1 registry entry, <30 min | TASK-301 dry run ("Number of Return Statements") | 301 |
 | 4 | SARIF report loads into GitHub Code Scanning | TASK-401 acceptance | 401 |
 

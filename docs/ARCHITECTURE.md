@@ -46,6 +46,8 @@ metricstree_cli/
 - `JavaMetricsAnalyzer` — Main analyzer interface
 - `JavaParserJavaMetricsAnalyzer` — Implementation using JavaParser
 - `AnalysisPhaseListener` — Observational per-phase timing hook used by the benchmark
+- `ClasspathInspector` / `UsableClasspath` — Decide what each `--classpath` entry can back, split by the solver it needs
+- `JavaParserTypeSolverFactory` — Builds the solver chain in the precedence order below
 
 **library/javaparser/visitor** — Metric visitors
 - `AnalysisCollector` — Delivers metric values *and* resolution problems for one analysed class
@@ -120,6 +122,39 @@ cannot be acted on is noise. Two consequences are visible in the code:
   every class to count children and therefore meets each broken supertype once per class analysed; it
   reports only when the declaring class is the one under analysis (see DEBT-09 in the tech-debt
   tracker for the volume this still leaves at project level).
+
+### Symbol resolution precedence
+
+`CombinedTypeSolver` answers with the **first** solver that solves a name and never revisits an earlier
+one, so the registration order *is* the policy. The order is fixed, not derived from the order the
+caller passed entries in — `UsableClasspath` keeps jars and directories in separate buckets precisely so
+that a jar outranks a directory no matter how the command line was written.
+
+| # | Solver | Answers for | Why here |
+|---|--------|-------------|----------|
+| 1 | `MemoryTypeSolver` | The project's own parsed declarations | Highest fidelity — exact AST, ranges, comments — and the answer the user is asking about when a name is declared in their own sources |
+| 2 | `JavaParserTypeSolver` per source root | Declarations the in-memory pass did not index | Still the project's sources |
+| 3 | `JarTypeSolver` per `--classpath` jar | User-supplied dependencies | Explicitly requested, so it outranks anything the tool was built with |
+| 4 | `JavaParserTypeSolver` per `--classpath` source directory | User-supplied sources | More precise than the same directory's compiled output |
+| 5 | `ClassLoaderTypeSolver` over a directory-first `URLClassLoader` | User-supplied directories of `.class` files | A directory cannot be read by `JarTypeSolver`, so it is loaded instead |
+| 6 | `ClassLoaderTypeSolver` over the analyzer's own classloader | The tool's runtime dependencies | Last of the "real" sources, so it can never shadow a user-supplied answer |
+| 7 | `ReflectionTypeSolver` | The JDK (`jreOnly` by default) | Last resort by design; nothing else resolves `java.*` |
+
+Three consequences worth stating outright, because they are the point of the order:
+
+- **A project that depends on JavaParser resolves its own copy.** Before TASK-105 the
+  `ReflectionTypeSolver` was registered first, so a user's `com.github.javaparser.ast.Node` resolved to
+  the analyzer's copy and the metrics described a class the user never wrote.
+- **Class directories load child-first.** A default `URLClassLoader` asks its parent before looking in
+  its own directories, which would reintroduce exactly that shadowing for compiled output. It still
+  falls back to the parent for names the directories do not hold, so a directory class whose supertype
+  lives on the analyzer's classpath still defines cleanly. All class directories share one loader, or a
+  class in one directory could not extend a class in another.
+- **`ReflectionTypeSolver` is JDK-only.** Its default `jreOnly` filter rejects any name not starting
+  with `java.`/`javax.`, so it cannot accidentally answer for a project type.
+
+The policy is pinned by `TypeSolverPrecedenceTest`, which declares the same qualified name in two places
+with differently named methods and asserts which one the resolved declaration carries.
 
 ### java-metrics-cli
 
