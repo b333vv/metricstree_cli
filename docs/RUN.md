@@ -72,6 +72,36 @@ into a jar (or rely on the sources being inside `--source-root`) if resolution a
 
 The analysis always completes: a bad classpath entry degrades resolution, it never aborts the run.
 
+#### Reading `resolutionCoverage`
+
+The top-level `project` object carries one number that says how far the metrics below it can be
+trusted:
+
+```json
+{
+  "project": {
+    "projectName": "my-project",
+    "resolutionCoverage": 0.9522184300341296,
+    "metrics": { "PRHVL": "344.988" }
+  }
+}
+```
+
+It is the share of symbol-resolution attempts that succeeded, between `0.0` and `1.0`. Coupling and
+cohesion are computed from whatever resolves, so a low value means the classpath was incomplete and
+the numbers are understated — not that the code is well factored. A useful reading of the golden
+fixture's `0.95`, for instance, is "one deliberately unresolvable class out of this many attempts".
+
+- `1.0` means every resolution the analysis performed succeeded.
+- `null` means the analysis performed no resolution at all (for example a source root with no Java
+  files). This is deliberately **not** `1.0`: a CI gate must not pass on an empty run.
+- It is emitted as a JSON **number**, not a string like the metric values, so it stays parseable and
+  cannot pick up a locale's decimal separator.
+
+It counts resolution *operations*, not distinct problems: two metrics that both fail on the same
+symbol count as two failed attempts, matching the two successes they would have recorded had it
+resolved. That makes it a measure of the analysis rather than of the classpath.
+
 #### Reading the `diagnostics` array
 
 `analyze` reports everything the symbol solver could not work out in the report's `diagnostics`
@@ -91,7 +121,9 @@ array, so a metric that is lower than expected can be told apart from a metric t
   "code": "UNRESOLVED_SYMBOL",
   "severity": "WARNING",
   "message": "[ATFD] Could not resolve symbol 'service.describe()'",
-  "location": { "path": "/src/a/Service.java", "startLine": 22, "endLine": 22 }
+  "location": { "path": "/src/a/Service.java", "startLine": 22, "endLine": 22 },
+  "symbolName": "service.describe()",
+  "metricCode": "ATFD"
 }
 ```
 
@@ -104,12 +136,20 @@ only when the failure actually changes a value, so a fallback that recovers the 
 stays silent — a call on `Math` or `Collections` is not reported as an unresolved symbol, because
 those are types rather than values and the visitor's static-receiver fallback already covers them.
 
+`symbolName` and `metricCode` are the same two facts in structured form, so a consumer can group by
+symbol or filter by metric without parsing `message`. Both are **omitted when unknown** rather than
+written as `null`: a parse or classpath problem has no symbol, and a failure on a cross-metric path
+like `DEPENDENCIES` has no single metric, so `metricCode` is absent exactly when the bracketed
+context is not a real metric code. The first four keys are unchanged, so consumers written before
+these fields existed keep working.
+
 Diagnostics are deduplicated per class and per metric, so one broken symbol is reported once per
 metric rather than once per reference to it. Each class may emit at most
 `AnalysisOptions.unresolvedSymbolDiagnosticCap` individual diagnostics (20 by default) per analysis
 run; anything beyond that is folded into the matching `*_BULK` entry. The cap is **per class**, so a
 large project analysed without a classpath can still produce a very large array — see
-[DEBT-09](tech-debt-tracker.md).
+[DEBT-09](tech-debt-tracker.md). `resolutionCoverage` above is the summary that tells you whether the
+array is worth reading in the first place.
 
 ### Exclusions
 

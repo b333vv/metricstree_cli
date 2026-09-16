@@ -28,6 +28,7 @@ public class JavaParserAccessToForeignDataMetricVisitor extends JavaParserClassM
 
         try {
             declaration.resolve().getQualifiedName();
+            collector.recordResolved();
 
             // Direct field access.
             declaration.walk(FieldAccessExpr.class, fieldAccess -> {
@@ -39,6 +40,7 @@ public class JavaParserAccessToForeignDataMetricVisitor extends JavaParserClassM
                             usedClasses.add(resolvedField.declaringType().getQualifiedName());
                         }
                     }
+                    collector.recordResolved();
                 } catch (Throwable unresolved) {
                     // An unresolved access is not counted, so ATFD understates.
                     collector.warnUnresolved(METRIC_CONTEXT, fieldAccess.toString(), fieldAccess);
@@ -55,6 +57,7 @@ public class JavaParserAccessToForeignDataMetricVisitor extends JavaParserClassM
                             usedClasses.add(resolvedField.declaringType().getQualifiedName());
                         }
                     }
+                    collector.recordResolved();
                 } catch (Throwable unresolved) {
                     // A plain name that fails to resolve as a value is usually a type used as a
                     // qualifier (Math, System, ...), which is not a problem at all; the collector
@@ -70,6 +73,7 @@ public class JavaParserAccessToForeignDataMetricVisitor extends JavaParserClassM
                     if (!method.isStatic() && isAccessor(method)) {
                         usedClasses.add(method.declaringType().getQualifiedName());
                     }
+                    collector.recordResolved();
                 } catch (Throwable unresolved) {
                     collector.warnUnresolved(METRIC_CONTEXT, methodCall.toString(), methodCall);
                 }
@@ -81,6 +85,7 @@ public class JavaParserAccessToForeignDataMetricVisitor extends JavaParserClassM
             for (ResolvedReferenceType superType : current.getAllAncestors()) {
                 try {
                     usedClasses.remove(superType.getQualifiedName());
+                    collector.recordResolved();
                 } catch (Throwable unresolved) {
                     // The ancestor stays in the set, inflating ATFD with the class's own hierarchy.
                     collector.warnUnresolvedType(METRIC_CONTEXT, superType.describe(), declaration);

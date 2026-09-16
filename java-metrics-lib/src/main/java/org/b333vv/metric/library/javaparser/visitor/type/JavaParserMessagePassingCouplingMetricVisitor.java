@@ -20,12 +20,14 @@ public class JavaParserMessagePassingCouplingMetricVisitor extends JavaParserCla
         List<MethodCallExpr> messagePassingCalls = new ArrayList<>();
         try {
             String currentClassName = declaration.resolve().getQualifiedName();
+            collector.recordResolved();
             declaration.walk(MethodCallExpr.class, methodCall -> {
                 try {
                     String declaringClassName = methodCall.resolve().declaringType().getQualifiedName();
                     if (!declaringClassName.equals(currentClassName)) {
                         messagePassingCalls.add(methodCall);
                     }
+                    collector.recordResolved();
                 } catch (Exception unresolved) {
                     // The call cannot be attributed to a declaring class, so it is dropped from the
                     // count even though it may well be message passing.

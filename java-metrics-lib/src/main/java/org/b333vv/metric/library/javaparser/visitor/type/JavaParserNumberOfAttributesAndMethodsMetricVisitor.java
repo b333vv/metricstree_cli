@@ -23,6 +23,7 @@ public class JavaParserNumberOfAttributesAndMethodsMetricVisitor extends JavaPar
         long size2;
         try {
             ResolvedReferenceTypeDeclaration resolvedClass = declaration.resolve();
+            collector.recordResolved();
 
             // Count all non-static fields including inherited ones (mirror PSI getAllFields).
             long attributes = 0;

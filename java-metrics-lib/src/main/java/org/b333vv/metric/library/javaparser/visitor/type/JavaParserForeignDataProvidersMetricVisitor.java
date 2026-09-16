@@ -38,6 +38,7 @@ public class JavaParserForeignDataProvidersMetricVisitor extends JavaParserClass
                     }
                 });
             }
+            collector.recordResolved();
             collector.accept(MetricResult.of(MetricCode.FDP, foreignDataProviders.size()));
         } catch (Exception unresolved) {
             // As in LAA, the catch covers the class under analysis and the other classes scanned for

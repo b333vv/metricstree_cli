@@ -61,7 +61,26 @@ visitor catch block
   → AnalysisCollector.warnUnresolved / warnUnresolvedType / warnUnresolvedName   (per class, deduped + capped)
     → MetricReport.diagnostics                              (one shared list, total order)
       → JSON "diagnostics" array / CLI output
+
+visitor success path
+  → AnalysisCollector.recordResolved()                      (no dedup, no cap)
+    → ResolutionStats (one per run, shared by every collector)
+      → ProjectReport.resolutionCoverage
+        → JSON "resolutionCoverage" next to "metrics"
 ```
+
+Reporting a failure and counting it are separate concerns, and the second diagram is why: the
+diagnostics array is deduplicated and capped, but the tally must see every attempt, or the share it
+produces would be a share of *reported* problems rather than of *resolution*. So a site that reports
+through the collector also calls `recordResolved()` on its success path, and the rule is that an
+attempt is counted exactly where the collector would report a failure — including inside per-node
+callbacks, which is what makes the unit "one resolution operation" rather than "one class". Sites that
+deliberately stay silent, and fallbacks that recover the value (CBO's static-receiver inference, the
+`@Override` case), are counted on neither side: nothing was reported, so counting a failure would make
+the coverage disagree with the diagnostics array.
+
+`ResolutionStats.coverage()` answers "unknown" rather than `1.0` when there were no attempts, so a CI
+threshold cannot pass on an empty run.
 
 `AnalysisCollector` is created once per analysed class and is what that class's class-level visitors
 report through, so the same broken symbol is reported once per metric rather than once per AST node.

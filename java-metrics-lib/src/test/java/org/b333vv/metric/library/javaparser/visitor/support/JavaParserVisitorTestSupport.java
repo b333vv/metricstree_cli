@@ -9,6 +9,7 @@ import com.github.javaparser.resolution.TypeSolver;
 import org.b333vv.metric.library.core.AnalysisDiagnostic;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.core.ResolutionStats;
 import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.library.javaparser.EnhancedJavaParserContext;
 import org.b333vv.metric.library.javaparser.EnhancedJavaParserContextBuilder;
@@ -155,6 +156,7 @@ public abstract class JavaParserVisitorTestSupport {
         return new AnalysisCollector(
                 metrics::add,
                 lastDiagnostics,
+                new ResolutionStats(),
                 "test-subject",
                 new SourceLocation(Path.of("Test.java"), 1, 1),
                 AnalysisOptions.DEFAULT_UNRESOLVED_SYMBOL_DIAGNOSTIC_CAP);

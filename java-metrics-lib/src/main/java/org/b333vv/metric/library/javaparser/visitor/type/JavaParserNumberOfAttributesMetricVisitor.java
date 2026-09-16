@@ -34,6 +34,7 @@ public class JavaParserNumberOfAttributesMetricVisitor extends JavaParserClassMe
         try {
             // Prefer resolved model: includes declared + inherited fields.
             long resolvedCount = declaration.resolve().getAllFields().size();
+            collector.recordResolved();
             long declared = 0;
             for (FieldDeclaration field : declaration.getFields()) {
                 declared += field.getVariables().size();

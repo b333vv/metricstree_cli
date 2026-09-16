@@ -14,15 +14,17 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pins how the JSON writer renders the diagnostics introduced by the TASK-101 channel.
+ * Pins how the JSON writer renders diagnostics: the codes the TASK-101 channel produces — including
+ * the aggregated {@code *_BULK} form, which has no source position of its own and therefore reuses the
+ * enclosing class's location — and the optional structured fields added in TASK-104.
  *
- * <p>The TASK-001 golden covers the {@code analyze} contract with an <em>empty</em> diagnostics array,
- * so nothing else pins the rendering of a populated one. This test does, for the codes the channel
- * produces — including the aggregated {@code *_BULK} form, which has no source position of its own and
- * therefore reuses the enclosing class's location.
+ * <p>The TASK-001 golden covers the {@code analyze} contract end to end, but only for the diagnostics
+ * its fixture happens to produce; this test covers the shapes it does not, and in particular the
+ * "absent rather than null" rule the optional fields follow.
  */
 class MetricReportJsonWriterDiagnosticsTest {
 
@@ -80,6 +82,69 @@ class MetricReportJsonWriterDiagnosticsTest {
         JsonNode diagnostics = mapper.readTree(json).get("diagnostics");
         assertTrue(diagnostics.isArray(), "diagnostics must always be an array");
         assertEquals(0, diagnostics.size());
+    }
+
+    @Test
+    void rendersTheStructuredSymbolAndMetricAttribution() throws Exception {
+        AnalysisDiagnostic diagnostic = new AnalysisDiagnostic(
+                "UNRESOLVED_SYMBOL",
+                AnalysisSeverity.WARNING,
+                "[CBO] Could not resolve symbol 'service.describe()'",
+                new SourceLocation(Path.of("src/a/Sample.java"), 22, 22))
+                .withAttribution("service.describe()", "CBO");
+
+        JsonNode node = firstDiagnostic(report(diagnostic));
+
+        assertEquals("service.describe()", node.get("symbolName").asText());
+        assertEquals("CBO", node.get("metricCode").asText());
+    }
+
+    /**
+     * The fields are optional, so a diagnostic that is not about one symbol must keep the exact shape
+     * it had before TASK-104. Consumers that predate the fields must not have to cope with
+     * {@code null} values they never expected.
+     */
+    @Test
+    void omitsTheStructuredFieldsWhenTheDiagnosticHasNoAttribution() throws Exception {
+        AnalysisDiagnostic diagnostic = new AnalysisDiagnostic(
+                "PARSE_PROBLEM",
+                AnalysisSeverity.WARNING,
+                "Parser reported problems for src/a/Sample.java",
+                new SourceLocation(Path.of("src/a/Sample.java"), 1, 1));
+
+        JsonNode node = firstDiagnostic(report(diagnostic));
+
+        assertTrue(node.has("code") && node.has("severity") && node.has("message") && node.has("location"));
+        assertFalse(node.has("symbolName"), () -> "symbolName must be absent, not null, when unknown: " + node);
+        assertFalse(node.has("metricCode"), () -> "metricCode must be absent, not null, when unknown: " + node);
+    }
+
+    /**
+     * The coverage is emitted as a JSON number rather than a pre-formatted string like the metric
+     * values, so it stays parseable and cannot pick up a locale's decimal separator (DEBT-07).
+     */
+    @Test
+    void rendersResolutionCoverageAsANumber() throws Exception {
+        MetricReport report = new MetricReport(
+                new ProjectReport("channel", Map.of(), List.of(), 0.75), List.of());
+
+        JsonNode coverage = mapper.readTree(writer.toJson(report, true)).get("project").get("resolutionCoverage");
+
+        assertTrue(coverage.isNumber(), () -> "expected a JSON number, got " + coverage);
+        assertEquals(0.75, coverage.asDouble());
+    }
+
+    /**
+     * The key stays present when the value is unknown, because an absent key would be
+     * indistinguishable from a writer that never had the field at all.
+     */
+    @Test
+    void writesAnExplicitNullWhenNothingWasAttempted() throws Exception {
+        JsonNode project = mapper.readTree(writer.toJson(report(), true)).get("project");
+
+        assertTrue(project.has("resolutionCoverage"), "the key must be present even when unknown");
+        assertTrue(project.get("resolutionCoverage").isNull(),
+                () -> "expected null, got " + project.get("resolutionCoverage"));
     }
 
     private JsonNode firstDiagnostic(MetricReport report) throws Exception {

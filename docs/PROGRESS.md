@@ -1,5 +1,61 @@
 # what has been done
 
+## Phase 1: one number for analysis quality (2026-09-16)
+
+### TASK-104 — `resolutionCoverage` and the structured diagnostic fields — done
+
+A report could say that a metric was low but not whether to believe it. The project object now carries
+`resolutionCoverage`, and the diagnostics carry the two structured fields road-map §3.4 asked for.
+
+- **`ResolutionStats`** (new, `core`): thread-safe attempt/failure counters, one instance per
+  `analyze()` run, shared by every collector of that run. `coverage()` is empty when there were no
+  attempts — see below.
+- **`AnalysisCollector`** gained `recordResolved()` and now feeds the tally on both paths: a failure is
+  counted inside `warnUnresolved` / `warnUnresolvedType` *before* the dedup, so the tally sees every
+  operation rather than every distinct problem. `childCollector` shares the parent's stats, so a
+  method's resolutions count towards the project total without any bookkeeping at the call sites.
+- **Every reporting site records its success path too.** 37 sites across the 15 converted visitors,
+  plus the analyzer's `tryResolve`. The rule is mechanical and is written down in
+  `docs/ARCHITECTURE.md`: an attempt is counted exactly where the collector would report a failure, so
+  the two halves always line up. Two classes of site are counted on neither side, deliberately —
+  fallbacks that recover the value (CBO's static-receiver inference, the `@Override` case) and the
+  sites that stay silent, because nothing was reported for them.
+- **`ProjectReport.resolutionCoverage`** is a nullable `Double`, validated to `[0, 1]`, with a 3-arg
+  convenience constructor and a `withResolutionCoverage` copy so the analyzer can fill it in only once
+  every class has been visited.
+- **`AnalysisDiagnostic`** gained nullable `symbolName` and `metricCode` with a 4-arg convenience
+  constructor, so all 40-odd existing call sites were untouched. The collector populates them; the
+  JSON writer emits them only when non-null.
+- **JSON**: `resolutionCoverage` sits next to `metrics` as a **number** (not a locale-formatted string
+  like the metric values, which sidesteps DEBT-07 for this field). It is emitted even when null, since
+  an absent key would be indistinguishable from an older writer. `symbolName` / `metricCode` are
+  **absent** rather than null when unknown.
+
+**Two decisions worth recording:**
+
+- **`null` rather than `1.0` when nothing was attempted.** A project with no resolutions has not
+  demonstrated good coverage, and `1.0` would let a CI threshold pass on an empty run. Tested through
+  the real analyzer with an empty source root.
+- **`metricCode` is null when the context is not a metric.** `DEPENDENCIES` and `SUPERTYPES` each feed
+  several metrics, so naming one would be a lie; the bracketed context in `message` still carries it.
+  The golden shows this: exactly two of its twelve diagnostics have no `metricCode`, and both are
+  `DEPENDENCIES`.
+
+**Naming note:** the road-map §3.4 bullet calls these `unresolvedSymbolName` and `contextLocation`;
+TASK-104's own scope specifies `symbolName` and `metricCode`, and the location already exists as
+`location`, so this follows the task. Worth reconciling in the road-map.
+
+- `analyze.json` golden regenerated: **additive only** — one new `resolutionCoverage` key plus the two
+  optional fields on each diagnostic. Verified programmatically that everything except the diagnostics
+  array and that one key is byte-identical, that the metrics keep their order, that the diagnostics are
+  still sorted by (severity, code, message, location), and that the diagnostics are otherwise unchanged.
+  The golden fixture's coverage is `0.952…`, i.e. one unresolvable class.
+- Tests: `ResolutionStatsTest` (5, including a concurrent-increment test), `ResolutionCoverageTest`
+  (4, through the real analyzer: full coverage on a resolvable fixture, reduced on the broken one,
+  stable across 5 runs, unknown on an empty source root), and 4 new cases in
+  `MetricReportJsonWriterDiagnosticsTest` covering the structured fields and the absent-vs-null rules.
+- `./gradlew check` green: 248 tests, 0 failures, 1 intentional skip.
+
 ## Phase 1: method visitors, the analyzer and the solver factory report too (2026-09-16)
 
 ### TASK-103 — Phase 1 diagnostics conversion complete — done

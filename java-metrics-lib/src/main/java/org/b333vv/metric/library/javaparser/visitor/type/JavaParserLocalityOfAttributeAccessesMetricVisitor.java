@@ -46,6 +46,7 @@ public class JavaParserLocalityOfAttributeAccessesMetricVisitor extends JavaPars
                 }
             }
             double locality = (double) localMethods / methodsAndConstructors.size();
+            collector.recordResolved();
             collector.accept(MetricResult.of(MetricCode.LAA, locality));
         } catch (Exception unresolved) {
             // This catch is deliberately broad: it covers the class under analysis as well as any

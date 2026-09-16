@@ -1,5 +1,6 @@
 package org.b333vv.metric.cli;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
@@ -38,6 +39,7 @@ final class MetricReportJsonWriter {
     private static ProjectView toProjectView(ProjectReport projectReport) {
         return new ProjectView(
                 projectReport.projectName(),
+                projectReport.resolutionCoverage(),
                 toMetricMap(projectReport.metrics()),
                 projectReport.packages().stream()
                         .map(MetricReportJsonWriter::toPackageView)
@@ -79,7 +81,9 @@ final class MetricReportJsonWriter {
                 diagnostic.code(),
                 diagnostic.severity().name(),
                 diagnostic.message(),
-                toSourceLocationView(diagnostic.location()));
+                toSourceLocationView(diagnostic.location()),
+                diagnostic.symbolName(),
+                diagnostic.metricCode());
     }
 
     private static SourceLocationView toSourceLocationView(SourceLocation sourceLocation) {
@@ -105,7 +109,16 @@ final class MetricReportJsonWriter {
     private record MetricReportView(ProjectView project, List<DiagnosticView> diagnostics) {
     }
 
-    private record ProjectView(String projectName, Map<String, String> metrics, List<PackageView> packages) {
+    /**
+     * @param resolutionCoverage null when the analysis made no resolution attempt at all, which is
+     *                           why this field is emitted even when null — an absent key would be
+     *                           indistinguishable from an older writer that never had the field.
+     */
+    private record ProjectView(
+            String projectName,
+            Double resolutionCoverage,
+            Map<String, String> metrics,
+            List<PackageView> packages) {
     }
 
     private record PackageView(String packageName, Map<String, String> metrics, List<ClassView> classes) {
@@ -128,7 +141,19 @@ final class MetricReportJsonWriter {
             Map<String, String> metrics) {
     }
 
-    private record DiagnosticView(String code, String severity, String message, SourceLocationView location) {
+    /**
+     * {@code symbolName} and {@code metricCode} are omitted when null, so every diagnostic written
+     * before TASK-104 keeps its exact old shape: only the diagnostics that are about one resolvable
+     * symbol grow the two extra keys.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private record DiagnosticView(
+            String code,
+            String severity,
+            String message,
+            SourceLocationView location,
+            String symbolName,
+            String metricCode) {
     }
 
     private record SourceLocationView(String path, int startLine, int endLine) {

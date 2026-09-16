@@ -57,6 +57,7 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
         String classQualifiedName = null;
         try {
             classQualifiedName = declaration.resolve().getQualifiedName();
+            collector.recordResolved();
         } catch (Exception unresolved) {
             // Without the class name no field can be attributed to it, so LCOM overstates cohesion.
             collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);
@@ -75,6 +76,7 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
                             usedFields.add(fieldAccess.getNameAsString());
                         }
                     }
+                    collector.recordResolved();
                 } catch (Exception unresolved) {
                     // Unresolved access: the field is dropped from this method's usage set, which
                     // splits the graph and inflates LCOM.
@@ -84,6 +86,7 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
             method.walk(NameExpr.class, nameExpr -> {
                 try {
                     var resolved = nameExpr.resolve();
+                    collector.recordResolved();
                     if (resolved.isField()) {
                         var field = resolved.asField();
                         if (!field.isStatic()
@@ -156,6 +159,7 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
                             }
                         }
                     }
+                    collector.recordResolved();
                 } catch (Exception unresolved) {
                     // The name-and-arity fallback below guesses the target, and it cannot tell
                     // overloads apart, so the edge it adds — or fails to add — is approximate.

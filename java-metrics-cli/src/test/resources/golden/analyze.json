@@ -1,6 +1,7 @@
 {
   "project" : {
     "projectName" : "golden-project",
+    "resolutionCoverage" : 0.9522184300341296,
     "metrics" : {
       "PRHVL" : "344.988",
       "PRHD" : "28.3167",
@@ -834,7 +835,9 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 22,
       "endLine" : 22
-    }
+    },
+    "symbolName" : "service.describe()",
+    "metricCode" : "ATFD"
   }, {
     "code" : "UNRESOLVED_SYMBOL",
     "severity" : "WARNING",
@@ -843,7 +846,9 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 22,
       "endLine" : 22
-    }
+    },
+    "symbolName" : "service.describe()",
+    "metricCode" : "CBO"
   }, {
     "code" : "UNRESOLVED_SYMBOL",
     "severity" : "WARNING",
@@ -852,7 +857,9 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 22,
       "endLine" : 22
-    }
+    },
+    "symbolName" : "service.describe()",
+    "metricCode" : "CDISP"
   }, {
     "code" : "UNRESOLVED_SYMBOL",
     "severity" : "WARNING",
@@ -861,7 +868,9 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 22,
       "endLine" : 22
-    }
+    },
+    "symbolName" : "service.describe()",
+    "metricCode" : "CINT"
   }, {
     "code" : "UNRESOLVED_SYMBOL",
     "severity" : "WARNING",
@@ -870,7 +879,8 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 22,
       "endLine" : 22
-    }
+    },
+    "symbolName" : "service.describe()"
   }, {
     "code" : "UNRESOLVED_SYMBOL",
     "severity" : "WARNING",
@@ -879,7 +889,9 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 22,
       "endLine" : 22
-    }
+    },
+    "symbolName" : "service.describe()",
+    "metricCode" : "LCOM"
   }, {
     "code" : "UNRESOLVED_SYMBOL",
     "severity" : "WARNING",
@@ -888,7 +900,9 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 22,
       "endLine" : 22
-    }
+    },
+    "symbolName" : "service.describe()",
+    "metricCode" : "MPC"
   }, {
     "code" : "UNRESOLVED_SYMBOL",
     "severity" : "WARNING",
@@ -897,7 +911,9 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 17,
       "endLine" : 19
-    }
+    },
+    "symbolName" : "Unresolvable()",
+    "metricCode" : "RFC"
   }, {
     "code" : "UNRESOLVED_SYMBOL",
     "severity" : "WARNING",
@@ -906,7 +922,9 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 22,
       "endLine" : 22
-    }
+    },
+    "symbolName" : "service.describe()",
+    "metricCode" : "RFC"
   }, {
     "code" : "UNRESOLVED_TYPE",
     "severity" : "WARNING",
@@ -915,7 +933,9 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 15,
       "endLine" : 15
-    }
+    },
+    "symbolName" : "AbsentService",
+    "metricCode" : "CBO"
   }, {
     "code" : "UNRESOLVED_TYPE",
     "severity" : "WARNING",
@@ -924,7 +944,9 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 15,
       "endLine" : 15
-    }
+    },
+    "symbolName" : "AbsentService",
+    "metricCode" : "DAC"
   }, {
     "code" : "UNRESOLVED_TYPE",
     "severity" : "WARNING",
@@ -933,6 +955,7 @@
       "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "startLine" : 15,
       "endLine" : 15
-    }
+    },
+    "symbolName" : "AbsentService"
   } ]
 }

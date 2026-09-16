@@ -22,6 +22,7 @@ public class JavaParserNumberOfAccessedVariablesMetricVisitor extends JavaParser
         declaration.walk(NameExpr.class, nameExpr -> {
             try {
                 ResolvedValueDeclaration resolved = nameExpr.resolve();
+                collector.recordResolved();
                 if (resolved.isParameter() || resolved.isField() || resolved.isVariable()) {
                     accessedVariables.add(resolved.getName());
                 }

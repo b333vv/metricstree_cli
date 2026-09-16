@@ -23,6 +23,16 @@ final class ReportSupport {
         return name == null ? "" : name.trim();
     }
 
+    /**
+     * Normalizes an optional name, collapsing "absent" to a single representation. A blank name means
+     * the same thing as a missing one here, so both become {@code null} rather than leaving two ways
+     * to say "no value" in the report model and its JSON.
+     */
+    static String normalizeOptionalName(String name) {
+        String normalized = normalizeName(name);
+        return normalized.isEmpty() ? null : normalized;
+    }
+
     static <T> List<T> copyList(Collection<T> values) {
         if (values == null || values.isEmpty()) {
             return List.of();

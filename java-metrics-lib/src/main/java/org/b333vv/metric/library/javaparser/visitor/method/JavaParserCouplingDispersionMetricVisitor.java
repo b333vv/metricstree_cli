@@ -24,9 +24,11 @@ public class JavaParserCouplingDispersionMetricVisitor extends JavaParserMethodM
         declaration.walk(MethodCallExpr.class, methodCall -> {
             try {
                 ResolvedReferenceTypeDeclaration declaringType = methodCall.resolve().declaringType();
+                collector.recordResolved();
                 if (declaringType.isClass()) {
                     try {
                         depths.add(getDepth(declaringType));
+                        collector.recordResolved();
                     } catch (Exception unresolved) {
                         // The declaring type resolved but its hierarchy did not, so this call's depth
                         // is missing from the dispersion set. Split from the catch below so the

@@ -34,6 +34,7 @@ import org.b333vv.metric.library.core.MetricResult;
 import org.b333vv.metric.library.core.MetricSelection;
 import org.b333vv.metric.library.core.PackageReport;
 import org.b333vv.metric.library.core.ProjectReport;
+import org.b333vv.metric.library.core.ResolutionStats;
 import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.library.core.SourceRoot;
 import org.b333vv.metric.library.core.SourceUnit;
@@ -90,6 +91,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Consumer;
@@ -263,17 +265,22 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.PARSE, System.nanoTime() - phaseStart);
 
         phaseStart = System.nanoTime();
+        // One tally for the whole run, shared by every collector, so the coverage reported at the end
+        // describes this analysis rather than one class. Never reused between runs.
+        ResolutionStats resolutionStats = new ResolutionStats();
         List<AnalyzedClass> analyzedClasses = analyzeClasses(
                 enhancedContext,
                 sourcePathByQualifiedName,
                 metricSelection,
                 diagnostics,
+                resolutionStats,
                 options.unresolvedSymbolDiagnosticCap());
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.VISIT, System.nanoTime() - phaseStart);
 
         phaseStart = System.nanoTime();
         List<PackageReport> packageReports = buildPackageReports(analyzedClasses, metricSelection);
-        ProjectReport projectReport = buildProjectReport(request.projectName(), packageReports, analyzedClasses, metricSelection);
+        ProjectReport projectReport = buildProjectReport(
+                request.projectName(), packageReports, analyzedClasses, metricSelection, resolutionStats);
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.AGGREGATE, System.nanoTime() - phaseStart);
 
         return new MetricReport(projectReport, diagnostics);
@@ -521,6 +528,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             Map<String, Path> sourcePathByQualifiedName,
             MetricSelection metricSelection,
             List<AnalysisDiagnostic> diagnostics,
+            ResolutionStats resolutionStats,
             int unresolvedSymbolDiagnosticCap) {
         List<ClassOrInterfaceDeclaration> allClassDeclarations = enhancedContext.getAllClassDeclarations();
         List<ClassOrInterfaceDeclaration> sortedClassDeclarations = allClassDeclarations.stream()
@@ -535,6 +543,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                                 sourcePathByQualifiedName,
                                 metricSelection,
                                 diagnostics,
+                                resolutionStats,
                                 unresolvedSymbolDiagnosticCap))
                         .toList()
         );
@@ -546,6 +555,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             Map<String, Path> sourcePathByQualifiedName,
             MetricSelection metricSelection,
             List<AnalysisDiagnostic> diagnostics,
+            ResolutionStats resolutionStats,
             int unresolvedSymbolDiagnosticCap) {
         String qualifiedName = classDeclaration.getFullyQualifiedName().orElseGet(() -> fallbackQualifiedName(classDeclaration));
         Path sourcePath = sourcePathByQualifiedName.getOrDefault(
@@ -555,10 +565,11 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
         // One collector per class: class- and method-level visitors of this class share its dedup
         // state and cap, so a single broken symbol is reported once per metric rather than once per
-        // AST node (see AnalysisCollector).
+        // AST node (see AnalysisCollector). All of them also share the run's resolution tally.
         AnalysisCollector classCollector = new AnalysisCollector(
                 result -> classMetrics.put(result.code(), result.value()),
                 diagnostics,
+                resolutionStats,
                 qualifiedName,
                 toSourceLocation(classDeclaration, sourcePath),
                 unresolvedSymbolDiagnosticCap);
@@ -741,7 +752,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             String projectName,
             List<PackageReport> packageReports,
             List<AnalyzedClass> analyzedClasses,
-            MetricSelection metricSelection) {
+            MetricSelection metricSelection,
+            ResolutionStats resolutionStats) {
         Map<MetricCode, Value> projectMetrics = new EnumMap<>(MetricCode.class);
 
         long concreteClasses = analyzedClasses.stream()
@@ -804,7 +816,14 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         putMetric(projectMetrics, Extendibility, Value.of(0.5 * zAbstraction - 0.5 * zCoupling + 0.5 * zInheritance + 0.5 * zPolymorphism));
         putMetric(projectMetrics, Effectiveness, Value.of(0.2 * zAbstraction + 0.2 * zEncapsulation + 0.2 * zComposition + 0.2 * zInheritance + 0.2 * zPolymorphism));
 
-        return new ProjectReport(projectName, filterMetrics(projectMetrics, metricSelection), packageReports);
+        // Empty when nothing was resolved at all — see ResolutionStats.coverage(). A run with no
+        // resolution attempts has not demonstrated good coverage, and reporting 1.0 would let a CI
+        // threshold pass on the strength of an empty project.
+        OptionalDouble coverage = resolutionStats.coverage();
+        Double resolutionCoverage = coverage.isPresent() ? coverage.getAsDouble() : null;
+
+        return new ProjectReport(
+                projectName, filterMetrics(projectMetrics, metricSelection), packageReports, resolutionCoverage);
     }
 
     private DependencySnapshot collectDependencySnapshot(
@@ -1352,14 +1371,28 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     private <T> Optional<T> tryResolve(String metricContext, String name, Node at,
             AnalysisCollector collector, ResolveSupplier<T> supplier, ReferenceKind kind) {
         try {
-            return Optional.ofNullable(supplier.resolve());
-        } catch (Exception exception) {
-            if (kind == ReferenceKind.TYPE) {
-                collector.warnUnresolvedType(metricContext, name, at);
-            } else {
-                collector.warnUnresolved(metricContext, name, at);
+            T resolved = supplier.resolve();
+            if (resolved == null) {
+                // These resolvers signal an unresolved symbol by throwing, so a null result means one
+                // returned "nothing" instead. Count and report it as the failure it is, rather than
+                // letting a non-resolution inflate the coverage and vanish without a trace.
+                reportUnresolved(collector, metricContext, name, at, kind);
+                return Optional.empty();
             }
+            collector.recordResolved();
+            return Optional.of(resolved);
+        } catch (Exception exception) {
+            reportUnresolved(collector, metricContext, name, at, kind);
             return Optional.empty();
+        }
+    }
+
+    private static void reportUnresolved(AnalysisCollector collector, String metricContext, String name,
+            Node at, ReferenceKind kind) {
+        if (kind == ReferenceKind.TYPE) {
+            collector.warnUnresolvedType(metricContext, name, at);
+        } else {
+            collector.warnUnresolved(metricContext, name, at);
         }
     }
 

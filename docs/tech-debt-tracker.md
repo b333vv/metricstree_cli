@@ -58,8 +58,9 @@
   expected "the hundreds". Project-wide deduplication alone would not fix it (there are 32,828
   distinct `(code, message)` pairs), so the fix is a **project-level cap**: keep the first N
   diagnostics per code and aggregate the rest, with N configurable next to
-  `unresolvedSymbolDiagnosticCap`. Not done in TASK-102 because it is a reporting-policy decision
-  that belongs with the report-quality work in [TASK-104](tasks/TASK-104-resolution-coverage.md).
+  `unresolvedSymbolDiagnosticCap`. Not done in TASK-102 because it is a reporting-policy decision;
+  TASK-104 was expected to own it and instead delivered `resolutionCoverage` (see below), so it now
+  needs an owner.
   One amplifier was removed in TASK-102: `NOC` used to report another class's broken supertype once
   per class analysed (34,323 diagnostics for 20 distinct facts), which is now down to 33.
   TASK-103 (2026-09-16) confirmed the scope is worse than "per class": each method gets its own
@@ -67,6 +68,12 @@
   cap reachable for method-level diagnostics for the first time, which is what exposed that method
   collectors were never flushed at all. Both are fixed, but they strengthen the case for the
   project-level cap.
+  TASK-104 (2026-09-16) delivered `resolutionCoverage`, which is the *other* mitigation the
+  implementation plan's risks table names for this ("aggregated counters; `resolutionCoverage`
+  summary"). It makes a long array interpretable — one number says whether the metrics are
+  trustworthy — but it does not make the array shorter, so **the project-level cap is still open** and
+  is no longer claimed by any task. It is a reporting-policy decision: how many diagnostics of one
+  code a reader wants before the rest become an aggregate.
 
 ## Resolved Debt Items
 - **DEBT-04 — Dead `HAS_METHOD_RULE` in `class-level-rules.json`.** Resolved by

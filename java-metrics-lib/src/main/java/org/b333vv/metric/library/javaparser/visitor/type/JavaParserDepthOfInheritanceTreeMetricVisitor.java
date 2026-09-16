@@ -30,6 +30,7 @@ public class JavaParserDepthOfInheritanceTreeMetricVisitor extends JavaParserCla
                     .asReferenceType()
                     .getTypeDeclaration()
                     .orElseThrow();
+            collector.recordResolved();
             if (resolved instanceof JavaParserClassDeclaration javaParserClassDeclaration) {
                 return 1 + getDepth(javaParserClassDeclaration.getWrappedNode(), collector);
             }

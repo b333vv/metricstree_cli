@@ -23,6 +23,7 @@ public class JavaParserDataAbstractionCouplingMetricVisitor extends JavaParserCl
             field.getVariables().forEach(variable -> {
                 try {
                     ResolvedType resolvedType = variable.getType().resolve();
+                    collector.recordResolved();
                     if (resolvedType.isReferenceType()) {
                         abstractDataTypes.add(resolvedType.asReferenceType().getQualifiedName());
                     }

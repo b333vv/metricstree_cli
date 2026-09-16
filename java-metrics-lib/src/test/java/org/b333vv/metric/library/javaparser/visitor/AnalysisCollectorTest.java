@@ -10,6 +10,7 @@ import org.b333vv.metric.library.core.AnalysisDiagnostic;
 import org.b333vv.metric.library.core.AnalysisSeverity;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.core.ResolutionStats;
 import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.model.metric.value.Value;
 import org.junit.jupiter.api.Test;
@@ -359,9 +360,18 @@ class AnalysisCollectorTest {
             List<MetricResult> metrics,
             List<AnalysisDiagnostic> diagnostics,
             int cap) {
+        return collector(metrics, diagnostics, cap, new ResolutionStats());
+    }
+
+    private static AnalysisCollector collector(
+            List<MetricResult> metrics,
+            List<AnalysisDiagnostic> diagnostics,
+            int cap,
+            ResolutionStats resolutionStats) {
         return new AnalysisCollector(
                 metrics::add,
                 diagnostics,
+                resolutionStats,
                 "a.Subject",
                 new SourceLocation(Path.of(CLASS_LOCATION), 1, 1),
                 cap);

@@ -5,9 +5,12 @@ import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.Range;
 import org.b333vv.metric.library.core.AnalysisDiagnostic;
 import org.b333vv.metric.library.core.AnalysisSeverity;
+import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricResult;
+import org.b333vv.metric.library.core.ResolutionStats;
 import org.b333vv.metric.library.core.SourceLocation;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -15,6 +18,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
  * Hands a metric visitor both jobs it needs: delivering metric values, and reporting the resolution
@@ -39,6 +43,13 @@ import java.util.function.Consumer;
  *
  * <p>{@link #flush()} must be called once per class, after all visitors have run, to emit the
  * aggregated diagnostics. It is idempotent.
+ *
+ * <h2>Resolution coverage</h2>
+ * Reporting a failure and counting it are separate concerns: the report is deduplicated and capped,
+ * but {@link ResolutionStats} tallies every attempt, so a caller that reports through this collector
+ * must also call {@link #recordResolved()} on its success path. The two together are what make
+ * {@code ProjectReport.resolutionCoverage} a statement about the analysis rather than about the
+ * classpath.
  *
  * <h2>Thread-safety</h2>
  * The analyzer visits classes on a parallel stream, so the shared diagnostics list is written
@@ -68,8 +79,17 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
      */
     public static final String UNRESOLVED_TYPE_BULK = "UNRESOLVED_TYPE_BULK";
 
+    /**
+     * The names of the real metric codes, so a reporting context can be attributed to a metric only
+     * when it actually is one.
+     */
+    private static final Set<String> METRIC_CODE_NAMES = Arrays.stream(MetricCode.values())
+            .map(Enum::name)
+            .collect(Collectors.toUnmodifiableSet());
+
     private final Consumer<MetricResult> metricConsumer;
     private final List<AnalysisDiagnostic> diagnostics;
+    private final ResolutionStats resolutionStats;
     private final String subject;
     private final SourceLocation fallbackLocation;
     private final int cap;
@@ -82,6 +102,8 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
     /**
      * @param metricConsumer   where metric values go
      * @param diagnostics      the analyzer's shared diagnostics list
+     * @param resolutionStats  the run's shared resolution tally, fed by every attempt this collector
+     *                         and its children see
      * @param subject          what is being analysed (class qualified name, or method signature),
      *                         used in aggregated messages
      * @param fallbackLocation location used when a reported node has no range of its own
@@ -91,6 +113,7 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
     public AnalysisCollector(
             Consumer<MetricResult> metricConsumer,
             List<AnalysisDiagnostic> diagnostics,
+            ResolutionStats resolutionStats,
             String subject,
             SourceLocation fallbackLocation,
             int cap) {
@@ -100,6 +123,9 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
         if (diagnostics == null) {
             throw new IllegalArgumentException("Diagnostics list must not be null");
         }
+        if (resolutionStats == null) {
+            throw new IllegalArgumentException("Resolution stats must not be null");
+        }
         if (fallbackLocation == null) {
             throw new IllegalArgumentException("Fallback location must not be null");
         }
@@ -108,6 +134,7 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
         }
         this.metricConsumer = metricConsumer;
         this.diagnostics = diagnostics;
+        this.resolutionStats = resolutionStats;
         this.subject = subject == null || subject.isBlank() ? "<unknown>" : subject;
         this.fallbackLocation = fallbackLocation;
         this.cap = cap;
@@ -127,7 +154,19 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
      * suppressed by the parent's.
      */
     public AnalysisCollector childCollector(Consumer<MetricResult> metricConsumer, String subject) {
-        return new AnalysisCollector(metricConsumer, diagnostics, subject, fallbackLocation, cap);
+        return new AnalysisCollector(metricConsumer, diagnostics, resolutionStats, subject, fallbackLocation, cap);
+    }
+
+    /**
+     * Records that the resolution attempt the caller just made succeeded.
+     *
+     * <p>Must be called at the same site that would call {@link #warnUnresolved} or
+     * {@link #warnUnresolvedType} if it had failed, so the two halves of the tally line up: one
+     * attempt, counted once, either way. It goes through the run's shared {@link ResolutionStats}, so
+     * the project total is the sum over every collector without any bookkeeping at the call sites.
+     */
+    public void recordResolved() {
+        resolutionStats.recordResolved();
     }
 
     /**
@@ -150,8 +189,13 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
     /**
      * Reports that {@code symbolName} could not be resolved while computing {@code metricContext}
      * (e.g. {@code "CBO"}).
+     *
+     * <p>The attempt is tallied before the dedup below, so {@link ResolutionStats} counts resolution
+     * operations rather than distinct problems: two metrics that both fail on the same symbol are two
+     * failed attempts, matching the {@link #recordResolved()} call each of them makes on success.
      */
     public void warnUnresolved(String metricContext, String symbolName, Node at) {
+        resolutionStats.recordFailure();
         report(UNRESOLVED_SYMBOL, metricContext, symbolName, at, "Could not resolve symbol '" + symbolName + "'");
     }
 
@@ -160,6 +204,7 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
      * {@code metricContext}.
      */
     public void warnUnresolvedType(String metricContext, String typeName, Node at) {
+        resolutionStats.recordFailure();
         report(UNRESOLVED_TYPE, metricContext, typeName, at, "Could not resolve type '" + typeName + "'");
     }
 
@@ -172,6 +217,10 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
      * unresolved symbol even though nothing is wrong with it. Visitors that walk every
      * {@code NameExpr} in a class would otherwise report one "your classpath is broken" diagnostic per
      * static call, so they must go through this method instead of {@link #warnUnresolved}.
+     *
+     * <p>A name that turns out to be a type is not counted as an attempt either: the collector has
+     * decided the caller was never asking a resolvable question, so counting it would drag
+     * {@link ResolutionStats} down with known false alarms.
      *
      * @param metricContext the metric being computed (e.g. {@code "LCOM"})
      * @param name          the name that could not be resolved as a value
@@ -231,10 +280,22 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
                     code,
                     AnalysisSeverity.WARNING,
                     decorate(metricContext, message),
-                    locationOf(at)));
+                    locationOf(at))
+                    .withAttribution(name, metricCodeOf(metricContext)));
         } else {
             suppressedCounts.merge(code, 1, Integer::sum);
         }
+    }
+
+    /**
+     * The metric a context names, or {@code null} when it names none.
+     *
+     * <p>Not every context is a metric: {@code DEPENDENCIES} and {@code SUPERTYPES} cover several
+     * metrics at once, so reporting one of them as {@code metricCode} would be a lie. The message
+     * still carries the raw context in brackets, so nothing is lost.
+     */
+    private static String metricCodeOf(String metricContext) {
+        return metricContext != null && METRIC_CODE_NAMES.contains(metricContext) ? metricContext : null;
     }
 
     private void publish(AnalysisDiagnostic diagnostic) {

@@ -21,6 +21,7 @@ public class JavaParserCouplingIntensityMetricVisitor extends JavaParserMethodMe
         declaration.walk(MethodCallExpr.class, methodCall -> {
             try {
                 calledMethods.add(methodCall.resolve().getQualifiedSignature());
+                collector.recordResolved();
             } catch (Exception unresolved) {
                 // The call contributes nothing to the set, so the coupling intensity is understated.
                 collector.warnUnresolved(METRIC_CONTEXT, methodCall.toString(), methodCall);
