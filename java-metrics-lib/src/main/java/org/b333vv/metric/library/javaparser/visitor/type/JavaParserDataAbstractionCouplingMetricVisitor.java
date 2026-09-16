@@ -13,6 +13,8 @@ import java.util.Set;
 
 public class JavaParserDataAbstractionCouplingMetricVisitor extends JavaParserClassMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.DAC.name();
+
     @Override
     public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
@@ -25,7 +27,9 @@ public class JavaParserDataAbstractionCouplingMetricVisitor extends JavaParserCl
                         abstractDataTypes.add(resolvedType.asReferenceType().getQualifiedName());
                     }
                 } catch (Exception ignored) {
-                    // Ignore unresolved symbols to preserve existing behavior.
+                    // The field's type is missing from the count, so DAC understates.
+                    collector.warnUnresolvedType(
+                            METRIC_CONTEXT, variable.getType().asString(), variable);
                 }
             });
         }

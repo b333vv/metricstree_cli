@@ -26,6 +26,8 @@ import java.util.Set;
 
 public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.RFC.name();
+
     @Override
     public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
@@ -41,6 +43,9 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
             try {
                 uniqueTargets.add(normalizeSignature(method.resolve().getQualifiedSignature()));
             } catch (Exception ignored) {
+                // The fallback keeps the method in the response set, but under a name that no longer
+                // distinguishes overloads or inherited members, so the set can be off.
+                collector.warnUnresolved(METRIC_CONTEXT, method.getNameAsString() + "()", method);
                 uniqueTargets.add(normalizeSignature(className + "#" + method.getSignature().asString()));
             }
         });
@@ -49,11 +54,12 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
             try {
                 uniqueTargets.add(normalizeSignature(constructor.resolve().getQualifiedSignature()));
             } catch (Exception ignored) {
+                collector.warnUnresolved(METRIC_CONTEXT, constructor.getNameAsString() + "()", constructor);
                 uniqueTargets.add(normalizeSignature(className + "#" + constructor.getSignature().asString()));
             }
         });
 
-        RFCInvocationCollector invocationCollector = new RFCInvocationCollector();
+        RFCInvocationCollector invocationCollector = new RFCInvocationCollector(collector);
         declaration.getMembers().forEach(member -> {
             if (member instanceof ClassOrInterfaceDeclaration
                     || member instanceof EnumDeclaration
@@ -78,7 +84,18 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
         collector.accept(MetricResult.of(MetricCode.RFC, uniqueTargets.size()));
     }
 
+    /**
+     * Collects invocation targets. It cannot reach the report directly, so it carries the class's
+     * collector: every unresolved call it meets is a response the metric will never see.
+     */
     private static class RFCInvocationCollector extends VoidVisitorAdapter<Set<String>> {
+
+        private final AnalysisCollector diagnostics;
+
+        RFCInvocationCollector(AnalysisCollector diagnostics) {
+            this.diagnostics = diagnostics;
+        }
+
         @Override
         public void visit(ClassOrInterfaceDeclaration declaration, Set<String> collector) {
             // Do not traverse nested or local classes.
@@ -110,7 +127,8 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
             try {
                 collector.add(normalizeSignature(expression.resolve().getQualifiedSignature()));
             } catch (Exception ignored) {
-                // Ignore unresolved symbols.
+                // Unresolved call: it contributes no response target, so RFC understates.
+                diagnostics.warnUnresolved(METRIC_CONTEXT, expression.toString(), expression);
             }
         }
 
@@ -121,7 +139,7 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
             try {
                 collector.add(normalizeSignature(expression.resolve().getQualifiedSignature()));
             } catch (Exception ignored) {
-                // Ignore unresolved symbols.
+                diagnostics.warnUnresolved(METRIC_CONTEXT, expression.toString(), expression);
             }
             // Skip anonymous class body to avoid counting nested class calls.
         }
@@ -132,7 +150,7 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
             try {
                 collector.add(normalizeSignature(expression.resolve().getQualifiedSignature()));
             } catch (Exception ignored) {
-                // Ignore unresolved symbols.
+                diagnostics.warnUnresolved(METRIC_CONTEXT, expression.toString(), expression);
             }
         }
 
@@ -142,7 +160,7 @@ public class JavaParserResponseForClassMetricVisitor extends JavaParserClassMetr
             try {
                 collector.add(normalizeSignature(statement.resolve().getQualifiedSignature()));
             } catch (Exception ignored) {
-                // Ignore unresolved symbols.
+                diagnostics.warnUnresolved(METRIC_CONTEXT, statement.toString(), statement);
             }
         }
     }

@@ -22,6 +22,8 @@ import java.util.Set;
 
 public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserClassMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.CBO.name();
+
     @Override
     public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
@@ -37,7 +39,9 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
                         coupledClasses.add(importName);
                     }
                 } catch (Exception ignored) {
-                    // Ignore unresolved imports.
+                    // Deliberately silent: reading an import's name is purely syntactic — nothing is
+                    // resolved here, so a failure would be a malformed AST, not a resolution problem,
+                    // and reporting it as "unresolved" would misdirect the user to their classpath.
                 }
             }
         }
@@ -48,7 +52,8 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
                 String resolvedName = type.resolve().asReferenceType().getQualifiedName();
                 coupledClasses.add(resolvedName);
             } catch (Exception ignored) {
-                // Ignore unresolved symbols.
+                // Unresolved type: the coupling it represents is missing from the count.
+                collector.warnUnresolvedType(METRIC_CONTEXT, type.asString(), type);
             }
         });
 
@@ -59,17 +64,14 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
                 ResolvedReferenceTypeDeclaration declaringType = resolvedMethod.declaringType();
                 coupledClasses.add(declaringType.getQualifiedName());
             } catch (Exception ignored) {
-                // If method resolution fails, try to infer from scope.
-                try {
-                    if (methodCall.getScope().isPresent()) {
-                        String scopeText = methodCall.getScope().get().toString();
-                        String inferredType = inferTypeFromStaticCall(scopeText);
-                        if (inferredType != null) {
-                            coupledClasses.add(inferredType);
-                        }
-                    }
-                } catch (Exception ignored2) {
-                    // Ignore fallback failures.
+                // If method resolution fails, try to infer from scope. The inference recovers the
+                // coupling for a handful of well-known static receivers, so only the calls it cannot
+                // recover are actually missing from the metric — those are the ones worth reporting.
+                String inferredType = inferTypeFromStaticCall(methodCall);
+                if (inferredType != null) {
+                    coupledClasses.add(inferredType);
+                } else {
+                    collector.warnUnresolved(METRIC_CONTEXT, methodCall.toString(), methodCall);
                 }
             }
         });
@@ -80,26 +82,27 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
                 String resolvedName = objectCreation.getType().resolve().asReferenceType().getQualifiedName();
                 coupledClasses.add(resolvedName);
             } catch (Exception ignored) {
-                // Ignore unresolved symbols.
+                collector.warnUnresolvedType(METRIC_CONTEXT, objectCreation.getType().asString(), objectCreation);
             }
         });
 
         // 4. Method reference expressions like PsiType::getPresentableText.
         declaration.walk(MethodReferenceExpr.class, methodReference -> {
-            try {
-                if (methodReference.getScope() instanceof NameExpr scopeExpression) {
-                    try {
-                        String resolvedName = scopeExpression.resolve().asType().asReferenceType().getQualifiedName();
-                        coupledClasses.add(resolvedName);
-                    } catch (Exception ignored) {
-                        String inferredType = inferTypeFromStaticCall(scopeExpression.getNameAsString());
-                        if (inferredType != null) {
-                            coupledClasses.add(inferredType);
-                        }
+            if (methodReference.getScope() instanceof NameExpr scopeExpression) {
+                try {
+                    String resolvedName = scopeExpression.resolve().asType().asReferenceType().getQualifiedName();
+                    coupledClasses.add(resolvedName);
+                } catch (Exception ignored) {
+                    // Same reasoning as method calls: the inference covers well-known receivers. The
+                    // whole reference is reported, not just the scope, because the scope is often a
+                    // type name that the solver would otherwise describe as an unresolved symbol.
+                    String inferredType = inferTypeFromStaticCall(scopeExpression.getNameAsString());
+                    if (inferredType != null) {
+                        coupledClasses.add(inferredType);
+                    } else {
+                        collector.warnUnresolved(METRIC_CONTEXT, methodReference.toString(), methodReference);
                     }
                 }
-            } catch (Exception ignored) {
-                // Ignore unresolved method references.
             }
         });
 
@@ -110,7 +113,11 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
             } catch (Exception ignored) {
                 String annotationName = annotation.getNameAsString();
                 if ("Override".equals(annotationName)) {
+                    // java.lang is always on the solver's radar, so this fallback is value-equivalent
+                    // for @Override and reporting it would be noise. Any other annotation is lost.
                     coupledClasses.add("java.lang.Override");
+                } else {
+                    collector.warnUnresolvedType(METRIC_CONTEXT, annotationName, annotation);
                 }
             }
         });
@@ -119,10 +126,25 @@ public class JavaParserCouplingBetweenObjectsMetricVisitor extends JavaParserCla
             String currentClassName = declaration.resolve().getQualifiedName();
             coupledClasses.remove(currentClassName);
         } catch (Exception ignored) {
-            // Ignore unresolved current class.
+            // Without the class's own name the self-coupling cannot be subtracted, so CBO is
+            // inflated by one — a resolution failure that changes the value.
+            collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);
         }
 
         collector.accept(MetricResult.of(MetricCode.CBO, coupledClasses.size()));
+    }
+
+    /**
+     * Infers the qualified type name behind a method call's scope, for the handful of well-known
+     * static receivers whose type the symbol solver routinely fails to reach (e.g. because the JDK
+     * jar is not on the classpath).
+     *
+     * @return the qualified type name, or {@code null} when the scope is absent or unrecognized
+     */
+    private String inferTypeFromStaticCall(MethodCallExpr methodCall) {
+        return methodCall.getScope()
+                .map(scope -> inferTypeFromStaticCall(scope.toString()))
+                .orElse(null);
     }
 
     /**

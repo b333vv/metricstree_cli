@@ -122,6 +122,16 @@ public abstract class JavaParserVisitorTestSupport {
         return List.copyOf(lastDiagnostics);
     }
 
+    /**
+     * The most recent diagnostics as {@code CODE message} strings. Comparing those instead of whole
+     * records keeps the assertions readable and, deliberately, does not pin the reported location.
+     */
+    protected List<String> lastDiagnosticSummaries() {
+        return lastDiagnostics().stream()
+                .map(diagnostic -> diagnostic.code() + " " + diagnostic.message())
+                .toList();
+    }
+
     private void collect(JavaParserClassMetricVisitor visitor, ClassOrInterfaceDeclaration declaration,
             List<MetricResult> metrics) {
         AnalysisCollector collector = newCollector(metrics);

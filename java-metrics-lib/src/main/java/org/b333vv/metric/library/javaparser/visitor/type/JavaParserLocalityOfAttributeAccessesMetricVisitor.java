@@ -16,6 +16,8 @@ import java.util.stream.Stream;
 
 public class JavaParserLocalityOfAttributeAccessesMetricVisitor extends JavaParserClassMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.LAA.name();
+
     @Override
     public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
@@ -46,6 +48,12 @@ public class JavaParserLocalityOfAttributeAccessesMetricVisitor extends JavaPars
             double locality = (double) localMethods / methodsAndConstructors.size();
             collector.accept(MetricResult.of(MetricCode.LAA, locality));
         } catch (Exception ignored) {
+            // This catch is deliberately broad: it covers the class under analysis as well as any
+            // field access inside it, because the existing abort-the-whole-walk fallback (LAA
+            // undefined) must be preserved and splitting the two would change the metric. The
+            // diagnostic is therefore attributed to the class: in both cases the type information
+            // available for it is incomplete, which is what the user has to fix.
+            collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);
             collector.accept(MetricResult.of(MetricCode.LAA, Value.UNDEFINED));
         }
     }

@@ -58,7 +58,7 @@ and the analysis continues. To keep that from being invisible, every such proble
 
 ```
 visitor catch block
-  → AnalysisCollector.warnUnresolved / warnUnresolvedType   (per class, deduped + capped)
+  → AnalysisCollector.warnUnresolved / warnUnresolvedType / warnUnresolvedName   (per class, deduped + capped)
     → MetricReport.diagnostics                              (one shared list, total order)
       → JSON "diagnostics" array / CLI output
 ```
@@ -76,6 +76,22 @@ Two properties are load-bearing and tested:
   location is required because messages repeat across classes.
 - **No lost reports** — the collector synchronizes on the shared diagnostics list, matching the
   discipline the parser already uses.
+
+#### What is worth reporting
+
+A visitor reports a failure only when it actually changed the metric, because a diagnostic that
+cannot be acted on is noise. Two consequences are visible in the code:
+
+- `warnUnresolvedName` exists for the visitors that walk every `NameExpr` in a class. `NameExpr`
+  resolution only looks for variables and fields, so the `Math` in `Math.abs(x)` fails as a *value*
+  while being a perfectly good *type*; those must not be reported, and the collector checks before
+  reporting. Coupling metrics are the mirror case: there the missing type really is missing from the
+  number, so it is reported.
+- A visitor that scans classes other than the one being analysed must attribute a failure to the
+  class it belongs to, or the report grows with project size for no added information. `NOC` scans
+  every class to count children and therefore meets each broken supertype once per class analysed; it
+  reports only when the declaring class is the one under analysis (see DEBT-09 in the tech-debt
+  tracker for the volume this still leaves at project level).
 
 ### java-metrics-cli
 

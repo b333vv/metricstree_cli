@@ -25,6 +25,8 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
     private static final Set<String> BOILERPLATE_METHODS = Set.of(
             "toString", "equals", "hashCode", "finalize", "clone", "readObject", "writeObject");
 
+    private static final String METRIC_CONTEXT = MetricCode.LCOM.name();
+
     @Override
     public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
@@ -49,20 +51,34 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
             return;
         }
 
+        // The class's own qualified name decides whether a field or call belongs to this class, so it
+        // is resolved once up front rather than inside every per-node callback: resolving it per node
+        // would make the diagnostics below blame whichever node happened to trigger the failure.
+        String classQualifiedName = null;
+        try {
+            classQualifiedName = declaration.resolve().getQualifiedName();
+        } catch (Exception ignored) {
+            // Without the class name no field can be attributed to it, so LCOM overstates cohesion.
+            collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);
+        }
+        final String ownerQualifiedName = classQualifiedName;
+
         Map<MethodDeclaration, Set<String>> methodFieldUsage = new HashMap<>();
         for (MethodDeclaration method : instanceMethods) {
             Set<String> usedFields = new HashSet<>();
             method.walk(FieldAccessExpr.class, fieldAccess -> {
                 try {
                     if (fieldAccess.resolve().isField()
-                            && declaration.resolve().getQualifiedName()
-                            .equals(fieldAccess.resolve().asField().declaringType().getQualifiedName())) {
+                            && ownerQualifiedName != null
+                            && ownerQualifiedName.equals(fieldAccess.resolve().asField().declaringType().getQualifiedName())) {
                         if (!fieldAccess.resolve().asField().isStatic()) {
                             usedFields.add(fieldAccess.getNameAsString());
                         }
                     }
                 } catch (Exception ignored) {
-                    // Ignore resolution issues.
+                    // Unresolved access: the field is dropped from this method's usage set, which
+                    // splits the graph and inflates LCOM.
+                    collector.warnUnresolved(METRIC_CONTEXT, fieldAccess.toString(), fieldAccess);
                 }
             });
             method.walk(NameExpr.class, nameExpr -> {
@@ -71,12 +87,15 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
                     if (resolved.isField()) {
                         var field = resolved.asField();
                         if (!field.isStatic()
-                                && declaration.resolve().getQualifiedName().equals(field.declaringType().getQualifiedName())) {
+                                && ownerQualifiedName != null
+                                && ownerQualifiedName.equals(field.declaringType().getQualifiedName())) {
                             usedFields.add(nameExpr.getNameAsString());
                         }
                     }
                 } catch (Exception ignored) {
-                    // Ignore resolution issues.
+                    // See AnalysisCollector.warnUnresolvedName: a bare name that is really a type is
+                    // not a resolution problem and must not be reported as one.
+                    collector.warnUnresolvedName(METRIC_CONTEXT, nameExpr);
                 }
             });
             methodFieldUsage.put(method, usedFields);
@@ -117,22 +136,14 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
             methodsByName.computeIfAbsent(method.getNameAsString(), key -> new ArrayList<>()).add(method);
         }
 
-        String classQualifiedName = null;
-        try {
-            classQualifiedName = declaration.resolve().getQualifiedName();
-        } catch (Exception ignored) {
-            // Keep null for unresolved classes.
-        }
-
         for (int i = 0; i < methodsUsingFields.size(); i++) {
             final int callerIndex = i;
             MethodDeclaration caller = methodsUsingFields.get(i);
-            final String finalClassQualifiedName = classQualifiedName;
             caller.walk(MethodCallExpr.class, methodCall -> {
                 try {
                     var resolved = methodCall.resolve();
                     var declaringType = resolved.declaringType();
-                    if (finalClassQualifiedName != null && finalClassQualifiedName.equals(declaringType.getQualifiedName())) {
+                    if (ownerQualifiedName != null && ownerQualifiedName.equals(declaringType.getQualifiedName())) {
                         String name = resolved.getName();
                         int arity = resolved.getNumberOfParams();
                         List<MethodDeclaration> candidates = methodsByName.getOrDefault(name, Collections.emptyList());
@@ -146,6 +157,9 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
                         }
                     }
                 } catch (Exception ignored) {
+                    // The name-and-arity fallback below guesses the target, and it cannot tell
+                    // overloads apart, so the edge it adds — or fails to add — is approximate.
+                    collector.warnUnresolved(METRIC_CONTEXT, methodCall.toString(), methodCall);
                     String name = methodCall.getNameAsString();
                     int arity = methodCall.getArguments().size();
                     List<MethodDeclaration> candidates = methodsByName.getOrDefault(name, Collections.emptyList());

@@ -72,6 +72,43 @@ into a jar (or rely on the sources being inside `--source-root`) if resolution a
 
 The analysis always completes: a bad classpath entry degrades resolution, it never aborts the run.
 
+#### Reading the `diagnostics` array
+
+`analyze` reports everything the symbol solver could not work out in the report's `diagnostics`
+array, so a metric that is lower than expected can be told apart from a metric that is simply low:
+
+| Code | Meaning |
+|------|---------|
+| `PARSE_PROBLEM` | A source file could not be parsed; it is excluded from the report |
+| `CLASSPATH_PROBLEM` | A `--classpath` entry was ignored (see above) |
+| `UNRESOLVED_TYPE` | A type reference could not be resolved while computing a metric |
+| `UNRESOLVED_SYMBOL` | A method, field or constructor reference could not be resolved |
+| `UNRESOLVED_TYPE_BULK` | Aggregate for `UNRESOLVED_TYPE` entries dropped by the per-class cap |
+| `UNRESOLVED_SYMBOL_BULK` | Aggregate for `UNRESOLVED_SYMBOL` entries dropped by the per-class cap |
+
+```json
+{
+  "code": "UNRESOLVED_SYMBOL",
+  "severity": "WARNING",
+  "message": "[ATFD] Could not resolve symbol 'service.describe()'",
+  "location": { "path": "/src/a/Service.java", "startLine": 22, "endLine": 22 }
+}
+```
+
+The metric code in brackets says which number the failure affects; `ATFD` above means the access to
+foreign data count is understated because that call could not be attributed to a class. A diagnostic
+is emitted only when the failure actually changes the value, so a fallback that recovers the missing
+information stays silent — a call on `Math` or `Collections` is not reported as an unresolved symbol,
+because those are types rather than values and the visitor's static-receiver fallback already covers
+them.
+
+Diagnostics are deduplicated per class and per metric, so one broken symbol is reported once per
+metric rather than once per reference to it. Each class may emit at most
+`AnalysisOptions.unresolvedSymbolDiagnosticCap` individual diagnostics (20 by default) per analysis
+run; anything beyond that is folded into the matching `*_BULK` entry. The cap is **per class**, so a
+large project analysed without a classpath can still produce a very large array — see
+[DEBT-09](tech-debt-tracker.md).
+
 ### Exclusions
 
 All subcommands support the `--exclude-file` flag. When provided, files matching any of the patterns are skipped entirely before parsing and metric computation.

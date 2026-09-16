@@ -33,9 +33,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * End-to-end test for the TASK-101 diagnostics channel: a problem reported by a class visitor must
  * travel visitor → {@code AnalysisCollector} → {@code MetricReport.diagnostics} → JSON output.
  *
- * <p>TASK-101 deliberately changes no production visitor (TASK-102/103 do that), so the visitor here
- * is a test double. Everything else on the path is the real thing: the real analyzer wiring, the real
- * per-class collector with its dedup and cap, the real report model and the real JSON writer.
+ * <p>The channel is exercised with test-double visitors so the assertions can control exactly which
+ * diagnostics are produced; the production visitors converted by TASK-102 are covered by
+ * {@code JavaParserClassVisitorDiagnosticsRegressionTest} and by the CLI goldens. Everything else on
+ * the path is the real thing: the real analyzer wiring, the real per-class collector with its dedup
+ * and cap, the real report model and the real JSON writer.
  */
 class AnalysisCollectorPipelineTest {
 
@@ -101,11 +103,12 @@ class AnalysisCollectorPipelineTest {
     }
 
     /**
-     * A path-based diagnostic produced by the analyzer itself (TASK-006) travels the same route, which
-     * pins that the channel and the pre-existing diagnostics share one list and one ordering.
+     * A path-based diagnostic produced by the analyzer itself (TASK-006) and a symbol-based one
+     * produced by a converted production visitor (TASK-102) travel the same route, which pins that the
+     * channel and the pre-existing diagnostics share one list and one ordering.
      */
     @Test
-    void analyzerOwnDiagnosticsShareTheSameChannel() throws IOException {
+    void analyzerOwnDiagnosticsAndVisitorDiagnosticsShareTheSameChannel() throws IOException {
         Path sourceRoot = writeFixture();
         Path classesDirectory = Files.createDirectories(tempDir.resolve("out"));
 
@@ -113,9 +116,17 @@ class AnalysisCollectorPipelineTest {
                 AnalysisRequest.of("channel", List.of(new SourceRoot(sourceRoot)))
                         .withClasspathEntries(List.of(new ClasspathEntry(classesDirectory))));
 
-        assertFalse(diagnosticsWithCode(report, "CLASSPATH_PROBLEM").isEmpty());
-        assertTrue(diagnosticsWithCode(report, AnalysisCollector.UNRESOLVED_SYMBOL).isEmpty(),
-                "No production visitor reports unresolved symbols yet (that is TASK-102)");
+        assertFalse(diagnosticsWithCode(report, "CLASSPATH_PROBLEM").isEmpty(),
+                () -> "the analyzer's own diagnostics must still be reported, got " + report.diagnostics());
+
+        // `helper` is not declared anywhere, so the fixture is unresolvable on purpose and the
+        // production visitors now say so instead of quietly returning a low coupling number.
+        List<AnalysisDiagnostic> unresolved = diagnosticsWithCode(report, AnalysisCollector.UNRESOLVED_SYMBOL);
+        assertFalse(unresolved.isEmpty(),
+                () -> "converted production visitors must report the unresolvable call, got " + report.diagnostics());
+        assertTrue(unresolved.stream().anyMatch(diagnostic -> diagnostic.message().contains("[CBO]")
+                        && diagnostic.message().contains("compute()")),
+                () -> "expected a CBO diagnostic about the unresolvable call, got " + unresolved);
     }
 
     private MetricReport analyze(JavaParserClassMetricVisitor visitor) throws IOException {

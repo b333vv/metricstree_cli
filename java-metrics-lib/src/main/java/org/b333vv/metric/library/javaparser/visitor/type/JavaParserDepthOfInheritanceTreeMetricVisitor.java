@@ -11,14 +11,16 @@ import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor
 
 public class JavaParserDepthOfInheritanceTreeMetricVisitor extends JavaParserClassMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.DIT.name();
+
     @Override
     public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
-        int depth = getDepth(declaration);
+        int depth = getDepth(declaration, collector);
         collector.accept(MetricResult.of(MetricCode.DIT, depth));
     }
 
-    private int getDepth(ClassOrInterfaceDeclaration declaration) {
+    private int getDepth(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         if (declaration.getExtendedTypes().isEmpty()) {
             return 1; // Extends Object.
         }
@@ -29,10 +31,14 @@ public class JavaParserDepthOfInheritanceTreeMetricVisitor extends JavaParserCla
                     .getTypeDeclaration()
                     .orElseThrow();
             if (resolved instanceof JavaParserClassDeclaration javaParserClassDeclaration) {
-                return 1 + getDepth(javaParserClassDeclaration.getWrappedNode());
+                return 1 + getDepth(javaParserClassDeclaration.getWrappedNode(), collector);
             }
             return 2;
         } catch (Exception ignored) {
+            // The supertype chain is cut here, so the depth is reported as if the class extended
+            // Object directly — DIT understates by everything above this link.
+            collector.warnUnresolvedType(
+                    METRIC_CONTEXT, declaration.getExtendedTypes(0).asString(), declaration);
             return 1;
         }
     }

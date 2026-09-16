@@ -10,20 +10,27 @@ import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor
 
 public class JavaParserNumberOfAttributesMetricVisitor extends JavaParserClassMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.NOA.name();
+
     @Override
     public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
 
         // Count both declared and inherited fields to match PSI's PsiClass#getAllFields() behavior.
-        long numberOfAttributes = countAllFields(declaration);
+        long numberOfAttributes = countAllFields(declaration, collector);
         collector.accept(MetricResult.of(MetricCode.NOA, numberOfAttributes));
     }
 
     /**
      * Counts all fields (declared + inherited) to match PSI's PsiClass#getAllFields() semantic.
      * No deduplication by name.
+     *
+     * <p>Resolution failures keep their existing fallbacks — this method only adds visibility. Every
+     * failure below that can leave inherited fields out of the count is reported; the reflection
+     * helpers further down stay silent because a failure there costs one class's inherited fields
+     * without telling the user anything they can act on (it is not a classpath problem).
      */
-    private long countAllFields(ClassOrInterfaceDeclaration declaration) {
+    private long countAllFields(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         try {
             // Prefer resolved model: includes declared + inherited fields.
             long resolvedCount = declaration.resolve().getAllFields().size();
@@ -34,39 +41,34 @@ public class JavaParserNumberOfAttributesMetricVisitor extends JavaParserClassMe
             if (resolvedCount <= declared) {
                 // Likely unresolved ancestors; try reflection and take the larger count.
                 try {
-                    String fullyQualifiedName = declaration.getFullyQualifiedName().orElseGet(() -> {
-                        String packageName = declaration.findCompilationUnit()
-                                .flatMap(cu -> cu.getPackageDeclaration().map(pd -> pd.getNameAsString()))
-                                .orElse("");
-                        String prefix = packageName.isEmpty() ? "" : packageName + ".";
-                        return prefix + declaration.getNameAsString();
-                    });
+                    String fullyQualifiedName = fullyQualifiedNameOf(declaration);
                     if (fullyQualifiedName != null) {
                         Class<?> resolvedClass = loadClass(fullyQualifiedName);
                         long reflectionCount = countFieldsByReflection(resolvedClass);
                         return Math.max(resolvedCount, reflectionCount);
                     }
                 } catch (Throwable ignored) {
-                    // Ignore reflection fallback failures and keep resolved count.
+                    // Deliberately silent: reflection here is an optional supplement. The condition
+                    // above ("no more resolved fields than declared ones") also holds for a class with
+                    // no inherited fields at all, and for a source-only project reflection always
+                    // fails, so reporting this would fire for nearly every class while the count
+                    // returned below is still the resolved one. The genuine resolution failure is the
+                    // outer catch.
                 }
             }
             return resolvedCount;
         } catch (Exception ignored) {
             // Try reflection-based fallback using FQN to include external library ancestors.
+            String fullyQualifiedName = fullyQualifiedNameOf(declaration);
             try {
-                String fullyQualifiedName = declaration.getFullyQualifiedName().orElseGet(() -> {
-                    String packageName = declaration.findCompilationUnit()
-                            .flatMap(cu -> cu.getPackageDeclaration().map(pd -> pd.getNameAsString()))
-                            .orElse("");
-                    String prefix = packageName.isEmpty() ? "" : packageName + ".";
-                    return prefix + declaration.getNameAsString();
-                });
                 if (fullyQualifiedName != null) {
                     Class<?> resolvedClass = loadClass(fullyQualifiedName);
                     return countFieldsByReflection(resolvedClass);
                 }
             } catch (Throwable ignored2) {
-                // Ignore and fall back to declared-only fields.
+                // Neither the symbol solver nor reflection could see the class, so the count is
+                // declared-only: exactly the case the user needs to know about.
+                collector.warnUnresolvedType(METRIC_CONTEXT, fullyQualifiedName, declaration);
             }
             long declared = 0;
             for (FieldDeclaration field : declaration.getFields()) {
@@ -76,6 +78,19 @@ public class JavaParserNumberOfAttributesMetricVisitor extends JavaParserClassMe
         }
     }
 
+    /**
+     * Best-effort qualified name of a declaration, derived from the AST when it is not resolvable.
+     */
+    private static String fullyQualifiedNameOf(ClassOrInterfaceDeclaration declaration) {
+        return declaration.getFullyQualifiedName().orElseGet(() -> {
+            String packageName = declaration.findCompilationUnit()
+                    .flatMap(cu -> cu.getPackageDeclaration().map(pd -> pd.getNameAsString()))
+                    .orElse("");
+            String prefix = packageName.isEmpty() ? "" : packageName + ".";
+            return prefix + declaration.getNameAsString();
+        });
+    }
+
     private Class<?> loadClass(String fullyQualifiedName) throws ClassNotFoundException {
         try {
             ClassLoader threadContextClassLoader = Thread.currentThread().getContextClassLoader();
@@ -83,7 +98,8 @@ public class JavaParserNumberOfAttributesMetricVisitor extends JavaParserClassMe
                 return Class.forName(fullyQualifiedName, false, threadContextClassLoader);
             }
         } catch (Throwable ignored) {
-            // Fall through to this class loader.
+            // Deliberately silent: the thread context loader is only tried first, and the failure is
+            // immediately retried with this class's own loader below.
         }
         return Class.forName(fullyQualifiedName, false, this.getClass().getClassLoader());
     }
@@ -95,13 +111,15 @@ public class JavaParserNumberOfAttributesMetricVisitor extends JavaParserClassMe
             try {
                 count += current.getDeclaredFields().length;
             } catch (Throwable ignored) {
-                // Keep best-effort behavior.
+                // Deliberately silent: best-effort reflection. A failure here means a field's own
+                // type is missing from the JVM, which costs this one class some accuracy and tells
+                // the user nothing about their classpath.
             }
             for (Class<?> interfaceClass : safeGetInterfaces(current)) {
                 try {
                     count += interfaceClass.getDeclaredFields().length;
                 } catch (Throwable ignored) {
-                    // Keep best-effort behavior.
+                    // Deliberately silent: see above.
                 }
                 count += countInterfaceHierarchyFields(interfaceClass);
             }
@@ -116,7 +134,7 @@ public class JavaParserNumberOfAttributesMetricVisitor extends JavaParserClassMe
             try {
                 count += parentInterface.getDeclaredFields().length;
             } catch (Throwable ignored) {
-                // Keep best-effort behavior.
+                // Deliberately silent: see countFieldsByReflection.
             }
             count += countInterfaceHierarchyFields(parentInterface);
         }
@@ -127,6 +145,7 @@ public class JavaParserNumberOfAttributesMetricVisitor extends JavaParserClassMe
         try {
             return clazz.getInterfaces();
         } catch (Throwable ignored) {
+            // Deliberately silent: no classpath problem can make getInterfaces() fail.
             return new Class<?>[0];
         }
     }

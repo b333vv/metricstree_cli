@@ -826,5 +826,77 @@
       } ]
     } ]
   },
-  "diagnostics" : [ ]
+  "diagnostics" : [ {
+    "code" : "UNRESOLVED_SYMBOL",
+    "severity" : "WARNING",
+    "message" : "[ATFD] Could not resolve symbol 'service.describe()'",
+    "location" : {
+      "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+      "startLine" : 22,
+      "endLine" : 22
+    }
+  }, {
+    "code" : "UNRESOLVED_SYMBOL",
+    "severity" : "WARNING",
+    "message" : "[CBO] Could not resolve symbol 'service.describe()'",
+    "location" : {
+      "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+      "startLine" : 22,
+      "endLine" : 22
+    }
+  }, {
+    "code" : "UNRESOLVED_SYMBOL",
+    "severity" : "WARNING",
+    "message" : "[LCOM] Could not resolve symbol 'service.describe()'",
+    "location" : {
+      "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+      "startLine" : 22,
+      "endLine" : 22
+    }
+  }, {
+    "code" : "UNRESOLVED_SYMBOL",
+    "severity" : "WARNING",
+    "message" : "[MPC] Could not resolve symbol 'service.describe()'",
+    "location" : {
+      "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+      "startLine" : 22,
+      "endLine" : 22
+    }
+  }, {
+    "code" : "UNRESOLVED_SYMBOL",
+    "severity" : "WARNING",
+    "message" : "[RFC] Could not resolve symbol 'Unresolvable()'",
+    "location" : {
+      "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+      "startLine" : 17,
+      "endLine" : 19
+    }
+  }, {
+    "code" : "UNRESOLVED_SYMBOL",
+    "severity" : "WARNING",
+    "message" : "[RFC] Could not resolve symbol 'service.describe()'",
+    "location" : {
+      "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+      "startLine" : 22,
+      "endLine" : 22
+    }
+  }, {
+    "code" : "UNRESOLVED_TYPE",
+    "severity" : "WARNING",
+    "message" : "[CBO] Could not resolve type 'AbsentService'",
+    "location" : {
+      "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+      "startLine" : 15,
+      "endLine" : 15
+    }
+  }, {
+    "code" : "UNRESOLVED_TYPE",
+    "severity" : "WARNING",
+    "message" : "[DAC] Could not resolve type 'AbsentService'",
+    "location" : {
+      "path" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+      "startLine" : 15,
+      "endLine" : 15
+    }
+  } ]
 }

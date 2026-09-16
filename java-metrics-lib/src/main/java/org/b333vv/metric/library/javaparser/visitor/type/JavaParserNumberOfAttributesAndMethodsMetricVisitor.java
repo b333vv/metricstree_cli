@@ -14,6 +14,8 @@ import java.util.Optional;
 
 public class JavaParserNumberOfAttributesAndMethodsMetricVisitor extends JavaParserClassMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.SIZE2.name();
+
     @Override
     public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
@@ -50,7 +52,9 @@ public class JavaParserNumberOfAttributesAndMethodsMetricVisitor extends JavaPar
 
             size2 = attributes + methods;
         } catch (Throwable ignored) {
-            // Fallback: count declared elements only when resolution fails.
+            // Fallback: count declared elements only when resolution fails. Every inherited field and
+            // method is missing from that count, so SIZE2 understates.
+            collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);
             long attributes = declaration.getFields().stream()
                     .filter(field -> !field.isStatic())
                     .mapToLong(field -> field.getVariables().size())

@@ -1,5 +1,49 @@
 # what has been done
 
+## Phase 1: class visitors report what they could not resolve (2026-09-16)
+
+### TASK-102 — the 12 resolving class visitors stop swallowing failures — done
+
+The class-level coupling/cohesion visitors had ~40 `catch (Exception ignored)` blocks between them, so
+an incomplete classpath quietly produced lower numbers with nothing to explain them. Each catch now
+either reports through the TASK-101 channel or says in a comment why staying silent is right.
+
+- Converted: `CBO`, `RFC`, `LCOM`, `NOA`, `ATFD`, `MPC`, `NOC`, `DAC`, `DIT`, `FDP`, `LAA`, `SIZE2`.
+  Every existing fallback (`Value.UNDEFINED`, `0`, `1`, declared-only counts, the static-receiver
+  inference in CBO, the name-and-arity matching in LCOM) is untouched — only observability was added.
+- Diagnostics are emitted only where the failure actually moved the number. Three cases are
+  deliberately silent: CBO's `@Override` fallback (value-equivalent), NOA's optional reflection
+  supplement (fails for every class in a source-only project while the count stays correct), and the
+  import-name read in CBO (nothing is resolved there, so a failure would be a malformed AST, not a
+  classpath problem).
+- New `AnalysisCollector.warnUnresolvedName` for the visitors that walk every `NameExpr`.
+  `NameExpr.resolve()` only looks for variables and fields, so the `Math` in `Math.abs(x)` came back
+  as an unresolved symbol even though nothing was wrong; the first run on the golden fixture produced
+  `[ATFD] Could not resolve symbol 'Math'`. The collector now checks whether the name resolves as a
+  type and stays silent if it does. Coupling metrics keep reporting type receivers, because there the
+  missing type really is missing from the count.
+- Two catches were removed as unreachable rather than annotated: in CBO the nested
+  `try`/`catch (Exception ignored2)` around the static-receiver inference guarded a `switch` on a
+  string that cannot be null and a lookup that cannot throw.
+- NOC was reporting another class's broken supertype once per class analysed — 34,323 diagnostics for
+  20 distinct facts on the benchmark corpus. Counting children means scanning every class, so the
+  failure is met repeatedly; it is now reported only when the declaring class is the one under
+  analysis, which took it to 33.
+- `LCOM` resolves the class's own qualified name once up front instead of inside every per-node
+  callback. Behaviour-preserving (the same name, the same fallback when it cannot be resolved), but it
+  is what makes the diagnostics blame the right node.
+- Tests: `JavaParserClassVisitorDiagnosticsRegressionTest` (14) and diagnostic assertions added to
+  four cases in `JavaParserCouplingCohesionResolverEdgeCaseRegressionTest`, each asserting the
+  unchanged value *and* the expected diagnostic. `AnalysisCollectorPipelineTest`'s
+  "no production visitor reports yet" assertion was inverted — that contract change was its point.
+- `analyze.json` golden regenerated: the diff is **only** the new `diagnostics` array (8 entries, all
+  pointing at the deliberately unresolvable `golden-project/src/a/Unresolvable.java`); every metric
+  value is byte-identical, which is the "same values, more visibility" proof.
+- Volume check on the benchmark corpus (4020 classes, no `--classpath`): 51,833 diagnostics, so the
+  per-class cap does not hold the array to "the hundreds" the task's risk section expected.
+  Registered as DEBT-09 with the measured breakdown and a concrete proposal (project-level cap),
+  deliberately left out of this task because it is a reporting-policy decision.
+
 ## Phase 1: diagnostics channel into the metric visitors (2026-09-16)
 
 ### TASK-101 — `AnalysisCollector`, the visitor→report diagnostics channel — done

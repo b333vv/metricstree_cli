@@ -10,19 +10,18 @@
   mixed-list cases, and the warning is visible end-to-end in the `analyze` JSON output.
   **Still open:** directories are not actually resolved against — that is
   [TASK-105](tasks/TASK-105-typesolver-improvements.md), which is what will close this item.
-- **DEBT-06 — Silent resolution failures in visitors.** *Channel delivered by
-  [TASK-101](tasks/TASK-101-diagnostics-channel.md); the visitor conversions are still open.*
+- **DEBT-06 — Silent resolution failures in visitors.** *Class visitors done
+  ([TASK-102](tasks/TASK-102-class-visitor-diagnostics.md)); method visitors, `tryResolve` and the
+  solver factory still open.*
   15 of 35 visitors (~44 sites) plus analyzer `tryResolve` and
   `JavaParserTypeSolverFactory` (`System.err`) swallow symbol-resolution exceptions;
   metrics are understated without a trace.
   **Done:** the `AnalysisCollector` channel exists and is wired end-to-end (visitor →
   `MetricReport.diagnostics` → JSON), with per-class dedup, a configurable cap
   (`AnalysisOptions.unresolvedSymbolDiagnosticCap`, default 20) and `*_BULK` aggregation for the
-  suppressed remainder. All 35 visitors now receive the collector; their catch blocks are still
-  untouched, so no production diagnostic is emitted yet — which is why this item stays open.
-  **Remaining:** convert the 12 resolving class visitors
-  ([TASK-102](tasks/TASK-102-class-visitor-diagnostics.md)) and the method visitors plus the
-  analyzer/`JavaParserTypeSolverFactory`
+  suppressed remainder. All 35 visitors receive the collector. The 12 resolving class visitors now
+  report: `CBO`, `RFC`, `LCOM`, `NOA`, `ATFD`, `MPC`, `NOC`, `DAC`, `DIT`, `FDP`, `LAA`, `SIZE2`.
+  **Remaining:** the method visitors plus the analyzer/`JavaParserTypeSolverFactory`
   ([TASK-103](tasks/TASK-103-method-visitor-analyzer-diagnostics.md)).
 - **DEBT-07 — Locale-dependent metric values in the JSON contract.**
   Found while building the TASK-001 goldens (2026-09-16). `Value.toString()` formats doubles with a
@@ -48,6 +47,19 @@
   declarations are not parsed at all: `JavaParserTypeSolverFactory` only handles `.java`), so the
   honest options are to implement the metrics or drop the rules. Not fixed by TASK-007: this is a
   missing-metric issue, not a rule-engine issue, and it is not in any task's scope yet.
+- **DEBT-09 — Diagnostics do not aggregate at project level.** Found by the TASK-102 volume check
+  (2026-09-16). The TASK-101 cap is per class, so a failure that every class runs into is reported
+  once per class. Measured on the benchmark corpus (4020 classes, 4074 files, `analyze` with no
+  `--classpath` at all, i.e. the worst case): **51,833 diagnostics**, of which 30,271 are `CBO`,
+  4,904 `LCOM`, 4,627 `RFC`, 3,671 `ATFD`, 2,273 `FDP`, and 3,450 are `*_BULK` aggregates. Every
+  class hits its cap of 20, so the array grows linearly with project size; TASK-102's risk section
+  expected "the hundreds". Project-wide deduplication alone would not fix it (there are 32,828
+  distinct `(code, message)` pairs), so the fix is a **project-level cap**: keep the first N
+  diagnostics per code and aggregate the rest, with N configurable next to
+  `unresolvedSymbolDiagnosticCap`. Not done in TASK-102 because it is a reporting-policy decision
+  that belongs with the report-quality work in [TASK-104](tasks/TASK-104-resolution-coverage.md).
+  One amplifier was removed in TASK-102: `NOC` used to report another class's broken supertype once
+  per class analysed (34,323 diagnostics for 20 distinct facts), which is now down to 33.
 
 ## Resolved Debt Items
 - **DEBT-04 — Dead `HAS_METHOD_RULE` in `class-level-rules.json`.** Resolved by

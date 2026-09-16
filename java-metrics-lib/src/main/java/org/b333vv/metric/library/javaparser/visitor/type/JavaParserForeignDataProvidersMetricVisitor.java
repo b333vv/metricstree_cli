@@ -13,6 +13,9 @@ import java.util.List;
 import java.util.Set;
 
 public class JavaParserForeignDataProvidersMetricVisitor extends JavaParserClassMetricVisitor {
+
+    private static final String METRIC_CONTEXT = MetricCode.FDP.name();
+
     private final List<ClassOrInterfaceDeclaration> allClasses;
 
     public JavaParserForeignDataProvidersMetricVisitor(List<ClassOrInterfaceDeclaration> allClasses) {
@@ -37,6 +40,9 @@ public class JavaParserForeignDataProvidersMetricVisitor extends JavaParserClass
             }
             collector.accept(MetricResult.of(MetricCode.FDP, foreignDataProviders.size()));
         } catch (Exception ignored) {
+            // As in LAA, the catch covers the class under analysis and the other classes scanned for
+            // it; either way the provider set is incomplete, so FDP is reported as undefined.
+            collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);
             collector.accept(MetricResult.of(MetricCode.FDP, Value.UNDEFINED));
         }
     }

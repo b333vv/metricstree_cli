@@ -1,6 +1,7 @@
 package org.b333vv.metric.library.javaparser.visitor;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.Range;
 import org.b333vv.metric.library.core.AnalysisDiagnostic;
 import org.b333vv.metric.library.core.AnalysisSeverity;
@@ -160,6 +161,41 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
      */
     public void warnUnresolvedType(String metricContext, String typeName, Node at) {
         report(UNRESOLVED_TYPE, metricContext, typeName, at, "Could not resolve type '" + typeName + "'");
+    }
+
+    /**
+     * Reports that a plain name could not be resolved as a value, <em>unless</em> the name is really a
+     * type reference.
+     *
+     * <p>{@link com.github.javaparser.ast.expr.NameExpr#resolve()} only looks for variables and
+     * fields, so the {@code Math} in {@code Math.abs(x)} — a type, not a value — comes back as an
+     * unresolved symbol even though nothing is wrong with it. Visitors that walk every
+     * {@code NameExpr} in a class would otherwise report one "your classpath is broken" diagnostic per
+     * static call, so they must go through this method instead of {@link #warnUnresolved}.
+     *
+     * @param metricContext the metric being computed (e.g. {@code "LCOM"})
+     * @param name          the name that could not be resolved as a value
+     */
+    public void warnUnresolvedName(String metricContext, NameExpr name) {
+        if (denotesType(name)) {
+            return;
+        }
+        warnUnresolved(metricContext, name.toString(), name);
+    }
+
+    /**
+     * Whether the symbol solver can make sense of {@code name} as a type, which means the failed value
+     * resolution above is a false alarm rather than a missing dependency.
+     */
+    private static boolean denotesType(NameExpr name) {
+        try {
+            name.calculateResolvedType();
+            return true;
+        } catch (Throwable notAType) {
+            // Throwable rather than Exception: the solver signals several of its dead ends with
+            // errors, and any of them means the same thing here.
+            return false;
+        }
     }
 
     /**

@@ -12,6 +12,8 @@ import java.util.List;
 
 public class JavaParserMessagePassingCouplingMetricVisitor extends JavaParserClassMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.MPC.name();
+
     @Override
     public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
@@ -25,11 +27,14 @@ public class JavaParserMessagePassingCouplingMetricVisitor extends JavaParserCla
                         messagePassingCalls.add(methodCall);
                     }
                 } catch (Exception ignored) {
-                    // Ignore unresolved symbols to preserve existing behavior.
+                    // The call cannot be attributed to a declaring class, so it is dropped from the
+                    // count even though it may well be message passing.
+                    collector.warnUnresolved(METRIC_CONTEXT, methodCall.toString(), methodCall);
                 }
             });
         } catch (Exception ignored) {
-            // Ignore class resolution failures to preserve existing behavior.
+            // Without the class's own name no call can be judged "foreign", so MPC collapses to 0.
+            collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);
         }
         collector.accept(MetricResult.of(MetricCode.MPC, messagePassingCalls.size()));
     }

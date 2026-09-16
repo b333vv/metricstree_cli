@@ -19,6 +19,8 @@ import java.util.Set;
 
 public class JavaParserAccessToForeignDataMetricVisitor extends JavaParserClassMetricVisitor {
 
+    private static final String METRIC_CONTEXT = MetricCode.ATFD.name();
+
     @Override
     public void visit(ClassOrInterfaceDeclaration declaration, AnalysisCollector collector) {
         super.visit(declaration, collector);
@@ -38,7 +40,8 @@ public class JavaParserAccessToForeignDataMetricVisitor extends JavaParserClassM
                         }
                     }
                 } catch (Throwable ignored) {
-                    // Ignore unresolved symbols to preserve existing behavior.
+                    // An unresolved access is not counted, so ATFD understates.
+                    collector.warnUnresolved(METRIC_CONTEXT, fieldAccess.toString(), fieldAccess);
                 }
             });
 
@@ -53,7 +56,10 @@ public class JavaParserAccessToForeignDataMetricVisitor extends JavaParserClassM
                         }
                     }
                 } catch (Throwable ignored) {
-                    // Ignore unresolved symbols to preserve existing behavior.
+                    // A plain name that fails to resolve as a value is usually a type used as a
+                    // qualifier (Math, System, ...), which is not a problem at all; the collector
+                    // filters those out.
+                    collector.warnUnresolvedName(METRIC_CONTEXT, nameExpr);
                 }
             });
 
@@ -65,7 +71,7 @@ public class JavaParserAccessToForeignDataMetricVisitor extends JavaParserClassM
                         usedClasses.add(method.declaringType().getQualifiedName());
                     }
                 } catch (Throwable ignored) {
-                    // Ignore unresolved symbols to preserve existing behavior.
+                    collector.warnUnresolved(METRIC_CONTEXT, methodCall.toString(), methodCall);
                 }
             });
 
@@ -76,11 +82,14 @@ public class JavaParserAccessToForeignDataMetricVisitor extends JavaParserClassM
                 try {
                     usedClasses.remove(superType.getQualifiedName());
                 } catch (Throwable ignored) {
-                    // Ignore unresolved symbol ancestors.
+                    // The ancestor stays in the set, inflating ATFD with the class's own hierarchy.
+                    collector.warnUnresolvedType(METRIC_CONTEXT, superType.describe(), declaration);
                 }
             }
         } catch (Throwable ignored) {
-            // Preserve existing behavior: return best-effort count.
+            // The class itself could not be resolved, so the whole walk is skipped and ATFD
+            // collapses to zero.
+            collector.warnUnresolvedType(METRIC_CONTEXT, declaration.getNameAsString(), declaration);
         }
 
         collector.accept(MetricResult.of(MetricCode.ATFD, usedClasses.size()));

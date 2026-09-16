@@ -7,6 +7,8 @@ import org.b333vv.metric.library.javaparser.EnhancedJavaParserContext;
 import org.b333vv.metric.library.javaparser.visitor.support.JavaParserVisitorTestSupport;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class JavaParserCouplingCohesionResolverEdgeCaseRegressionTest extends JavaParserVisitorTestSupport {
@@ -62,6 +64,10 @@ class JavaParserCouplingCohesionResolverEdgeCaseRegressionTest extends JavaParse
 
         assertEquals(MetricCode.DAC, result.code());
         assertEquals(1L, result.value().longValue());
+        // Same value as before the diagnostics channel existed, plus the reason for it: the field that
+        // was silently dropped is now named.
+        assertEquals(List.of("UNRESOLVED_TYPE [DAC] Could not resolve type 'MissingType'"),
+                lastDiagnosticSummaries());
     }
 
     @Test
@@ -81,6 +87,17 @@ class JavaParserCouplingCohesionResolverEdgeCaseRegressionTest extends JavaParse
 
         assertEquals(MetricCode.CBO, result.code());
         assertEquals(3L, result.value().longValue());
+        // The three couplings are @Override plus the two recognized static receivers. Only the call
+        // whose scope the inference does not know is reported — the recovered ones stay silent, and
+        // @Override is not reported either because its fallback is value-equivalent.
+        //
+        // This fixture has no symbol solver at all, so the class under analysis is unresolvable too and
+        // its own name cannot be subtracted from the coupling set. That is a real (value-affecting)
+        // failure, hence the second diagnostic.
+        assertEquals(List.of(
+                        "UNRESOLVED_SYMBOL [CBO] Could not resolve symbol 'UnknownScope.call()'",
+                        "UNRESOLVED_TYPE [CBO] Could not resolve type 'CouplingFallback'"),
+                lastDiagnosticSummaries());
     }
 
     @Test
@@ -100,6 +117,9 @@ class JavaParserCouplingCohesionResolverEdgeCaseRegressionTest extends JavaParse
 
         assertEquals(MetricCode.MPC, result.code());
         assertEquals(0L, result.value().longValue());
+        // MPC collapsing to 0 is the visible symptom; this is its cause.
+        assertEquals(List.of("UNRESOLVED_TYPE [MPC] Could not resolve type 'Broken'"),
+                lastDiagnosticSummaries());
     }
 
     @Test
@@ -126,5 +146,9 @@ class JavaParserCouplingCohesionResolverEdgeCaseRegressionTest extends JavaParse
 
         assertEquals(MetricCode.LCOM, result.code());
         assertEquals(1L, result.value().longValue());
+        // The name-and-arity fallback still connects the two methods, so LCOM is unchanged; the
+        // diagnostic says the connection was inferred rather than resolved.
+        assertEquals(List.of("UNRESOLVED_SYMBOL [LCOM] Could not resolve symbol 'bridge(1)'"),
+                lastDiagnosticSummaries());
     }
 }
