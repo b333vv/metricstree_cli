@@ -2,6 +2,87 @@
 
 ## Phase 2: the snapshot becomes the global-analysis contract (2026-09-16)
 
+### TASK-401 — SARIF output and the `--format` flag — done (2026-09-17)
+
+**Findings now travel to the tools developers already look at.** `validate` and `detect` can write
+SARIF 2.1.0 (`--format sarif`), so threshold violations and antipattern matches appear in GitHub Code
+Scanning, GitLab and SonarQube as ordinary alerts.
+
+**Scope decision, stated rather than assumed.** The road-map's §3.5 names all three commands, but Task
+4.1 — the task this one implements — scopes SARIF to `validate` and `detect`. Followed Task 4.1: `analyze`
+writes a metrics *catalogue*, not an issue list, and SARIF maps to violations. The delta is recorded here
+and in §D4b rather than silently dropped.
+
+**What was built.**
+
+- **`SarifLog`** — a hand-built record model (`SarifLog`, `Run`, `Tool`, `Driver`, `Rule`,
+  `DefaultConfiguration`, `Result`, `Message`, `Location`, `PhysicalLocation`, `ArtifactLocation`,
+  `Region`, and a `Level` holder). A SARIF library would drag a transitive tree into a CLI whose appeal is
+  that it analyses source with almost no dependencies, and the subset needed is a dozen records. They go
+  through the shared `CliObjectMapper`, so the "only one class configures Jackson" invariant still holds.
+- **`SarifReportWriter`** owns the mapping: failed checks only, `ruleId` prefixes (`metric-threshold/`,
+  `antipattern/`) so the two commands cannot collide, levels (`error` for a crossed threshold, `warning`
+  for a design judgement), and the URI rule. `RuleSet` assigns ids and indices from one `LinkedHashMap`,
+  so `ruleIndex` cannot disagree with `driver.rules`.
+- **`OutputFormat`** and the `--format` option on both commands, default `json`.
+
+**The schema is the oracle, not this repository's expectations.** SARIF objects are closed — every one is
+`additionalProperties: false`, so an invented key is a *rejection*, not an extension — and the required
+fields are less obvious than they look (`result.message` is required; `message` needs `text` **or** `id`
+through an `anyOf`; `physicalLocation` needs `address` **or** `artifactLocation`). The official OASIS
+schema is bundled at `java-metrics-cli/src/test/resources/sarif/sarif-2.1.0.json` (112 KB, 52
+definitions, sha256 `98ae8f…fb896`) and checked by `SarifSchema`, a partial checker covering `$ref`,
+`type`/`enum`/`const`, `required`, `additionalProperties`, `anyOf`/`oneOf` and recursion — the subset the
+SARIF schema actually uses for the fields this tool emits. Its limits are documented on the class.
+
+A JSON-Schema validator dependency was rejected on purpose: every candidate brings a regex engine and, for
+the newest major version, a second Jackson line. **The checker is tested before it is trusted** — three of
+`SarifReportWriterTest`'s twelve tests break a known-good document (an undeclared key, a missing `message`,
+an unknown `level`) and assert the checker notices, so "the SARIF is schema-valid" is evidence rather than
+a tautology. The bundled schema is itself asserted to be 2.1.0 with more than 40 definitions, so the check
+cannot pass by finding no schema.
+
+**Two mapping decisions worth their own paragraph.**
+
+- **A passing check is not a finding.** SARIF has `kind: "pass"`, but Code Scanning renders every result as
+  an alert, and a project with a hundred metrics in range would produce a hundred alerts. So
+  `--format sarif` implies `--failed-only`, which is also why `ValidateCommand`'s own `--failed-only` flag
+  has nothing left to do on this path.
+- **A package finding omits `locations` entirely.** A package-scope antipattern match has no file, so
+  SARIF reads it as a log-level finding. The first implementation emitted `[]` — which claims the result
+  *has* locations and then names none — and the test caught it. The writer now passes `null` and
+  `NON_NULL` drops the key. The alternative, pointing at an arbitrary file in the package, would be a lie
+  about where the problem is.
+
+**Three deliberate omissions**, documented in `docs/RUN.md` with reasons rather than left as gaps: no
+`driver.version` (nothing carries a runtime version identity; this module's Gradle `version` is
+`unspecified`, and a fabricated one is worse than an absent one), no `informationUri` (no published URL),
+and rule-configuration problems are **not** mirrored into SARIF, because SARIF describes those with
+`run.invocations[].toolExecutionNotifications`, a mechanism this tool does not build. They stay in the JSON
+report's `summary.problems`, so nothing is lost — only not duplicated. A consequence worth knowing: only
+rules that *matched* appear in `driver.rules`, so the SARIF says what was found, not what was configured.
+
+**A picocli detail that cost a build.** `--format` is an enum, and the first attempt to make it
+case-insensitive put `caseInsensitiveEnumValuesAllowed = true` on the `@Command` annotation, which does not
+compile — it is a `CommandLine` *setter*, not an annotation attribute. It must also be applied to **every
+subcommand**: a subcommand parses its own options and inherits nothing here. `JavaMetricsCliApplication`
+does both, and `theFormatValueIsCaseInsensitive` pins it.
+
+**Verification.** `validate` over the golden fixtures emits 15 results (`metric-threshold/CBO`,
+`metric-threshold/NOM`; `"CBO is 3.0, above the configured maximum 0.0"`), `detect` emits 12
+(`antipattern/ComplexClass`, `LargeAndDense`, `SmallClass`, `LargePackage`), both schema-valid, with
+relative URIs for paths under the working directory. **JSON is byte-identical: `git status` on
+`src/test/resources/golden/` is empty.**
+
+**One acceptance criterion was not met, and it is stated plainly.** The task asks for a manual GitHub
+upload rendering alerts, "or `sarif-multitool`-style local validation passes if repo access is
+unavailable". This repository has **no git remote**, so no upload was possible; the bundled-official-schema
+check stands in for it and is stricter than a local `sarif-multitool` run's schema step, because it
+validates against the published schema file rather than a hand-written list of structural assertions.
+
+**Tests.** `./gradlew check` green: **361 unit tests (271 lib + 90 CLI), 0 failures, 1 intentional skip**,
+plus 3 distribution integration tests. `SarifReportWriterTest` is 12 of the CLI tests.
+
 ### TASK-302 — one mapper, mixins instead of view records — done (2026-09-17)
 
 **The task's core promise is kept: the emitted JSON is byte-identical, goldens untouched.** The
@@ -86,6 +167,14 @@ principle (pinning `Locale.ROOT` leaves the `en_US`-generated goldens untouched,
 not locale-pinned and assert no formatted doubles), but it is a user-visible contract change on some
 machines and does not belong in a refactor whose promise is "nothing changes". DEBT-07 is updated with
 the precise one-line fix and the evidence that it is safe; it needs its own reviewed decision.
+
+**The clean-worktree verification found a real flaky test, which is the clearest justification yet for
+that step.** Re-running the task in a fresh `git worktree` at HEAD, `AstMemoryManagerTest
+.releasesEveryUnitOnceItsTaskHasReturned` failed with `expected: <6> but was: <5>`. The cause was the same
+unsynchronized-add defect TASK-205 fixed in production: the test collected `WeakReference`s into a plain
+`ArrayList` from inside the `parseInWindows` task, which runs on the window's worker threads. Measured A/B
+over 12 consecutive runs on each side: **unfixed 3/12 failures (25%), fixed 0/12**. Committed separately
+(`CopyOnWriteArrayList` + a comment naming the defect) so the fix is not buried in the refactor.
 
 **Tests.** `./gradlew check` green: 349 unit tests (271 lib + 78 CLI), 0 failures, 1 intentional skip,
 plus 3 distribution integration tests. `CliObjectMapperContractTest` is 6 of the CLI tests.

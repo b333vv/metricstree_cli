@@ -41,6 +41,13 @@ final class JavaMetricsCliApplication {
                 .addSubcommand("analyze", analyzeCommand)
                 .addSubcommand("validate", validateCommand)
                 .addSubcommand("detect", detectCommand);
+        // --format is documented as taking a lower-case value ("sarif") while an enum constant is
+        // upper case, and picocli matches enum values case-sensitively by default. The setting lives
+        // on each CommandSpec rather than on the root command, so it is applied to the subcommands
+        // that actually declare the option.
+        commandLine.setCaseInsensitiveEnumValuesAllowed(true);
+        commandLine.getSubcommands().values()
+                .forEach(subcommand -> subcommand.setCaseInsensitiveEnumValuesAllowed(true));
         commandLine.setExecutionExceptionHandler((exception, commandLine1, parseResult) -> {
             stderr.println("Analysis failed: " + exception.getMessage());
             stderr.flush();

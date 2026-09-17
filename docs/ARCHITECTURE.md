@@ -437,6 +437,47 @@ Now `CliObjectMapper` is the single definition:
   `JavaMetricsCliDistributionSmokeTest` runs all three commands through the jar, and `check` now depends
   on `integrationTest` so that proof is not optional. No `keep` rules were needed.
 
+### SARIF: a second format, and why it is not a second mapper
+
+`validate` and `detect` can write SARIF 2.1.0 instead of their own JSON (`--format sarif`), so their
+findings reach GitHub Code Scanning, GitLab and SonarQube as alerts. `analyze` does not: its output is a
+metrics catalogue, not an issue list.
+
+- **A hand-built model, not a dependency.** `SarifLog` is a small set of annotated records — `SarifLog`,
+  `Run`, `Tool`, `Driver`, `Rule`, `DefaultConfiguration`, `Result`, `Message`, `Location`,
+  `PhysicalLocation`, `ArtifactLocation`, `Region`, plus a `Level` holder. Adding a SARIF library would
+  pull a transitive tree into a CLI whose appeal is that it analyses source with almost no dependencies,
+  and the subset actually needed is a dozen records. They go through the same `CliObjectMapper` as
+  everything else, so the invariant that only one class configures Jackson still holds.
+- **The schema is the oracle, not this repository's expectations.** SARIF objects are closed — every one
+  is `additionalProperties: false` — so an invented key is a rejection, not an extension, and the required
+  fields are less obvious than they look (`result.message` is required; `message` needs `text` *or* `id`
+  through an `anyOf`; `physicalLocation` needs `address` *or* `artifactLocation`). The official OASIS
+  schema is bundled as a test resource and checked by `SarifSchema`, a partial checker covering `$ref`,
+  `type`/`enum`/`const`, `required`, `additionalProperties`, `anyOf`/`oneOf` and recursion — the subset the
+  SARIF schema actually uses for the fields this tool emits. Its limits are documented on the class.
+  `SarifReportWriterTest` first breaks a known-good document three ways and asserts the checker notices,
+  so schema-validity is evidence rather than a tautology.
+- **The mapping is one class with one rule per command.** `SarifReportWriter` owns what becomes a result
+  (failed checks only; passing checks are not findings), the `ruleId` prefixes (`metric-threshold/`,
+  `antipattern/`) that keep the two commands from colliding, the levels (`error` for a crossed threshold,
+  `warning` for a design judgement), and the URI rule (relative for paths under the working directory,
+  because that is what a code-scanning consumer matches against a repository; `file:` otherwise, built
+  through `URI` so spaces are percent-encoded rather than producing an invalid URI). `RuleSet` assigns ids
+  and indices from one `LinkedHashMap`, so `ruleIndex` cannot disagree with `driver.rules`.
+- **A package finding has no location.** A package-scope antipattern match points at no file, so its result
+  omits `locations` and SARIF treats it as a log-level finding. Emitting an empty array instead would
+  claim the result has locations and then name none — the writer passes `null`, which `NON_NULL` drops.
+- **Three deliberate omissions**, recorded in `docs/RUN.md`: no `driver.version` (no runtime version
+  identity exists; the module's Gradle version is `unspecified`), no `informationUri` (no published URL),
+  and rule-configuration problems are *not* mirrored into SARIF, because SARIF wants
+  `run.invocations[].toolExecutionNotifications`, which this tool does not build. They stay visible in the
+  JSON report's `summary.problems`, so nothing is lost — only not duplicated.
+
+`--format` is a picocli enum, and `caseInsensitiveEnumValuesAllowed` is a `CommandLine` *setter* rather
+than a `@Command` attribute, so `JavaMetricsCliApplication` applies it to the root command **and to every
+subcommand**: a subcommand parses its own options and inherits nothing here.
+
 ## Build System
 
 - **Gradle** with Kotlin DSL (`build.gradle.kts`)

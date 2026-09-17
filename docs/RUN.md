@@ -223,7 +223,7 @@ java-metrics-cli analyze --source-root src/main/java --exclude-file exclusions.y
 Validate metrics against threshold values for CI/CD pipelines.
 
 ```bash
-java-metrics-cli validate -s <source> -t <thresholds.json> -o <report.json> [--strict] [--exclude-file=<path>]
+java-metrics-cli validate -s <source> -t <thresholds.json> -o <report.json> [--strict] [--failed-only] [--format=<json|sarif>] [--exclude-file=<path>]
 ```
 
 | Option | Description |
@@ -232,6 +232,8 @@ java-metrics-cli validate -s <source> -t <thresholds.json> -o <report.json> [--s
 | `-t, --thresholds=<path>` | Path to JSON file with thresholds (required) |
 | `-o, --output=<path>` | Path to output JSON report (required) |
 | `--strict` | Exit with code 1 if any validation fails |
+| `--failed-only` | Write only the failed checks to the report |
+| `--format=<json\|sarif>` | Report format, case-insensitive; default `json`. `sarif` implies `--failed-only` — see [SARIF output](#sarif-output) |
 | `--exclude-file=<path>` | YAML file with exclusion patterns (also `-e`, `--ignore`) |
 | `--generate-baseline=<path>` | Generate a baseline snapshot of current violations instead of normal validation |
 | `--baseline=<path>` | Check against an existing baseline (only alert on new or worsened violations) |
@@ -337,7 +339,7 @@ echo $?  # 1 if new or degraded violations found
 Detect metric rule matches (antipatterns / fitness functions) — find classes or packages whose metric values satisfy all given constraints.
 
 ```bash
-java-metrics-cli detect -s <source> --class-rules=<path> [--package-rules=<path>] -o <output> [--exclude-file=<path>]
+java-metrics-cli detect -s <source> --class-rules=<path> [--package-rules=<path>] -o <output> [--format=<json|sarif>] [--exclude-file=<path>]
 ```
 
 | Option | Description |
@@ -345,7 +347,8 @@ java-metrics-cli detect -s <source> --class-rules=<path> [--package-rules=<path>
 | `-s, --source=<path>` | Java source file or directory to analyze (required) |
 | `--class-rules=<path>` | JSON file with class-level rule definitions |
 | `--package-rules=<path>` | JSON file with package-level rule definitions |
-| `-o, --output=<path>` | Path to write JSON report (required) |
+| `-o, --output=<path>` | Path to write the report to, in the format selected by `--format` (required) |
+| `--format=<json\|sarif>` | Report format, case-insensitive; default `json` — see [SARIF output](#sarif-output) |
 | `--exclude-file, -e, --ignore=<path>` | YAML file with exclusion patterns (see [Exclusions](#exclusions)) |
 
 At least one of `--class-rules` or `--package-rules` must be provided.
@@ -450,6 +453,141 @@ Detect with both class and package rules, plus exclusions:
 ```bash
 java-metrics-cli detect -s src/main/java --class-rules rules.json --package-rules pkg-rules.json -o report.json --exclude-file exclusions.yml
 ```
+
+## SARIF output
+
+`validate` and `detect` can write [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
+instead of their own JSON, so findings appear in GitHub Code Scanning, GitLab and SonarQube as ordinary
+alerts — no dashboard, no parser, no glue code:
+
+```bash
+java-metrics-cli validate -s src/main/java -t thresholds.json -o results.sarif --format sarif
+java-metrics-cli detect   -s src/main/java --class-rules rules.json -o results.sarif --format sarif
+```
+
+`--format` is case-insensitive (`sarif`, `SARIF`, `Sarif` are all accepted) and defaults to `json`, so
+existing pipelines are unaffected. **Only `validate` and `detect` take the flag**: their output is a list
+of findings, which is what SARIF describes. `analyze` writes a metrics catalogue, not an issue list, and
+has no SARIF form.
+
+### What becomes a result
+
+| Command | One result per | `ruleId` | `level` |
+|---|---|---|---|
+| `validate` | failed threshold check | `metric-threshold/<METRIC_CODE>` | `error` |
+| `detect` | class or package a rule matched | `antipattern/<rule name>` | `warning` |
+
+A threshold violation is `error` because it is a number the team chose and the code crossed it. An
+antipattern match is `warning` because it is a judgement about design. Nothing is reported as `note`.
+
+`ruleId` is prefixed so the two commands cannot collide: a rules file naming a rule after a metric would
+otherwise produce an id that means two different things. Each result also carries `ruleIndex`, which
+points at its entry in `tool.driver.rules`, as the specification recommends.
+
+A **passing** threshold check is not a finding and produces no result. SARIF has a `kind: "pass"` for it,
+but Code Scanning renders every result as an alert, and a project with a hundred metrics in range would
+produce a hundred alerts. So `--format sarif` implies `--failed-only`; passing `--failed-only` as well is
+harmless.
+
+### Locations
+
+A class-level finding points at its file:
+
+```json
+"locations": [ { "physicalLocation": {
+    "artifactLocation": { "uri": "src/main/java/com/example/AppService.java" },
+    "region": { "startLine": 1 } } } ]
+```
+
+The region is always line 1: the metrics describe a whole class or method, and no finer region is known —
+inventing one would be worse than the honest whole-file answer. A **package**-scope antipattern match has
+no file at all, so its result carries no `locations` and SARIF reads it as a log-level finding. Pointing at
+an arbitrary file in the package would be a lie about where the problem is.
+
+`uri` is a URI, not a path. A report path under the working directory becomes a *relative* URI — which is
+what Code Scanning matches against the files in a repository — and anything else becomes an absolute
+`file:` URI. Spaces and non-ASCII characters are percent-encoded, so the value is always a valid URI.
+
+### Uploading to GitHub Code Scanning
+
+Write the SARIF during the build, then hand it to the standard upload action. `--strict` is deliberately
+*not* used here: the SARIF is the signal, and the action decides what to do about it.
+
+```yaml
+name: MetricsTree
+on: [push, pull_request]
+permissions:
+  contents: read
+  security-events: write      # required by upload-sarif
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Analyze
+        run: |
+          java -jar java-metrics.jar validate \
+            -s src/main/java -t thresholds.json -o validate.sarif --format sarif
+          java -jar java-metrics.jar detect \
+            -s src/main/java --class-rules class-rules.json -o detect.sarif --format sarif
+
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: validate.sarif
+          category: metric-thresholds
+
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: detect.sarif
+          category: antipatterns
+```
+
+Give the two uploads different `category` values, or GitHub merges them into one run and the later upload
+replaces the earlier one's results. Findings appear under **Security → Code scanning alerts**, where they
+can be triaged, assigned and dismissed exactly like CodeQL alerts.
+
+GitLab and SonarQube read the same file: GitLab via `artifacts:reports:sarif`, SonarQube via
+`sonar.sarifReportPaths`.
+
+### Not emitted, deliberately
+
+| Not emitted | Why |
+|---|---|
+| `tool.driver.version` | Nothing in the build carries a runtime version identity; the Gradle `version` of this module is `unspecified`. A fabricated or empty version is worse than an absent one |
+| `tool.driver.informationUri` | The project has no published URL. Code Scanning renders a link to it when present |
+| Rule-configuration problems as SARIF notifications | SARIF describes these with `run.invocations[].toolExecutionNotifications`, a mechanism this tool does not build. The problems stay in the JSON report's `summary.<classRules\|packageRules>.problems` — see [Rule problems](#rule-problems) — so they are never silently lost, only not duplicated into SARIF |
+
+Consequence worth knowing: because only rules that *matched* something appear in `tool.driver.rules`, the
+SARIF says what was found, not what was configured. The count of rules that were loaded is in the JSON
+report's `summary`. If you need both, run the command twice or read the JSON report alongside the SARIF.
+
+### How this is verified
+
+`SarifReportWriterTest` runs both commands over the golden fixture project and checks the emitted document
+against the **official OASIS schema**, which is bundled at
+`java-metrics-cli/src/test/resources/sarif/sarif-2.1.0.json` (sha256
+`98ae8fa759daeb5e68501796c9815ddddeedf4f2b88acc9dcd5e0452030fb896`). The oracle is the standard rather than
+this repository's expectations, which matters because SARIF objects are closed — every one of them is
+`additionalProperties: false`, so an invented key is a rejection rather than an extension.
+
+Three of the tests deliberately break a valid document (an undeclared key, a missing `message`, an
+unknown `level`) and assert the checker notices, so "the SARIF is schema-valid" is evidence rather than a
+tautology. The bundled schema is itself asserted to be the 2.1.0 format with more than 40 definitions.
+
+No manual upload to a GitHub repository was performed, because this repository has no git remote. The
+schema check above is the substitute the acceptance criteria allow. Be precise about what it does and does
+not prove: it is a *partial* checker — `$ref`, `type`/`enum`/`const`, `required`,
+`additionalProperties`, `anyOf`/`oneOf` and recursion, which is what the SARIF schema uses for the fields
+this tool emits — and it does **not** check patterns, formats, numeric bounds or `uniqueItems`. A full
+validator such as `sarif-multitool` covers strictly more of the specification. What this check buys is that
+it runs on every `./gradlew check` against the published schema file, so a key the format does not declare
+fails the build rather than a reviewer's memory; a one-off local validator run cannot do that.
 
 ## JSON Contract Golden Tests
 

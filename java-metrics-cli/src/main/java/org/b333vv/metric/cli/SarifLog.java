@@ -1,0 +1,133 @@
+package org.b333vv.metric.cli;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
+import java.util.List;
+
+/**
+ * A hand-built SARIF 2.1.0 log, and the subset of the format this tool emits.
+ *
+ * <h2>Why the model is hand-built rather than generated</h2>
+ * <p>SARIF is a large specification — the official schema is 52 definitions — and this tool produces
+ * three kinds of finding, none of which needs more than a handful of fields. A generated binding, or
+ * a dependency that brings one, would be several orders of magnitude more code and would drag a
+ * transitive tree (a JSON-schema engine, a JavaScript runtime) into a CLI whose whole point is to
+ * analyse source without a classpath. So the model is the minimum that the format requires, and
+ * {@code SarifReportWriterTest} validates the output against the official schema rather than against
+ * this class's idea of it.
+ *
+ * <h2>Why the records are annotated directly</h2>
+ * <p>Unlike the report model in {@code java-metrics-lib}, these types exist only for the wire and only
+ * in this module, so they carry their own annotations. The mixins in {@link CliObjectMapper} exist
+ * because that model must stay Jackson-free; repeating the indirection here would add a layer with
+ * nothing on the other side of it.
+ *
+ * <h2>The three things that are easy to get wrong</h2>
+ * <ul>
+ *   <li><b>{@code $schema} is not a Java identifier.</b> It is a record component like any other, with
+ *       {@code @JsonProperty} to name it.</li>
+ *   <li><b>SARIF objects are closed.</b> Every object in the schema is
+ *       {@code additionalProperties: false}, so an extra key is a validation error rather than a
+ *       tolerated extension. That is why there is no "properties" bag anywhere below.</li>
+ *   <li><b>An absent optional field must be omitted, not written as {@code null}.</b> SARIF's types are
+ *       strict — {@code "locations": null} fails where {@code type: array} is required — so
+ *       {@link Result} declares {@code NON_NULL}. This is the opposite of the report model's
+ *       {@code resolutionCoverage}, which is emitted as an explicit {@code null} on purpose.</li>
+ * </ul>
+ *
+ * <h2>What is not emitted</h2>
+ * <p>Two optional identity fields are left out rather than guessed at:
+ * <ul>
+ *   <li><b>{@code tool.driver.version}.</b> The CLI has no runtime version identity today — the shadow
+ *       jar's manifest carries only {@code Main-Class}, and the subproject's Gradle version is
+ *       {@code unspecified} — so a hard-coded duplicate of the release number would be wrong the first
+ *       time it is not updated.</li>
+ *   <li><b>{@code tool.driver.informationUri}.</b> The repository has no published URL, and inventing
+ *       one would send a consumer somewhere that does not exist.</li>
+ * </ul>
+ * {@code name} is the only required field of a tool component, so the log stays valid without them.
+ */
+@JsonPropertyOrder({"$schema", "version", "runs"})
+record SarifLog(
+        @JsonProperty("$schema") String schema,
+        String version,
+        List<Run> runs) {
+
+    /** The schema every SARIF 2.1.0 log points at. Schemastore's URL is the conventional one. */
+    static final String SCHEMA_URI = "https://json.schemastore.org/sarif-2.1.0.json";
+
+    /** The only value the format allows: the schema declares {@code "const": "2.1.0"}. */
+    static final String VERSION = "2.1.0";
+
+    @JsonPropertyOrder({"tool", "results"})
+    record Run(Tool tool, List<Result> results) {
+    }
+
+    @JsonPropertyOrder({"driver"})
+    record Tool(Driver driver) {
+    }
+
+    @JsonPropertyOrder({"name", "rules"})
+    record Driver(String name, List<Rule> rules) {
+    }
+
+    @JsonPropertyOrder({"id", "name", "shortDescription", "defaultConfiguration"})
+    record Rule(String id, String name, Message shortDescription, DefaultConfiguration defaultConfiguration) {
+    }
+
+    @JsonPropertyOrder({"level"})
+    record DefaultConfiguration(String level) {
+    }
+
+    /**
+     * One finding.
+     *
+     * <p>{@code locations} is omitted for a finding that is not about a file — a package-scope
+     * antipattern match. SARIF treats a result with no location as a log-level finding, which is the
+     * honest representation: there is no line to point at. Omitted rather than written as an empty
+     * array, which would claim the result has locations and then name none.
+     *
+     * <p>{@code ruleIndex} is the index of this result's rule in {@code driver.rules}, which the
+     * specification recommends alongside {@code ruleId} so a consumer need not search the array.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonPropertyOrder({"ruleId", "ruleIndex", "level", "message", "locations"})
+    record Result(String ruleId, Integer ruleIndex, String level, Message message, List<Location> locations) {
+    }
+
+    @JsonPropertyOrder({"text"})
+    record Message(String text) {
+    }
+
+    @JsonPropertyOrder({"physicalLocation"})
+    record Location(PhysicalLocation physicalLocation) {
+    }
+
+    @JsonPropertyOrder({"artifactLocation", "region"})
+    record PhysicalLocation(ArtifactLocation artifactLocation, Region region) {
+    }
+
+    /**
+     * @param uri a valid URI, not a bare path — SARIF has no place for a platform path. See
+     *            {@link SarifReportWriter} for how a report path becomes one.
+     */
+    @JsonPropertyOrder({"uri"})
+    record ArtifactLocation(String uri) {
+    }
+
+    @JsonPropertyOrder({"startLine"})
+    record Region(int startLine) {
+    }
+
+    /** The {@code result.level} values the format allows. */
+    static final class Level {
+        static final String ERROR = "error";
+        static final String WARNING = "warning";
+        static final String NOTE = "note";
+
+        private Level() {
+        }
+    }
+}

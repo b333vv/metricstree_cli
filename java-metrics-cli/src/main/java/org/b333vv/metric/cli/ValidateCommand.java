@@ -62,7 +62,7 @@ final class ValidateCommand implements Callable<Integer> {
     private Path thresholdsFile;
 
     @CommandLine.Option(names = {"-o", "--output"}, required = true, paramLabel = "PATH",
-            description = "Path to write JSON report.")
+            description = "Path to write the report to, in the format selected by --format.")
     private Path outputFile;
 
     @CommandLine.Option(names = {"--strict"}, description = "Exit with code 1 if any metric fails validation.")
@@ -70,6 +70,12 @@ final class ValidateCommand implements Callable<Integer> {
 
     @CommandLine.Option(names = {"--failed-only"}, description = "Include only FAILED metric results in output.")
     private boolean failedOnly;
+
+    @CommandLine.Option(names = {"--format"}, paramLabel = "FORMAT", defaultValue = "json",
+            description = "Report format: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}). "
+                    + "SARIF 2.1.0 is for upload to GitHub Code Scanning and similar consumers, and "
+                    + "always contains only the failed checks, so it implies --failed-only.")
+    private OutputFormat format;
 
     @Override
     public Integer call() throws IOException {
@@ -186,22 +192,32 @@ final class ValidateCommand implements Callable<Integer> {
     }
 
     private void writeReport(ValidationResult result) throws IOException {
+        if (format == OutputFormat.SARIF) {
+            // SARIF reports findings, so the passing checks are dropped by the writer rather than
+            // here; --failed-only asks for the same thing and has nothing left to do on this path.
+            SarifReportWriter sarifWriter = new SarifReportWriter();
+            writeOutput(sarifWriter.toSarif(sarifWriter.forThresholdViolations(result.getResults())));
+            return;
+        }
+
         List<MetricValidationResult> resultsToWrite = failedOnly
                 ? result.getResults().stream().filter(r -> r.status() == ValidationStatus.FAILED).toList()
                 : result.getResults();
 
-        String json = CliObjectMapper.write(new ValidationResultForSerialization(
+        writeOutput(CliObjectMapper.write(new ValidationResultForSerialization(
                 result.getStatus(),
                 resultsToWrite,
                 result.getPassed(),
                 result.getFailed()
-        ), false);
+        ), false));
+    }
 
+    private void writeOutput(String content) throws IOException {
         Path normalizedOutputFile = outputFile.toAbsolutePath().normalize();
         if (normalizedOutputFile.getParent() != null) {
             Files.createDirectories(normalizedOutputFile.getParent());
         }
-        Files.writeString(normalizedOutputFile, json);
+        Files.writeString(normalizedOutputFile, content);
     }
 
     public record Threshold(double min, double max) {}

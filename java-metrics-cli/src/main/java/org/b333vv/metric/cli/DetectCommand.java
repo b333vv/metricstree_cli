@@ -58,8 +58,13 @@ final class DetectCommand implements Callable<Integer> {
     private Path packageRulesFile;
 
     @CommandLine.Option(names = {"-o", "--output"}, required = true, paramLabel = "PATH",
-            description = "Path to write JSON report.")
+            description = "Path to write the report to, in the format selected by --format.")
     private Path outputFile;
+
+    @CommandLine.Option(names = {"--format"}, paramLabel = "FORMAT", defaultValue = "json",
+            description = "Report format: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}). "
+                    + "SARIF 2.1.0 is for upload to GitHub Code Scanning and similar consumers.")
+    private OutputFormat format;
 
     private ExclusionConfig loadExclusions() {
         Path excludeFilePath = parentCommand != null ? parentCommand.getExcludeFilePath() : null;
@@ -122,15 +127,33 @@ final class DetectCommand implements Callable<Integer> {
                     packageRules.size(), packageMatches.size(), detector.validateRules(packageRules));
         }
 
-        String json = new DetectResultWriter().toJson(
-                classMatches, classRulesSummary, packageMatches, packageRulesSummary);
+        String serializedReport = toReport(classMatches, classRulesSummary, packageMatches, packageRulesSummary);
 
         Path normalizedOutputFile = outputFile.toAbsolutePath().normalize();
         if (normalizedOutputFile.getParent() != null) {
             Files.createDirectories(normalizedOutputFile.getParent());
         }
-        Files.writeString(normalizedOutputFile, json);
+        Files.writeString(normalizedOutputFile, serializedReport);
         return 0;
+    }
+
+    /**
+     * The report in the requested format.
+     *
+     * <p>The two formats are produced from the same matches, so they cannot disagree about what was
+     * detected; only the rendering differs.
+     */
+    private String toReport(
+            List<CombinationDetector.ClassMatch> classMatches,
+            DetectResultWriter.RulesSummary classRulesSummary,
+            List<CombinationDetector.PackageMatch> packageMatches,
+            DetectResultWriter.RulesSummary packageRulesSummary) throws IOException {
+        if (format == OutputFormat.SARIF) {
+            SarifReportWriter sarifWriter = new SarifReportWriter();
+            return sarifWriter.toSarif(sarifWriter.forAntipatterns(classMatches, packageMatches));
+        }
+        return new DetectResultWriter().toJson(
+                classMatches, classRulesSummary, packageMatches, packageRulesSummary);
     }
 
     private static DetectResultWriter.RulesSummary emptyRulesSummary() {

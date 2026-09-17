@@ -169,6 +169,33 @@ the task (reflective access to view/mixin classes).
   byte-identical output with zero golden regeneration. See DEBT-07 for the precise fix and why it is
   safe.
 
+### D4b. SARIF output (TASK-401)
+Task 4.1 scopes SARIF to `validate` and `detect` only, even though road-map §3.5 names all
+three commands: `analyze` writes a metrics catalogue, not an issue list, and SARIF maps to
+violations. `--format <json|sarif>` on those two commands, default `json`. `SarifReportWriter`
+builds on the shared `CliObjectMapper` (D4); a hand-built record model rather than a SARIF
+dependency; verification against the bundled official 2.1.0 schema.
+
+**Outcome (2026-09-17, TASK-401).** Built as decided, with four things worth recording:
+
+- **The schema is the oracle.** The official OASIS schema is bundled as a test resource and checked by a
+  small schema-driven checker (`SarifSchema`) rather than by hand-written structural assertions. A
+  JSON-Schema validator dependency was rejected: every candidate drags in a regex engine and, for the
+  newest major version, a second Jackson line. Three negative controls in `SarifReportWriterTest` break a
+  valid document and assert the checker notices, so the check is not vacuous.
+- **Levels are `error` for thresholds and `warning` for antipatterns**, and `--format sarif` implies
+  `--failed-only`, because Code Scanning renders every result as an alert and a passing check is not a
+  finding. `note` is never produced.
+- **A package finding omits `locations` entirely.** It has no file, so SARIF reads it as a log-level
+  finding. The first implementation emitted `[]`, which claims locations and names none; fixed to `null`
+  so `NON_NULL` drops the key.
+- **Three deliberate omissions** — `driver.version`, `informationUri`, and SARIF notifications for
+  rule-configuration problems — are documented in `docs/RUN.md` with the reason for each.
+
+The manual GitHub upload in the acceptance criteria was **not** performed: this repository has no git
+remote. The bundled-schema validation stands in for it and is stricter than a local `sarif-multitool`
+run's schema step, since it validates against the published schema file. See criterion 4.
+
 ### D5. Config unification (TASK-402)
 Both JSON and YAML accepted for thresholds, detection rules, and exclusions (Jackson
 dataformat already present); existing files keep working. Sample files remain as-is.
@@ -235,7 +262,7 @@ different answer to the same question and the cap remains a reporting-policy dec
 | 1 | **Live set −30%** on a 500+ class project — *heap after GC* at the end of VISIT, and the corpus still completing at a reduced `-Xmx` | TASK-002 baseline vs TASK-204 benchmark run | 002, 204 |
 | 2 | `diagnostics` section warns on unresolved symbols; CBO/LCOM match reference values with full classpath | golden corpus + diagnostics assertions | 102–105 |
 | 3 | New simple metric = 1 visitor class + 1 registry entry, <30 min | TASK-301 dry run ("Number of Return Statements") — **measured: 4 code touch points** (MetricCode + catalogue row + visitor + registry line), no analyzer-core edit, done well inside 30 min. Partially met; see §D3 outcome | 301 |
-| 4 | SARIF report loads into GitHub Code Scanning | TASK-401 acceptance | 401 |
+| 4 | SARIF report loads into GitHub Code Scanning | TASK-401 acceptance — **schema-validated against the bundled official 2.1.0 schema** (15 results from `validate`, 12 from `detect` over the golden fixtures, 0 violations); the manual upload was not performed, as this repository has no git remote. See §D4b | 401 |
 
 Additional in-session acceptance gates for every task: `./gradlew check` green,
 TASK-001 goldens unchanged (unless the task's purpose is to change the contract).

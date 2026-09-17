@@ -147,6 +147,21 @@
   index so the solver is not asked at all (ADR 0002 retired it for memory reasons, so this trades
   directly against TASK-203/204's gate). Anyone re-opening this should decide which of those three the
   project wants rather than starting from the lock.
+
+- **DEBT-13 — The SARIF output omits tool identity, and does not carry rule-configuration problems.**
+  Three deliberate omissions from TASK-401 (2026-09-17), each recorded in `docs/RUN.md` with its reason.
+  The first two are cosmetic; **the third is the one that matters**: a rule whose conditions cannot be
+  evaluated (see `docs/RUN.md` → *Rule problems*) is reported in the JSON report's `summary.problems` and
+  **not** in the SARIF, so a consumer that reads only SARIF cannot tell "this rule found nothing" from
+  "this rule was broken and never ran". SARIF has a place for exactly this —
+  `run.invocations[].toolExecutionNotifications`, whose payload is a `notification` object keyed by a
+  descriptor in `driver.notifications` — and TASK-401 did not build it, because that is a second object
+  graph (`invocations`, `notification`, descriptor linkage, `level` mapping) rather than a field. Note the
+  trap: `driver.notifications` holds *descriptors*, not notifications, so putting the problems there
+  directly would produce schema-valid output that no consumer reads. `driver.version` and
+  `informationUri` need no mechanism, only facts the build does not currently carry — this module's Gradle
+  `version` is `unspecified`, and the project has no published URL — so they close the day either exists.
+
 ## Resolved Debt Items
 - **DEBT-10 — Five method visitors kept mutable state while being shared across parallel workers.**
   Resolved 2026-09-17 (the DEBT-10 fix commit). Found by TASK-203's corpus equivalence check, and the
