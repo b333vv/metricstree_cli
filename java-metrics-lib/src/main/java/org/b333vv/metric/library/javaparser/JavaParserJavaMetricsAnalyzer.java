@@ -40,7 +40,6 @@ import org.b333vv.metric.library.core.DerivedMetricCalculator;
 import org.b333vv.metric.library.core.MethodReport;
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricReport;
-import org.b333vv.metric.library.core.MetricResult;
 import org.b333vv.metric.library.core.MetricSelection;
 import org.b333vv.metric.library.core.PackageReport;
 import org.b333vv.metric.library.core.ProjectReport;
@@ -52,45 +51,11 @@ import org.b333vv.metric.model.metric.value.Value;
 import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserCognitiveComplexityMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserConditionNestingDepthMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserCouplingDispersionMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserCouplingIntensityMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserHalsteadMethodMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserLinesOfCodeMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserLoopNestingDepthMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserMaximumNestingDepthMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserMcCabeCyclomaticComplexityMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserNumberOfAccessedVariablesMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserNumberOfLoopsMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.method.JavaParserNumberOfParametersMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserAccessToForeignDataMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserCouplingBetweenObjectsMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserDataAbstractionCouplingMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserDepthOfInheritanceTreeMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserHalsteadClassMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserLackOfCohesionOfMethodsMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserLocalityOfAttributeAccessesMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserMessagePassingCouplingMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNonCommentingSourceStatementsMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfAccessorMethodsMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfAddedMethodsMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfAttributesAndMethodsMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfAttributesMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfMethodsMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfOperationsMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfOverriddenMethodsMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfPublicAttributesMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserResponseForClassMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserTightClassCohesionMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserWeightOfAClassMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserWeightedMethodCountMetricVisitor;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -102,7 +67,6 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -183,26 +147,17 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     private final AnalysisPhaseListener phaseListener;
 
     /**
-     * Builds the visitor set for one class analysis.
+     * Which visitors compute which metrics, and which of them a given selection needs.
      *
-     * <p>A factory rather than a list, because several visitors keep their accumulator in an instance
-     * field while they walk a method — {@code CC}, {@code CCM}, {@code CND}, {@code LND} and
-     * {@code MND} all do. Handing one shared set to every worker let two classes' visits interleave
-     * in the same counters, which produced different complexity values on every run and sometimes
-     * impossible ones (DEBT-10). Building a set per class gives each analysis its own accumulators;
-     * within a class the visitors are driven sequentially, so instance state is safe again.
-     *
-     * <p>The alternative — making all five visitors stateless, as TASK-003 did for the Halstead ones
-     * — was rejected here because it means re-expressing nesting-aware traversals as explicit
-     * recursion, and any slip changes metric values. This fix cannot: each visitor computes exactly
-     * what it computed before, it simply no longer shares its counters.
+     * <p>Replaced two hand-written lists ({@code buildClassVisitors}/{@code buildMethodVisitors}) in
+     * TASK-301. Those lists named visitors but not the metrics they produced, so adding a metric meant
+     * editing the analyzer and nothing recorded the association. The registry holds it, and hands out
+     * a <em>fresh</em> visitor set per class — which is also what keeps the stateful visitors correct:
+     * {@code CC}, {@code CCM}, {@code CND}, {@code LND} and {@code MND} keep their accumulator in an
+     * instance field while they walk a method, and sharing one instance between parallel workers
+     * interleaved their counters (DEBT-10).
      */
-    private final Supplier<List<JavaParserClassMetricVisitor>> classVisitorFactory;
-
-    /**
-     * @see #classVisitorFactory
-     */
-    private final Supplier<List<JavaParserMethodMetricVisitor>> methodVisitorFactory;
+    private final MetricRegistry registry;
 
     /**
      * The global pass. Not injected: it is stateless, has no collaborators, and is covered by its own
@@ -242,36 +197,32 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             AstMemoryManager astMemoryManager,
             DerivedMetricCalculator derivedMetricCalculator,
             AnalysisPhaseListener phaseListener) {
-        this(typeSolverFactory, astMemoryManager, derivedMetricCalculator, phaseListener, null, null);
+        this(typeSolverFactory, astMemoryManager, derivedMetricCalculator, phaseListener,
+                MetricRegistry.standard());
     }
 
     /**
-     * Builds an analyzer with an explicit visitor set. Production always passes {@code null} for both
-     * and gets a fresh set per class from {@link #buildClassVisitors()} /
-     * {@link #buildMethodVisitors()}.
+     * Builds an analyzer that computes the metrics {@code registry} declares. Production passes
+     * {@link MetricRegistry#standard()}.
      *
-     * <p>Passing a factory is a test seam: it is the only way to drive a visitor that deliberately
-     * reports a resolution problem through the whole pipeline and assert that the diagnostic reaches
-     * {@code MetricReport.diagnostics} and the JSON output, without adding a fake problem to a
-     * production visitor.
-     *
-     * <p>The seam takes a <em>factory</em>, not a list, so that it cannot be used to reintroduce the
-     * DEBT-10 defect by handing the same instance to every class. A test that injects a single
-     * instance should therefore analyse a single-class fixture, which is what the seam exists for.
+     * <p>Passing a registry is also the test seam: it is how a visitor that deliberately reports a
+     * resolution problem is driven through the whole pipeline so the diagnostic can be asserted to
+     * reach {@code MetricReport.diagnostics} and the JSON output, without adding a fake problem to a
+     * production visitor. A registry built from explicit {@link MetricRegistry.Registration}s is the
+     * only way to do that, and it takes a <em>factory</em> per registration, so the seam cannot be
+     * used to reintroduce the DEBT-10 defect by handing one instance to every class.
      */
     JavaParserJavaMetricsAnalyzer(
             JavaParserTypeSolverFactory typeSolverFactory,
             AstMemoryManager astMemoryManager,
             DerivedMetricCalculator derivedMetricCalculator,
             AnalysisPhaseListener phaseListener,
-            Supplier<List<JavaParserClassMetricVisitor>> classVisitorFactory,
-            Supplier<List<JavaParserMethodMetricVisitor>> methodVisitorFactory) {
+            MetricRegistry registry) {
         this.typeSolverFactory = typeSolverFactory;
         this.astMemoryManager = astMemoryManager;
         this.derivedMetricCalculator = derivedMetricCalculator;
         this.phaseListener = phaseListener == null ? AnalysisPhaseListener.NO_OP : phaseListener;
-        this.classVisitorFactory = classVisitorFactory == null ? this::buildClassVisitors : classVisitorFactory;
-        this.methodVisitorFactory = methodVisitorFactory == null ? this::buildMethodVisitors : methodVisitorFactory;
+        this.registry = registry == null ? MetricRegistry.standard() : registry;
     }
 
     @Override
@@ -862,7 +813,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 sourceLocation,
                 unresolvedSymbolDiagnosticCap);
 
-        for (JavaParserClassMetricVisitor visitor : classVisitorFactory.get()) {
+        for (JavaParserClassMetricVisitor visitor : registry.classVisitors(metricSelection)) {
             visitor.visit(classDeclaration, classCollector);
         }
 
@@ -877,8 +828,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         // One method-visitor set per class, not per method: a class's methods are analysed
         // sequentially on the thread that owns this class, so one set serves them all — and building
         // it here rather than sharing it across workers is what keeps the stateful visitors correct
-        // (DEBT-10). See classVisitorFactory.
-        List<JavaParserMethodMetricVisitor> methodVisitors = methodVisitorFactory.get();
+        // (DEBT-10). See the registry field.
+        List<JavaParserMethodMetricVisitor> methodVisitors = registry.methodVisitors(metricSelection);
         List<AnalyzedMethod> analyzedMethods = classDeclaration.getMethods().stream()
                 .sorted(Comparator.comparing(this::methodSignature))
                 .map(methodDeclaration -> {
@@ -1860,47 +1811,6 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 .map(parameter -> parameter.getType().asString())
                 .collect(Collectors.joining(", "));
         return methodDeclaration.getNameAsString() + "(" + parameters + ")";
-    }
-
-    private List<JavaParserClassMetricVisitor> buildClassVisitors() {
-        return List.of(
-                new JavaParserCouplingBetweenObjectsMetricVisitor(),
-                new JavaParserDepthOfInheritanceTreeMetricVisitor(),
-                new JavaParserLackOfCohesionOfMethodsMetricVisitor(),
-                new JavaParserNumberOfMethodsMetricVisitor(),
-                new JavaParserNumberOfAttributesMetricVisitor(),
-                new JavaParserNumberOfPublicAttributesMetricVisitor(),
-                new JavaParserNumberOfAccessorMethodsMetricVisitor(),
-                new JavaParserResponseForClassMetricVisitor(),
-                new JavaParserTightClassCohesionMetricVisitor(),
-                new JavaParserAccessToForeignDataMetricVisitor(),
-                new JavaParserDataAbstractionCouplingMetricVisitor(),
-                new JavaParserMessagePassingCouplingMetricVisitor(),
-                new JavaParserLocalityOfAttributeAccessesMetricVisitor(),
-                new JavaParserNonCommentingSourceStatementsMetricVisitor(),
-                new JavaParserNumberOfAttributesAndMethodsMetricVisitor(),
-                new JavaParserNumberOfOperationsMetricVisitor(),
-                new JavaParserWeightedMethodCountMetricVisitor(),
-                new JavaParserWeightOfAClassMetricVisitor(),
-                new JavaParserHalsteadClassMetricVisitor(),
-                new JavaParserNumberOfOverriddenMethodsMetricVisitor(),
-                new JavaParserNumberOfAddedMethodsMetricVisitor());
-    }
-
-    private List<JavaParserMethodMetricVisitor> buildMethodVisitors() {
-        return List.of(
-                new JavaParserNumberOfLoopsMetricVisitor(),
-                new JavaParserLinesOfCodeMetricVisitor(),
-                new JavaParserNumberOfParametersMetricVisitor(),
-                new JavaParserMcCabeCyclomaticComplexityMetricVisitor(),
-                new JavaParserCognitiveComplexityMetricVisitor(),
-                new JavaParserConditionNestingDepthMetricVisitor(),
-                new JavaParserLoopNestingDepthMetricVisitor(),
-                new JavaParserMaximumNestingDepthMetricVisitor(),
-                new JavaParserCouplingDispersionMetricVisitor(),
-                new JavaParserCouplingIntensityMetricVisitor(),
-                new JavaParserNumberOfAccessedVariablesMetricVisitor(),
-                new JavaParserHalsteadMethodMetricVisitor());
     }
 
     @FunctionalInterface

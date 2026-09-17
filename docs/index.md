@@ -16,7 +16,7 @@ docs/
 ├── index.md              # This file — main entry point
 ├── ARCHITECTURE.md       # System architecture specification
 ├── PROGRESS.md           # Progress fixation
-├── adr/                  # Architecture Decision Records (0001 — the per-class snapshot contract; 0002 — bounded AST residency)
+├── adr/                  # Architecture Decision Records (0001 — the per-class snapshot contract; 0002 — bounded AST residency; 0003 — the metric registry)
 ├── prd/                  # PRD (road-map.md, implementation-plan.md)
 ├── tasks/                # Task breakdown (TASK-XXX, one file per task)
 ├── templates/            # Templates for documentation

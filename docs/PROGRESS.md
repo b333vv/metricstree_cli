@@ -2,6 +2,124 @@
 
 ## Phase 2: the snapshot becomes the global-analysis contract (2026-09-16)
 
+### TASK-301 — a declarative metric registry, and selection that filters at visit time — done (2026-09-17)
+
+**The task's premise had partly moved, and the entry says where.** It asks for a registry that replaces
+`buildClassVisitors`/`buildMethodVisitors` plus "the two inline contextual instantiations", for a
+`MetricDefinition` with a factory reference, and it counts 35 visitors. TASK-202 deleted the NOC and FDP
+visitors when those metrics moved to the global pass, so there are **33** visitors (21 class + 12 method)
+and the contextual-factory client the task wanted to absorb no longer exists. The registry was built for
+what is actually there; the "contextual factory" capability was kept in the design (a `Supplier<V>` may
+close over whatever context it needs) but has no caller today.
+
+**What was actually wrong.** Three things, and only the first was obvious.
+
+1. **Adding a metric meant editing the analyzer core.** The two hand-written lists were the only record
+   that a visitor existed, and a visitor left out of a list was dead code nothing detected.
+2. **Nothing connected a visitor to the metrics it produced.** The association lived only inside each
+   visitor's `accept(new MetricResult(MetricCode.X, …))`, so "is `SIZE2` computed?" could only be
+   answered by grepping the visitor sources.
+3. **Metrics had no metadata anywhere.** `MetricCode` was both the identity and the only name a metric
+   had — `LCOM` reached the JSON, the rule files and the README as four letters, with no description, no
+   level, no grouping, and the README did not list the metrics at all.
+
+There was also a latent inefficiency worth fixing while the code was open: `MetricSelection` filtered the
+*report*. Every visitor ran on every class regardless of `--metric`, so a narrowed run did all 33
+visitors' worth of symbol resolution and threw almost all of it away.
+
+**What changed.**
+
+- **`MetricDefinition` (`library/core`) is metadata and holds no factory.** It carries `code`, `name`,
+  `description`, `level` (`MetricLevel`: `PROJECT`/`PACKAGE`/`CLASS`/`METHOD`) and `category`
+  (`MetricCategory`: size, complexity, coupling, cohesion, inheritance, Halstead, maintainability,
+  quality). The factory is absent on purpose: `CorePackageAstIndependenceTest` fails if any type in
+  `library.core` has a `com/github/javaparser` reference in its constant pool, so a definition carrying a
+  visitor factory would break a gate the project already asserts. The wiring therefore belongs to the
+  layer that owns visitors.
+- **`MetricDefinitions` is the catalogue of all 90 codes, and it is complete by construction.** Its
+  static initializer throws if any `MetricCode` has no definition or has two, so adding a constant
+  without describing it fails at first use instead of shipping a report that names a metric by its
+  abbreviation. Descriptions state what the *implementation* computes, including where that is narrower
+  than the textbook metric of the same name — `LCOM` here is the number of connected components of the
+  method–field graph, not Chidamber & Kemerer's pair-count difference, and the catalogue says so.
+  `PNOKOBJ` and the other always-zero placeholders are documented as such, per DEBT-08.
+- **`MetricRegistry` (`library/javaparser`) pairs codes with visitor factories.** 33 registrations, 21
+  class-level and 12 method-level, **in the order the hand-written lists had**. Order is load-bearing: a
+  class's collector fills its dedup keys and cap slots in visit order, so reordering would change which
+  of several occurrences of the same unresolved symbol is reported. `Registration<V>` is
+  `(List<MetricCode> codes, Supplier<V> factory)`; factories rather than instances because five method
+  visitors keep their accumulator in an instance field while walking a method, and sharing one instance
+  across parallel workers interleaved their counters (**DEBT-10**). The registry's signature makes that
+  defect unrepresentable rather than merely fixed.
+- **Selection filters at visit time, with a fixed-point closure over derived metrics.** `DERIVED_INPUTS`
+  records that `MMI` needs `{HVL, CC, LOC}`, `CLOC` needs `{LOC}`, `CCC` needs `{CCM}` and `CMI` needs
+  `{CHVL, CC, LOC}`, and `requiredCodes(...)` closes over it. Without that closure `--metric CMI` would
+  run no Halstead and no complexity visitor and report an undefined index — selectable but unobtainable.
+  A registration that declares no codes is never filtered out: there is nothing to look up, and dropping
+  a visitor whose codes were merely misdeclared would silently remove a metric.
+- **`MetricRegistry.validate()` refuses three silently-wrong states:** the same code claimed by two
+  registrations of one kind, a code with no definition, and a code registered at the wrong level (`CBO`
+  on a method visitor).
+- **The analyzer consumes the registry.** `buildClassVisitors()` and `buildMethodVisitors()` are deleted
+  and the two factory fields are replaced by one `MetricRegistry`; the constructor takes it. 36 now-unused
+  imports went with them.
+- **Aggregation stays in the analyzer**, per decision **D3**: package, project, mood, QMOOD and
+  maintainability formulas are untouched. The registry records *which raw codes* a derived metric needs;
+  it does not own how the metric is computed.
+
+**The criterion was measured by dry run, and the metric was then removed.** Adding a trivial
+method-level metric `NORS` ("Number of Return Statements") end to end touched exactly five files — a new
+`JavaParserNumberOfReturnStatementsMetricVisitor`, one `MetricCode` constant, one `MetricDefinitions`
+row, one registry line, one `thresholds.json` sample entry — and **nothing in the analyzer core**. The
+proof it was genuinely wired, not merely declared, was that `JsonContractGoldenTest.analyzeCommandJsonMatchesGolden`
+**failed**, with `"NORS" : "1"` present in the actual output and every pre-existing value unchanged: the
+metric travelling visitor → collector → report → JSON. `NORS` was then removed, because keeping it would
+require regenerating `analyze.json` while this task's acceptance criteria hold the TASK-001 goldens
+fixed. Whether the tool should report NORS is a product decision nobody asked for; the dry run existed to
+measure the touch points, and it did.
+
+**Adding a metric touches four places, not two.** The task's target is "one visitor class + one registry
+entry", with the `MetricCode` constant already conceded as a necessary extra. The catalogue row is a
+fourth. It is the price of a catalogue that cannot go stale: definitions were *not* folded into the
+registrations, because that would leave the 43 codes produced by package/project aggregation with no
+home and would put the single source of truth behind a `library.core` → `library.javaparser` dependency.
+The row is one line and the static check makes it impossible to forget. Recorded as a miss rather than
+presented as meeting the target.
+
+**Equivalence on the full selection** — pre-change worktree at `e4ab84d` vs the working tree, both over
+`/Users/vadim/code/core/src/main/java`:
+
+- 25 333 metric-bearing entities compared (1 project, 1 318 packages, 4 020 classes, 19 994 methods):
+  **0 differing values**, none added, none removed.
+- Diagnostics **121 494 on both sides, multiset-identical**; `resolutionCoverage`
+  `0.6491621776056496` on both sides.
+- TASK-001 goldens green **without regeneration**.
+
+**A narrowed selection does less work, and reports on the smaller run.** `analyze --metric NOM`:
+
+| | before | after |
+|---|---|---|
+| wall time | 34 s | **18 s** |
+| report size | 55.7 MB | **19.4 MB** |
+| diagnostics | 121 494 | **31 857** |
+| `resolutionCoverage` | 0.6491621776056496 | 0.6482551226665609 |
+| `NOM` values differing | — | **0 of 4 020 classes** |
+
+The coverage and diagnostic changes are a **deliberate behaviour change**, not an accident: fewer
+visitors means fewer resolution attempts, so `resolutionCoverage` now describes the smaller analysis.
+That is the right answer — the field exists to say whether *this* report's values can be trusted — but it
+is a change for anyone comparing coverage numbers across versions with `--metric` set. It is pinned by
+`ResolutionCoverageTest.narrowedSelectionReportsTheCoverageOfTheWorkItActuallyDid` rather than left
+implicit.
+
+**Tests.** New `MetricRegistryTest` (selection filtering, order preservation, fresh-instance guard, the
+derived closure, no-code registrations never filtered, `validate()`'s three rejections, and
+`everyConcreteVisitorInTheLibraryIsRegisteredExactlyOnce` scanning the compiled visitor packages) and
+new `MetricDefinitionsTest` (completeness, no duplicates, readability, all four levels used, `atLevel`
+partitions, spot checks, unknown code rejected). `AnalysisCollectorPipelineTest` was migrated to inject
+its visitor doubles through `MetricRegistry.of(...)` instead of raw lists. `./gradlew check` green: 343 tests, 0 failures, 1 intentional
+skip.
+
 ### TASK-205 — concurrency: contention removed, and what actually bounds scaling — done (2026-09-17)
 
 **The task's own targets are not met, and this entry is mostly the evidence for why.** The contention

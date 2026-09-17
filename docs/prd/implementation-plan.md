@@ -129,6 +129,21 @@ description, category, visitor factory). Package/project rollups and MOOD calcul
 Contextual visitors get factory signatures `(AnalysisContext) -> Visitor`.
 Completion criterion: adding a metric touches 1 class + 1 registry entry.
 
+**Outcome (2026-09-17, TASK-301).** Built as decided, with two corrections the implementation forced:
+
+- **`MetricDefinition` cannot carry a visitor factory.** `CorePackageAstIndependenceTest` fails if any
+  type in `library.core` has a `com/github/javaparser` reference in its constant pool, so the metadata
+  lives in `core` and the factory lives in the registry in `library.javaparser`. The factory reference
+  in the decision above is satisfied by `MetricRegistry`, not by `MetricDefinition`.
+- **The criterion is four touch points, not two.** Measured by the `NORS` dry run: one `MetricCode`
+  constant, one `MetricDefinitions` catalogue row, one visitor class, one registry line — five files
+  counting the `thresholds.json` sample, and nothing in the analyzer core. The extra row is the price
+  of a catalogue that cannot go stale (its static initializer rejects a code with no definition or two).
+  See ADR [0003](../adr/0003-metric-registry.md) and `PROGRESS.md` for the measured numbers.
+
+Selection also moved: `MetricSelection` now filters at **visit** time, with a fixed-point closure over
+derived-metric inputs, instead of only filtering the report.
+
 ### D4. Serialization (TASK-302)
 Jackson mixins live in the CLI module (lib stays dependency-free per current layout);
 the three writer paths converge on one ObjectMapper configuration. JSON output contract
@@ -200,7 +215,7 @@ different answer to the same question and the cap remains a reporting-policy dec
 |---|---|---|---|
 | 1 | **Live set −30%** on a 500+ class project — *heap after GC* at the end of VISIT, and the corpus still completing at a reduced `-Xmx` | TASK-002 baseline vs TASK-204 benchmark run | 002, 204 |
 | 2 | `diagnostics` section warns on unresolved symbols; CBO/LCOM match reference values with full classpath | golden corpus + diagnostics assertions | 102–105 |
-| 3 | New simple metric = 1 visitor class + 1 registry entry, <30 min | TASK-301 dry run ("Number of Return Statements") | 301 |
+| 3 | New simple metric = 1 visitor class + 1 registry entry, <30 min | TASK-301 dry run ("Number of Return Statements") — **measured: 4 code touch points** (MetricCode + catalogue row + visitor + registry line), no analyzer-core edit, done well inside 30 min. Partially met; see §D3 outcome | 301 |
 | 4 | SARIF report loads into GitHub Code Scanning | TASK-401 acceptance | 401 |
 
 Additional in-session acceptance gates for every task: `./gradlew check` green,

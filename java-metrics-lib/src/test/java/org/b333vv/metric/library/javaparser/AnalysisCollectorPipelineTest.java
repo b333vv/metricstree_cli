@@ -241,16 +241,28 @@ class AnalysisCollectorPipelineTest {
             List<JavaParserMethodMetricVisitor> methodVisitors,
             String source) throws IOException {
         Path sourceRoot = writeFixture(source);
-        // A factory, not a list: the analyzer builds one visitor set per class so that stateful
-        // visitors are never shared between parallel workers (DEBT-10). This fixture is a single
-        // class, so the injected instances are used by one thread at a time.
+        // The test doubles go in through the registry, which is the only way to drive a visitor that
+        // deliberately reports a resolution problem through the whole pipeline. A registration takes a
+        // factory, so the seam cannot be used to share one instance across parallel workers (DEBT-10);
+        // this fixture is a single class, so the injected instance is used by one thread at a time.
+        //
+        // The class doubles report NOM, which is what makes them selected by a default run; the method
+        // doubles report only diagnostics, so they declare no code and are never filtered out.
+        MetricRegistry registry = MetricRegistry.of(
+                classVisitors.stream()
+                        .map(visitor -> new MetricRegistry.Registration<>(
+                                List.of(MetricCode.NOM), () -> visitor))
+                        .toList(),
+                methodVisitors.stream()
+                        .map(visitor -> new MetricRegistry.Registration<JavaParserMethodMetricVisitor>(
+                                List.<MetricCode>of(), () -> visitor))
+                        .toList());
         JavaParserJavaMetricsAnalyzer analyzer = new JavaParserJavaMetricsAnalyzer(
                 new JavaParserTypeSolverFactory(),
                 new AstMemoryManager(),
                 new DerivedMetricCalculator(),
                 AnalysisPhaseListener.NO_OP,
-                () -> classVisitors,
-                () -> methodVisitors);
+                registry);
         return analyzer.analyze(AnalysisRequest
                 .of("channel", List.of(new SourceRoot(sourceRoot)))
                 .withOptions(AnalysisOptions.defaults().withUnresolvedSymbolDiagnosticCap(3)));

@@ -1,8 +1,11 @@
 package org.b333vv.metric.library.javaparser;
 
 import org.b333vv.metric.library.core.AnalysisDiagnostic;
+import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
+import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricReport;
+import org.b333vv.metric.library.core.MetricSelection;
 import org.b333vv.metric.library.core.SourceRoot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -138,6 +141,43 @@ class ResolutionCoverageTest {
                         .map(AnalysisDiagnostic::code)
                         .anyMatch("NO_SOURCE_FILES"::equals),
                 () -> "the empty run should say why it has nothing to report, got " + report.diagnostics());
+    }
+
+    /**
+     * TASK-301 changed what a narrowed selection means: the registry now runs only the visitors the
+     * selection needs, instead of running all of them and discarding most of the result.
+     *
+     * <p>Two consequences are asserted here, because they are the whole of the change and both are
+     * observable. The metric the caller asked for is unchanged — that is the promise. The coverage and
+     * the diagnostics describe the smaller analysis — that is the consequence, and it is the right
+     * answer rather than a regression: {@code resolutionCoverage} exists to say whether <em>this</em>
+     * report's coupling and cohesion values can be trusted, and a run that attempted fewer
+     * resolutions genuinely resolved a different set of symbols.
+     */
+    @Test
+    void narrowedSelectionReportsTheCoverageOfTheWorkItActuallyDid() throws IOException {
+        Path sourceRoot = tempDir.resolve("src");
+        Path sourceFile = sourceRoot.resolve("a/Sample.java");
+        Files.createDirectories(sourceFile.getParent());
+        Files.writeString(sourceFile, UNRESOLVABLE_FIXTURE);
+        AnalysisRequest request = AnalysisRequest.of("coverage", List.of(new SourceRoot(sourceRoot)));
+
+        MetricReport full = new JavaParserJavaMetricsAnalyzer().analyze(request);
+        MetricReport narrowed = new JavaParserJavaMetricsAnalyzer().analyze(request
+                .withOptions(AnalysisOptions.of(MetricSelection.of(MetricCode.NOM))));
+
+        assertEquals(full.classes().stream().map(classReport -> classReport.metrics().get(MetricCode.NOM)).toList(),
+                narrowed.classes().stream().map(classReport -> classReport.metrics().get(MetricCode.NOM)).toList(),
+                "the metric the caller asked for must not change when the selection narrows");
+
+        assertTrue(narrowed.diagnostics().size() < full.diagnostics().size(),
+                "a narrowed selection runs fewer visitors, so it can raise fewer diagnostics: "
+                        + narrowed.diagnostics().size() + " vs " + full.diagnostics().size());
+        assertNotNull(narrowed.project().resolutionCoverage());
+        assertTrue(narrowed.project().resolutionCoverage() < full.project().resolutionCoverage(),
+                "fewer attempts is a different set of symbols resolved, and the coverage must say so: "
+                        + narrowed.project().resolutionCoverage() + " vs "
+                        + full.project().resolutionCoverage());
     }
 
     private MetricReport analyze(String source) throws IOException {

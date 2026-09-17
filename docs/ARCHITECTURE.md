@@ -34,7 +34,14 @@ metricstree_cli/
 
 **library/core** — Domain models and public API
 - `MetricCode` — Enum of all supported metric codes (LOC, NOC, NOM, CBO, etc.)
-- `MetricSelection` — Which metrics to emit; also the single place the report map is filtered and ordered
+- `MetricDefinition` / `MetricLevel` / `MetricCategory` — A metric's metadata: human name, what the
+  implementation actually computes, and which level (`PROJECT`…`METHOD`) and group it belongs to.
+  Holds **no visitor factory** — the core layer may not name a JavaParser type
+  (`CorePackageAstIndependenceTest`), so the wiring lives in the registry below
+- `MetricDefinitions` — The catalogue of all 90 codes, complete by construction: its static initializer
+  throws if any `MetricCode` lacks a definition or has two
+- `MetricSelection` — Which metrics to emit; filters at **visit** time via the registry, and again when
+  the report map is filtered and ordered
 - `AnalysisRequest` — Input request with source roots, files, classpath
 - `AnalysisOptions` — Metric selection, exclusions, and the unresolved-symbol diagnostic cap
 - `MetricReport` — Analysis result containing project, packages, classes, methods, diagnostics
@@ -51,6 +58,7 @@ metricstree_cli/
 **library/javaparser** — Analysis engine
 - `JavaMetricsAnalyzer` — Main analyzer interface
 - `JavaParserJavaMetricsAnalyzer` — Implementation using JavaParser; `analyze()` runs the global pass, `analyzeClasses()` runs pass 1 and returns snapshots
+- `MetricRegistry` — Pairs metric codes with visitor *factories* and hands the analyzer the visitors a `MetricSelection` needs; the only record of which visitor produces which metric (see below)
 - `AstMemoryManager` — Owns the lifetime of every parsed unit: parses in windows, releases each unit once its task returns
 - `AnalysisParserConfiguration` — The parsing policy every parse site shares, so a file is never read one way during analysis and another during resolution
 - `AnalysisPhaseListener` — Observational per-phase timing hook used by the benchmark
@@ -100,6 +108,34 @@ without the analyzer. Three properties of the snapshot are deliberate:
   snapshot can be incomplete, and both metrics report `Value.UNDEFINED` rather than a number when
   they are set — see ADR `docs/adr/0001-analyzed-class-snapshot.md`, which also records the
   inherited FDP behaviour this reproduces and the `resolutionCoverage` consequence.
+
+### Which visitors run: the metric registry
+
+Pass 1's visitor list is not written by hand in the analyzer. `MetricRegistry` holds a list of
+`Registration<V>`s — a set of `MetricCode`s and a `Supplier<V>` — and `classVisitors(selection)` /
+`methodVisitors(selection)` return only what the selection needs. Three properties matter:
+
+- **The registry is the only record of which visitor produces which metric.** Before, the association
+  existed only inside each visitor's `accept(new MetricResult(MetricCode.X, …))` call, so "is `SIZE2`
+  computed?" meant grepping the visitor sources. `MetricRegistryTest` now asserts that the set of
+  visitors that *exist* equals the set the registry *runs*, which is what catches a visitor that was
+  written and never wired up.
+- **Selection filters here, not only at report time.** `--metric NOM` used to run all 33 visitors and
+  discard the results when the report was built. "Needs" is a fixed point over `DERIVED_INPUTS`, not a
+  name lookup: `CMI`, `MMI`, `CLOC` and `CCC` are produced by the analyzer's aggregation, so selecting
+  one pulls in its raw inputs — without that closure `--metric CMI` would run no Halstead visitor and
+  report an undefined index. A registration that declares no codes is never filtered out, because
+  there is nothing to look up and dropping it would silently remove a metric.
+- **Factories, not instances.** Five method visitors accumulate in an instance field while walking a
+  method; sharing one instance across parallel workers interleaved their counters (**DEBT-10**). The
+  signature makes that unrepresentable rather than merely fixed.
+
+Registration **order is load-bearing**: a class's collector fills its dedup keys and cap slots in visit
+order, so reordering changes which of several occurrences of the same unresolved symbol is reported.
+The registry preserves the order the hand-written lists had, and `validate()` refuses a code claimed
+twice at one level, a code with no definition, and a code registered at the wrong level. See ADR
+`docs/adr/0003-metric-registry.md`, which also records the measured partial-selection win and the
+four-touch-point cost of adding a metric.
 
 ### AST residency: a window, and re-parsing instead of an index
 
