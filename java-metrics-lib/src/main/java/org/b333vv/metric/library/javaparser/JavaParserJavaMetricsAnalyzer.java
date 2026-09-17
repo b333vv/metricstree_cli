@@ -76,7 +76,6 @@ import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfAcces
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfAddedMethodsMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfAttributesAndMethodsMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfAttributesMetricVisitor;
-import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfChildrenMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfMethodsMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfOperationsMetricVisitor;
 import org.b333vv.metric.library.javaparser.visitor.type.JavaParserNumberOfOverriddenMethodsMetricVisitor;
