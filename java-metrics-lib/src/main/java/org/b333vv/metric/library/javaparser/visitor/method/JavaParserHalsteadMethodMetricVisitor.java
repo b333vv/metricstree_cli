@@ -12,9 +12,10 @@ import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisito
  * Method-level Halstead metrics (HVL/HD/HL/HEF/HVC/HER).
  *
  * <p>This visitor is stateless: operator and operand counts are accumulated by a
- * {@link HalsteadTokenCollector} created for each {@code visit} call. The analyzer keeps a single
- * shared instance of this visitor and calls it from a parallel stream, so any instance-level
- * accumulator would be corrupted by concurrent visits (DEBT-01 / TASK-003).
+ * {@link HalsteadTokenCollector} created for each {@code visit} call. The analyzer calls its visitors
+ * from a parallel stream, so any instance-level accumulator would be corrupted by concurrent visits
+ * (DEBT-01 / TASK-003). The analyzer now builds a fresh visitor set per class rather than sharing one
+ * (DEBT-10), but statelessness is still what this visitor relies on and is worth keeping.
  */
 public class JavaParserHalsteadMethodMetricVisitor extends JavaParserMethodMetricVisitor {
 

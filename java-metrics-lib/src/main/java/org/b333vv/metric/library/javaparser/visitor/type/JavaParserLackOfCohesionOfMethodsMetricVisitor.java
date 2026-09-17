@@ -104,10 +104,16 @@ public class JavaParserLackOfCohesionOfMethodsMetricVisitor extends JavaParserCl
             methodFieldUsage.put(method, usedFields);
         }
 
+        // Iterated in source order via `instanceMethods`, not through `methodFieldUsage.entrySet()`:
+        // that map is a HashMap keyed by AST nodes, which do not override hashCode, so its iteration
+        // order varies between runs. The order of this list decides the order the method calls below
+        // are walked, and therefore which of several occurrences of the same unresolved symbol is the
+        // one reported — and, once a class reaches its diagnostic cap, which symbols are reported at
+        // all. Every method in `instanceMethods` is a key, so the set is unchanged.
         List<MethodDeclaration> methodsUsingFields = new ArrayList<>();
-        for (Map.Entry<MethodDeclaration, Set<String>> entry : methodFieldUsage.entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                methodsUsingFields.add(entry.getKey());
+        for (MethodDeclaration method : instanceMethods) {
+            if (!methodFieldUsage.get(method).isEmpty()) {
+                methodsUsingFields.add(method);
             }
         }
 

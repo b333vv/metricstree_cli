@@ -89,12 +89,31 @@
   confirms the array is bounded by the per-class cap rather than by any single amplifier — and note
   the array has grown from TASK-102's 51,833 to 121,494 as the caps became reachable and the
   diagnostics became more precisely attributed. **The project-level cap remains the fix.**
-- **DEBT-10 — Five method visitors keep mutable state while being shared across parallel workers.**
-  Found by TASK-203's corpus equivalence check (2026-09-17), and the reason that check could not be
-  used as an exact oracle. `JavaParserJavaMetricsAnalyzer` holds its visitor sets as **instance
-  fields** (`classVisitors` / `methodVisitors`) and iterates them from inside the per-file parallel
-  stream, so every worker drives the *same* visitor objects. Five of the twelve method visitors
-  accumulate into instance fields while doing so:
+- **DEBT-11 — One class's resolution outcome still varies between runs (JavaParser's own caches).**
+  What is left of the nondeterminism DEBT-10 described, measured after that fix. Two runs of the same
+  jar over the benchmark corpus now agree on **every metric value for 4 019 of the 4 020 classes** and
+  on **121 493 of 121 494 diagnostics**. The single exception is
+  `ru.crp.cmlb.component.accessrights.permission.manager.SolverPermissionManager`, whose `RFC` reads
+  35 in one run and 34 in the other, with the per-class suppressed-diagnostic count moving 89 → 90 to
+  match. `resolutionCoverage` also differs in its 15th digit (`0.6491621776056496` →
+  `0.6491613636326637`).
+  The shape of the difference — one call site resolving in one run and not in the other — identifies
+  the cause as a **resolution outcome**, not an accumulation: something in the symbol solver answers
+  differently depending on what is already cached and on what other threads are doing. Those caches
+  are JavaParser's own (`CombinedTypeSolver`'s `InMemoryCache`, `JavaParserTypeSolver`'s soft-value
+  cache, `JavaParserFacade`'s static `WeakHashMap`), and **TASK-205 explicitly scopes them as
+  "document, don't fix"**. It is recorded rather than fixed for that reason, and because it is a
+  one-class effect: it makes the corpus *almost* an exact oracle rather than a broken one.
+  Anyone treating a corpus diff as evidence should expect this one class to move and should not
+  attribute it to their change.
+
+## Resolved Debt Items
+- **DEBT-10 — Five method visitors kept mutable state while being shared across parallel workers.**
+  Resolved 2026-09-17 (the DEBT-10 fix commit). Found by TASK-203's corpus equivalence check, and the
+  reason that check could not be used as an exact oracle. `JavaParserJavaMetricsAnalyzer` held its
+  visitor sets as **instance fields** (`classVisitors` / `methodVisitors`) and iterated them from
+  inside the per-file parallel stream, so every worker drove the *same* visitor objects. Five of the
+  twelve method visitors accumulated into instance fields while doing so:
 
   | Visitor | Fields | Metric |
   |---|---|---|
@@ -104,36 +123,45 @@
   | `JavaParserLoopNestingDepthMetricVisitor` | `depth`, `maxDepth` | `LND` |
   | `JavaParserMaximumNestingDepthMetricVisitor` | `depth`, `maxDepth` | `MND` |
 
-  Two concurrent `visit(...)` calls on one instance interleave their increments and their
-  `nesting++` / `nesting--` pairs, so the result depends on thread interleaving. The blast radius is
+  Two concurrent `visit(...)` calls on one instance interleaved their increments and their
+  `nesting++` / `nesting--` pairs, so the result depended on thread interleaving. The blast radius was
   wider than those five codes: `CCC` is the class-level **sum of the methods' `CCM`**, and the
-  maintainability indices (`CMI`, `MMI`, `PAMI`) are derived from the complexity family, so one racy
-  method value moves a class, a package and a project number.
+  maintainability indices (`CMI`, `MMI`, `PAMI`) derive from the complexity family — one racy method
+  value moved a class, a package and a project number.
 
-  **Evidence.** Two runs of the *same* jar (`analyze --source-root …/core/src/main/java`, 4 074 files
-  / 4 020 classes) differ in 256 metric values: class `CCC` 43 + `CMI` 30, method `CCM` 47 + `CC` 32 +
-  `MMI` 32 + `CND` 24 + `MND` 17 + `LND` 4, package `PAMI` 27 — exactly the five racy codes plus what
-  derives from them, and nothing else. 235 diagnostics differ each way, and `resolutionCoverage`
-  differs in its 15th digit. Values are not merely noisy but sometimes *impossible*: one method's
-  cognitive complexity reads 0 in one run and 4 in the other. A control run confirms the effect is
-  present with no TASK-203 code involved.
+  **Evidence of the defect.** Two runs of the *same* jar over the benchmark corpus differed in 256
+  metric values: class `CCC` 43 + `CMI` 30, method `CCM` 47 + `CC` 32 + `MMI` 32 + `CND` 24 + `MND` 17
+  + `LND` 4, package `PAMI` 27 — exactly the five racy codes plus what derives from them, and nothing
+  else — plus 235 diagnostics each way and `resolutionCoverage` differing in its 15th digit. Values
+  were not merely noisy but sometimes *impossible*: one method's cognitive complexity read 0 in one
+  run and 4 in the other.
 
-  **Not fixed by TASK-203**, and not a TASK-203 regression: the control above predates it, and
-  TASK-203's own diff against the baseline (190 values) is *smaller* than the run-to-run noise of a
-  single jar. The reason it is not a one-liner is the shape of the fix: the visitors' accumulators
-  must be threaded through the recursive `visit(Node, AnalysisCollector)` dispatch, which is a change
-  to the visitor contract, not a `synchronized` block — adding a lock would serialise the hot path
-  this task is trying to speed up. The precedent is DEBT-01, where the fix was to make the Halstead
-  visitors stateless via a per-`visit` accumulator rather than to guard them.
-  **This is TASK-205's stated scope** ("audit remaining shared mutable state"; "metric values and
-  diagnostics unchanged (goldens green)"), and it should be fixed there — or promoted to its own task,
-  because until it is fixed the tool reports wrong complexity and maintainability numbers on any
-  multi-core machine, which is every machine it runs on.
-  Reproducer: run `analyze` twice over the same multi-file corpus and diff the JSON; the method-level
-  `CC`/`CCM`/`CND`/`MND`/`LND` values will differ. `JavaParserHalsteadParallelDeterminismTest` is the
-  pattern to copy (it asserts bit-identical values over 100 repeated parallel runs).
+  **What landed.**
+  - The analyzer now holds visitor **factories**, not lists, and builds a fresh visitor set per class
+    analysis. Within a class the visitors are driven sequentially by one thread, so instance state is
+    safe again. Making the visitors stateless — the TASK-003 fix for the Halstead visitors — was
+    rejected here: it means re-expressing nesting-aware traversals as explicit recursion, and any slip
+    changes metric values, whereas per-class instantiation cannot change what any visitor computes.
+  - The test seam takes a factory too, so it cannot be used to reintroduce the defect.
+  - The five visitors now carry a javadoc warning that they are stateful on purpose and must not be
+    shared.
+  - A second, distinct ordering defect was found while verifying and fixed with it:
+    `JavaParserLackOfCohesionOfMethodsMetricVisitor` built `methodsUsingFields` by iterating a
+    `HashMap` keyed by AST nodes (which do not override `hashCode`), so the order in which it walked
+    method calls varied between runs. That decided which of several occurrences of the same unresolved
+    symbol was reported and, once a class reached its diagnostic cap, which symbols were reported at
+    all. It now iterates the source-ordered `instanceMethods` list — the same set, a deterministic
+    order, and **zero** metric values changed on the corpus.
 
-## Resolved Debt Items
+  **Evidence of the fix.** `JavaParserComplexityParallelDeterminismTest` (new) asserts bit-identical
+  `CC`/`CCM`/`CND`/`LND`/`MND`/`CCC` values across 50 repeated parallel runs over a 12-class fixture;
+  it fails on the pre-fix code within two runs (`CC` 12 → 7, `CCM` 3 → 9, `CCC` 71 → 33). On the
+  corpus, two runs of the same jar now agree on every metric value and every diagnostic except the one
+  class in DEBT-11. Fixing the race moved 37 corpus values (10 class, 23 method, 4 package) — the
+  previous numbers were the corrupted ones — while the goldens were unchanged and `resolutionCoverage`
+  and the diagnostic count did not move.
+  This also corrects DEBT-01's audit sweep, which had concluded "no other shared visitor keeps mutable
+  instance state"; that conclusion was wrong.
 - **DEBT-04 — Dead `HAS_METHOD_RULE` in `class-level-rules.json`.** Resolved by
   [TASK-007](tasks/TASK-007-has-method-rule-fix.md).
   **The original description was wrong in an important way.** It claimed Jackson "drops the unknown
@@ -177,9 +205,10 @@
   constructor-injected immutable class lists and were instantiated per class — both classes were
   deleted by TASK-202, which is why that part of the audit can no longer be repeated against them.
   **⚠️ That audit sweep's conclusion — "no other shared visitor keeps mutable instance state" — was
-  wrong.** Five method visitors do, and they are shared across parallel workers; see DEBT-10, found
-  by TASK-203's corpus verification. TASK-003 fixed the Halstead visitor specifically rather than the
-  sharing that made it racy, so the same defect survived in its siblings.
+  wrong.** Five method visitors did, and they were shared across parallel workers; see **DEBT-10**,
+  found by TASK-203's corpus verification and **fixed 2026-09-17**. TASK-003 fixed the Halstead
+  visitor specifically rather than the sharing that made it racy, so the same defect survived in its
+  siblings for as long as the shared-instance design did.
 - **DEBT-02 — ForkJoinPool leak.** Resolved by
   [TASK-004](tasks/TASK-004-forkjoinpool-lifecycle.md). Both phases now run through a single
   `runInDedicatedPool(Supplier<T>)` helper in `JavaParserJavaMetricsAnalyzer` that always tears the

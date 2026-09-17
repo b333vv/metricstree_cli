@@ -241,13 +241,16 @@ class AnalysisCollectorPipelineTest {
             List<JavaParserMethodMetricVisitor> methodVisitors,
             String source) throws IOException {
         Path sourceRoot = writeFixture(source);
+        // A factory, not a list: the analyzer builds one visitor set per class so that stateful
+        // visitors are never shared between parallel workers (DEBT-10). This fixture is a single
+        // class, so the injected instances are used by one thread at a time.
         JavaParserJavaMetricsAnalyzer analyzer = new JavaParserJavaMetricsAnalyzer(
                 new JavaParserTypeSolverFactory(),
                 new AstMemoryManager(),
                 new DerivedMetricCalculator(),
                 AnalysisPhaseListener.NO_OP,
-                classVisitors,
-                methodVisitors);
+                () -> classVisitors,
+                () -> methodVisitors);
         return analyzer.analyze(AnalysisRequest
                 .of("channel", List.of(new SourceRoot(sourceRoot)))
                 .withOptions(AnalysisOptions.defaults().withUnresolvedSymbolDiagnosticCap(3)));

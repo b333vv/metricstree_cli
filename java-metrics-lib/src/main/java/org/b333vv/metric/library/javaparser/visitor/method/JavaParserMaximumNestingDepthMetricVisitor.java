@@ -15,6 +15,17 @@ import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisitor;
 
 
+/**
+ * Method-level maximum nesting depth ({@code MND}).
+ *
+ * <p><strong>Stateful on purpose: it must not be shared between threads.</strong> {@code depth} and
+ * {@code maxDepth} accumulate across the recursive {@code visit} calls of one method, so one instance
+ * driven by two workers at once interleaves their counts and produces different values on every run
+ * (DEBT-10). {@code JavaParserJavaMetricsAnalyzer} builds a fresh visitor set per class analysis for
+ * exactly this reason — see its {@code classVisitorFactory}. Making the visitor stateless, the way
+ * TASK-003 did for the Halstead visitors, would mean re-expressing the traversal explicitly and risks
+ * changing the values.
+ */
 public class JavaParserMaximumNestingDepthMetricVisitor extends JavaParserMethodMetricVisitor {
     private int depth;
     private int maxDepth;

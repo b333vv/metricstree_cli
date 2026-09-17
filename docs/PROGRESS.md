@@ -2,6 +2,65 @@
 
 ## Phase 2: the snapshot becomes the global-analysis contract (2026-09-16)
 
+### DEBT-10 — five method visitors were shared across parallel workers — done (2026-09-17)
+
+Found while verifying TASK-203, fixed before TASK-204 rather than left to TASK-205. It is the reason
+the corpus could not be used as an exact equivalence oracle, so every later "values unchanged" claim
+would have been unverifiable while it stood.
+
+**The defect.** `JavaParserJavaMetricsAnalyzer` held its visitor sets as **instance fields**
+(`classVisitors` / `methodVisitors`) and iterated them from inside the per-file parallel stream, so
+every worker drove the *same* visitor objects. Five of the twelve method visitors accumulate into
+instance fields while they walk: `CC` (`complexity`), `CCM` (`complexity`, `nesting`), and
+`CND`/`LND`/`MND` (`depth`, `maxDepth`). Two concurrent `visit(...)` calls on one instance interleave
+their increments — and their paired `nesting++` / `nesting--` — so the result depended on thread
+interleaving. The blast radius was wider than those five codes: `CCC` is the class-level **sum of the
+methods' `CCM`**, and `CMI`/`MMI`/`PAMI` derive from the complexity family, so one racy method value
+moved a class, a package and a project number.
+
+**Evidence.** Two runs of the *same* jar over the benchmark corpus differed in **256** metric values:
+class `CCC` 43 + `CMI` 30, method `CCM` 47 + `CC` 32 + `MMI` 32 + `CND` 24 + `MND` 17 + `LND` 4,
+package `PAMI` 27 — exactly the five racy codes plus what derives from them, and nothing else — plus
+235 diagnostics each way. The values were not merely noisy but sometimes *impossible*: one method's
+cognitive complexity read 0 in one run and 4 in the other. A control run confirmed the effect was
+present with no TASK-203 code involved.
+
+**The fix, and why this shape.** The analyzer now holds visitor **factories**, not lists, and builds a
+fresh set per class analysis; within a class the visitors are driven sequentially by one thread, so
+instance state is safe again. Making the visitors stateless — the TASK-003 fix for the Halstead
+visitors — was rejected here: it means re-expressing nesting-aware traversals as explicit recursion,
+and any slip changes metric values, whereas per-class instantiation *cannot* change what any visitor
+computes. The test seam takes a factory too, so it cannot be used to reintroduce the defect, and the
+five visitors now carry a javadoc warning that they are stateful on purpose.
+
+**A second, ordering defect was found with it.** `JavaParserLackOfCohesionOfMethodsMetricVisitor` built
+`methodsUsingFields` by iterating a `HashMap` keyed by AST nodes — which do not override `hashCode` —
+so the order it walked method calls in varied between runs. That decided which of several occurrences
+of the same unresolved symbol was reported and, once a class reached its diagnostic cap, which symbols
+were reported at all. It now iterates the source-ordered `instanceMethods` list: the same set, a
+deterministic order, and **zero** metric values changed on the corpus.
+
+**Evidence of the fix.**
+
+- `JavaParserComplexityParallelDeterminismTest` (new) asserts bit-identical
+  `CC`/`CCM`/`CND`/`LND`/`MND`/`CCC` values across 50 repeated parallel runs over a 12-class,
+  36-method fixture. On the pre-fix code it fails within two runs (`CC` 12 → 7, `CCM` 3 → 9,
+  `CCC` 71 → 33); after the fix it passes.
+- On the corpus, two runs of the same jar now agree on **every metric value and every diagnostic**
+  except the one class in [DEBT-11](tech-debt-tracker.md).
+- Fixing the race **moved 37 corpus values** (10 class, 23 method, 4 package) — the previous numbers
+  were the corrupted ones. The **goldens were unchanged**, `resolutionCoverage` and the diagnostic
+  count did not move. Nothing was regenerated to make this pass: a fix that changes corrupted values
+  and no others is what "the goldens stayed green" demonstrates here.
+
+**TASK-204's gate was reformulated on the strength of this work.** TASK-203's measurement showed the
+sampled peak heap to be an instrument artefact (−73% live set produced −6.3% sampled peak), so
+TASK-204's −30% gate is now stated against the **live set** (*Heap after GC* at the end of VISIT,
+baseline 1 949 MB) plus a heap-ceiling check. See
+[TASK-204](tasks/TASK-204-two-pass-pipeline.md) and [ADR 0002](adr/0002-bounded-ast-residency.md).
+
+- `./gradlew check` green: 314 tests, 0 failures.
+
 ### TASK-203 — `AstMemoryManager`: bounded AST lifecycle — done (2026-09-17)
 
 TASK-202 removed the *reason* the project's ASTs were kept — no metric walks another class's AST any
@@ -81,8 +140,8 @@ workers drive the *same* visitor objects, and five method visitors accumulate in
 (`CC`, `CCM`, `CND`, `LND`, `MND`; `CCC` and the MI family follow). Values are not merely noisy but
 sometimes impossible — one method's cognitive complexity reads 0 in one run and 4 in the other.
 Recorded as **DEBT-10**, which also corrects DEBT-01's audit sweep: it concluded "no other shared
-visitor keeps mutable instance state", and that conclusion was wrong. Left to TASK-205, whose stated
-scope it is.
+visitor keeps mutable instance state", and that conclusion was wrong. **Fixed immediately after this
+task**, before TASK-204 — see the DEBT-10 entry above.
 
 - Tests: 12 new in `AstMemoryManagerTest` — the window bound holds under parallel load; every unit
   becomes unreachable once its task returns, including when the task throws (asserted with

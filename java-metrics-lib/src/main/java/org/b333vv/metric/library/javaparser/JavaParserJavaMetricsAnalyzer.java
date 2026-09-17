@@ -103,6 +103,7 @@ import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -181,8 +182,28 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     private final AstMemoryManager astMemoryManager;
     private final DerivedMetricCalculator derivedMetricCalculator;
     private final AnalysisPhaseListener phaseListener;
-    private final List<JavaParserClassMetricVisitor> classVisitors;
-    private final List<JavaParserMethodMetricVisitor> methodVisitors;
+
+    /**
+     * Builds the visitor set for one class analysis.
+     *
+     * <p>A factory rather than a list, because several visitors keep their accumulator in an instance
+     * field while they walk a method — {@code CC}, {@code CCM}, {@code CND}, {@code LND} and
+     * {@code MND} all do. Handing one shared set to every worker let two classes' visits interleave
+     * in the same counters, which produced different complexity values on every run and sometimes
+     * impossible ones (DEBT-10). Building a set per class gives each analysis its own accumulators;
+     * within a class the visitors are driven sequentially, so instance state is safe again.
+     *
+     * <p>The alternative — making all five visitors stateless, as TASK-003 did for the Halstead ones
+     * — was rejected here because it means re-expressing nesting-aware traversals as explicit
+     * recursion, and any slip changes metric values. This fix cannot: each visitor computes exactly
+     * what it computed before, it simply no longer shares its counters.
+     */
+    private final Supplier<List<JavaParserClassMetricVisitor>> classVisitorFactory;
+
+    /**
+     * @see #classVisitorFactory
+     */
+    private final Supplier<List<JavaParserMethodMetricVisitor>> methodVisitorFactory;
 
     /**
      * The global pass. Not injected: it is stateless, has no collaborators, and is covered by its own
@@ -227,26 +248,31 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
     /**
      * Builds an analyzer with an explicit visitor set. Production always passes {@code null} for both
-     * lists and gets the full set from {@link #buildClassVisitors()} / {@link #buildMethodVisitors()}.
+     * and gets a fresh set per class from {@link #buildClassVisitors()} /
+     * {@link #buildMethodVisitors()}.
      *
-     * <p>Passing a visitor set is a test seam: it is the only way to drive a visitor that deliberately
+     * <p>Passing a factory is a test seam: it is the only way to drive a visitor that deliberately
      * reports a resolution problem through the whole pipeline and assert that the diagnostic reaches
      * {@code MetricReport.diagnostics} and the JSON output, without adding a fake problem to a
      * production visitor.
+     *
+     * <p>The seam takes a <em>factory</em>, not a list, so that it cannot be used to reintroduce the
+     * DEBT-10 defect by handing the same instance to every class. A test that injects a single
+     * instance should therefore analyse a single-class fixture, which is what the seam exists for.
      */
     JavaParserJavaMetricsAnalyzer(
             JavaParserTypeSolverFactory typeSolverFactory,
             AstMemoryManager astMemoryManager,
             DerivedMetricCalculator derivedMetricCalculator,
             AnalysisPhaseListener phaseListener,
-            List<JavaParserClassMetricVisitor> classVisitors,
-            List<JavaParserMethodMetricVisitor> methodVisitors) {
+            Supplier<List<JavaParserClassMetricVisitor>> classVisitorFactory,
+            Supplier<List<JavaParserMethodMetricVisitor>> methodVisitorFactory) {
         this.typeSolverFactory = typeSolverFactory;
         this.astMemoryManager = astMemoryManager;
         this.derivedMetricCalculator = derivedMetricCalculator;
         this.phaseListener = phaseListener == null ? AnalysisPhaseListener.NO_OP : phaseListener;
-        this.classVisitors = classVisitors == null ? buildClassVisitors() : List.copyOf(classVisitors);
-        this.methodVisitors = methodVisitors == null ? buildMethodVisitors() : List.copyOf(methodVisitors);
+        this.classVisitorFactory = classVisitorFactory == null ? this::buildClassVisitors : classVisitorFactory;
+        this.methodVisitorFactory = methodVisitorFactory == null ? this::buildMethodVisitors : methodVisitorFactory;
     }
 
     @Override
@@ -687,7 +713,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 sourceLocation,
                 unresolvedSymbolDiagnosticCap);
 
-        for (JavaParserClassMetricVisitor visitor : classVisitors) {
+        for (JavaParserClassMetricVisitor visitor : classVisitorFactory.get()) {
             visitor.visit(classDeclaration, classCollector);
         }
 
@@ -699,6 +725,11 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         // supertypes, so the extra NOC-context report only applies when the class itself resolved.
         String numberOfChildrenContext = resolvedName == null ? null : NUMBER_OF_CHILDREN_CONTEXT;
 
+        // One method-visitor set per class, not per method: a class's methods are analysed
+        // sequentially on the thread that owns this class, so one set serves them all — and building
+        // it here rather than sharing it across workers is what keeps the stateful visitors correct
+        // (DEBT-10). See classVisitorFactory.
+        List<JavaParserMethodMetricVisitor> methodVisitors = methodVisitorFactory.get();
         List<AnalyzedMethod> analyzedMethods = classDeclaration.getMethods().stream()
                 .sorted(Comparator.comparing(this::methodSignature))
                 .map(methodDeclaration -> {
