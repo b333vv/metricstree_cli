@@ -1,7 +1,6 @@
 package org.b333vv.metric.cli;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.ClasspathEntry;
@@ -124,8 +123,7 @@ final class ValidateCommand implements Callable<Integer> {
     }
 
     private Map<String, Threshold> loadThresholds() throws IOException {
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode root = mapper.readTree(Files.readString(thresholdsFile));
+        JsonNode root = CliObjectMapper.readTree(Files.readString(thresholdsFile));
 
         Map<String, Threshold> thresholds = new HashMap<>();
         Iterator<Map.Entry<String, JsonNode>> fields = root.fields();
@@ -188,17 +186,16 @@ final class ValidateCommand implements Callable<Integer> {
     }
 
     private void writeReport(ValidationResult result) throws IOException {
-        ObjectMapper mapper = new ObjectMapper();
         List<MetricValidationResult> resultsToWrite = failedOnly
                 ? result.getResults().stream().filter(r -> r.status() == ValidationStatus.FAILED).toList()
                 : result.getResults();
 
-        String json = mapper.writeValueAsString(new ValidationResultForSerialization(
+        String json = CliObjectMapper.write(new ValidationResultForSerialization(
                 result.getStatus(),
                 resultsToWrite,
                 result.getPassed(),
                 result.getFailed()
-        ));
+        ), false);
 
         Path normalizedOutputFile = outputFile.toAbsolutePath().normalize();
         if (normalizedOutputFile.getParent() != null) {

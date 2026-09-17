@@ -42,6 +42,24 @@
   strings) belongs to the serialization consolidation in
   [TASK-302](tasks/TASK-302-jackson-serialization.md) and must be an explicit, reviewed golden
   update.
+
+  *Status after TASK-302 (2026-09-17): **still open, deliberately.*** TASK-302 was the task the plan
+  assigned this to, and it built the seam that makes the fix local — `CliObjectMapper` now owns the
+  metric-value rendering in one place — but it did **not** change the formatting, because its own
+  acceptance criteria require byte-identical output and **zero** golden regeneration, and this fix
+  changes the emitted values on any non-English machine. On this machine the difference is visible in
+  the shipped artifact: the shadow jar prints `"PRHVL" : "16,2535"` while the pinned test JVM prints
+  `"16.2535"`.
+
+  *The fix is one line and it is safe:* give `Value`'s `METRIC_VALUE_FORMAT` a `Locale.ROOT`
+  `DecimalFormatSymbols`. Evidence that it costs nothing else: the goldens are generated under `en_US`,
+  where `Locale.ROOT` produces identical text, so they stay untouched; the `java-metrics-lib` test JVM
+  is **not** locale-pinned and asserts no formatted doubles, so nothing there depends on the current
+  behaviour; and `Value.percentageFormat()` is a separate formatter and is unaffected. What it does
+  change is user-visible output for every non-English-locale consumer, which is the point — and is why
+  it needs its own reviewed decision rather than a ride-along in a refactor whose promise was "nothing
+  changes". The alternative (emit JSON numbers instead of pre-formatted strings) is a schema change and
+  a separate discussion.
 - **DEBT-08 — Two shipped Kotlin package rules can never fire.**
   Found while writing the TASK-007 characterization test for the sample rules files (2026-09-16).
   `package-level-rules.json` ships `Kotlin Data Class Anemia` (`PNOKDC >= 15`) and

@@ -1,6 +1,5 @@
 package org.b333vv.metric.cli;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
@@ -99,13 +98,12 @@ final class DetectCommand implements Callable<Integer> {
 
         MetricReport report = analyzer.analyze(request);
 
-        ObjectMapper mapper = new ObjectMapper();
         CombinationDetector detector = new CombinationDetector();
 
         List<CombinationDetector.ClassMatch> classMatches = List.of();
         DetectResultWriter.RulesSummary classRulesSummary = emptyRulesSummary();
         if (classRulesFile != null) {
-            List<CombinationDefinition> classRules = mapper.readValue(
+            List<CombinationDefinition> classRules = CliObjectMapper.readValue(
                     Files.readString(classRulesFile),
                     new TypeReference<List<CombinationDefinition>>() {});
             classMatches = detector.detectClasses(report, classRules);
@@ -116,7 +114,7 @@ final class DetectCommand implements Callable<Integer> {
         List<CombinationDetector.PackageMatch> packageMatches = List.of();
         DetectResultWriter.RulesSummary packageRulesSummary = emptyRulesSummary();
         if (packageRulesFile != null) {
-            List<CombinationDefinition> packageRules = mapper.readValue(
+            List<CombinationDefinition> packageRules = CliObjectMapper.readValue(
                     Files.readString(packageRulesFile),
                     new TypeReference<List<CombinationDefinition>>() {});
             packageMatches = detector.detectPackages(report, packageRules);

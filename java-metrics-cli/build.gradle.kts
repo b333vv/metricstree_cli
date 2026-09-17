@@ -78,6 +78,10 @@ tasks.register<Test>("integrationTest") {
     testClassesDirs = sourceSets["integrationTest"].output.classesDirs
     classpath = sourceSets["integrationTest"].runtimeClasspath
     dependsOn(tasks.installDist)
+    // The shadow jar is the artifact users actually download, and it is built with minimize(), which
+    // strips classes it cannot prove are reachable. The JSON contract is reached reflectively (record
+    // accessors, mixins, custom serializers), so it can only be proven against the packaged jar.
+    dependsOn(tasks.shadowJar)
     shouldRunAfter(tasks.test)
     useJUnitPlatform()
     systemProperty(
@@ -86,6 +90,16 @@ tasks.register<Test>("integrationTest") {
     systemProperty(
             "javaMetricsCliBatBinary",
             layout.buildDirectory.file("install/java-metrics-cli/bin/java-metrics-cli.bat").get().asFile.absolutePath)
+    systemProperty(
+            "javaMetricsCliShadowJar",
+            layout.buildDirectory.file("libs/java-metrics.jar").get().asFile.absolutePath)
+}
+
+// `check` is the gate AGENTS.md names, so the distribution proof has to be part of it. Without this
+// the integration test only runs when someone remembers to ask for it, which is exactly how a
+// minimize() regression reaches users: it passes every unit test and fails at the first analyze.
+tasks.check {
+    dependsOn(tasks.named("integrationTest"))
 }
 
 tasks.shadowJar {

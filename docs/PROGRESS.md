@@ -2,6 +2,94 @@
 
 ## Phase 2: the snapshot becomes the global-analysis contract (2026-09-16)
 
+### TASK-302 — one mapper, mixins instead of view records — done (2026-09-17)
+
+**The task's core promise is kept: the emitted JSON is byte-identical, goldens untouched.** The
+hand-written mapping is gone, and the three writer paths share one configuration.
+
+**What was actually wrong.** `MetricReportJsonWriter` held seven private `*View` records and the mapping
+methods between them and the report model — ~137 lines that mirrored `MetricReport`, `ProjectReport`,
+`PackageReport`, `ClassReport`, `MethodReport`, `AnalysisDiagnostic` and `SourceLocation` field by
+field. Every report field therefore existed twice, and the only documentation of the wire shape was that
+mapping code. Separately, five places constructed their own `ObjectMapper`
+(`MetricReportJsonWriter`, `DetectResultWriter`, `DetectCommand`, `ValidateCommand` ×2), so "how we
+configure Jackson" was a matter of five independent decisions.
+
+**What changed.**
+
+- **`CliObjectMapper` is the single definition.** It exposes `write(value, pretty)`, `readTree(json)` and
+  `readValue(json, type)` instead of handing out the mapper — `ObjectMapper` is mutable, so one caller's
+  `configure` call would silently redefine the contract for the other two commands. It is also now the
+  **only** class in the module that names `ObjectMapper`, which
+  `CliObjectMapperContractTest.onlyTheSharedMapperConfiguresJackson` enforces by scanning the compiled
+  package's constant pools (the technique `CorePackageAstIndependenceTest` established for the core
+  layer). `ExclusionConfigLoader` is the one documented exception: it needs a YAML mapper for reading
+  configuration, not for writing the report contract, and unifying the config formats is TASK-402's.
+- **The `*View` records are deleted and the rules moved into mixins**, which keeps `java-metrics-lib`
+  Jackson-free. A mixin is added only where it changes something, and each one pins its property
+  **order**, because the goldens compare emitted text and the order is therefore part of the contract.
+  Two carry a second rule: `ProjectReport` puts `resolutionCoverage` second although the record declares
+  it last, and `AnalysisDiagnostic` marks `symbolName`/`metricCode` `NON_NULL` so an unattributed
+  diagnostic keeps the exact shape it had before TASK-104.
+- **`MetricReport` needed an ignore list, and it was not obvious.** The record carries convenience
+  accessors — `packages()`, `classes()`, `methods()`, `hasDiagnostics()`, `hasWarnings()`,
+  `hasErrors()` — that are not part of the wire shape. Jackson reads any public no-argument method as a
+  property, so without `@JsonIgnoreProperties` the report would have grown six keys, three of them
+  duplicating whole subtrees. This was found by reading the model rather than by a failing test.
+- **`Map<MetricCode, Value>` is serialized by hand, deliberately.** `Value extends Number`, so Jackson's
+  default would emit the number inside it and lose three contract properties: `UNDEFINED` renders as
+  `"N/A"` and `INFINITY` as `"Infinity"` (neither is a number), doubles are rounded by
+  `DecimalFormat("0.0###")` so the JSON matches what a threshold file is compared against, and integers
+  keep their `Long` form (`"7"`, not `"7.0"`). The serializer delegates to `Value.toString()` rather
+  than reimplementing the formatting, so `Value` stays the single owner of that rule.
+- **`Path` renders as a string** through a module serializer registered for the `Path` interface, so no
+  mixin repeats the rule for each `Path` component.
+
+**Equivalence.** `JsonContractGoldenTest` — the TASK-001 goldens for `analyze`, `validate` and
+`detect` — passed on the first run with **zero regeneration**, and `git status` on
+`src/test/resources/golden/` is empty. That is the whole promise of this task: the refactor is invisible
+in the output. It is also a known-sensitive gate rather than a rubber stamp — the TASK-301 dry run
+failed it by adding a single key.
+
+**New tests, and why the goldens are not enough.** `CliObjectMapperContractTest` pins the rules the
+golden fixture cannot reach:
+
+- `Value.INFINITY` never occurs in the golden corpus, and neither does the "convenience accessor leaks
+  into the JSON" failure mode. Both are asserted directly.
+- The numeric assertions compare against `Value.toString()` rather than literals, because that
+  formatting is locale-sensitive (DEBT-07) and a hard-coded `"53.8887"` would assert the pinned test
+  locale instead of the contract.
+- `rendersPathsAsPlainStrings` pins the writer against the model's normalisation: `ClassReport` and
+  `SourceLocation` absolutise and normalise in their compact constructors, so the emitted text is the
+  normalised path. That is the model's rule, not the writer's, and the test holds the two together so a
+  change to either shows up here rather than as a golden diff.
+
+**The distribution proof, and a gap it closed.** The shadow jar is built with `minimize()`, which strips
+classes it cannot prove are reachable, and the JSON path is reached reflectively — record accessors,
+mixins, custom serializers. `JavaMetricsCliDistributionSmokeTest` now runs all three commands through
+the packaged jar and asserts structural properties with cheap wrong answers: `sourcePath` is textual,
+a metric value is textual (a dropped `MetricValuesSerializer` would make Jackson render `Value`'s
+number), and the nested `summary` of `detect` survives. Minimization is verified to be doing real work
+(`jackson-databind`'s `ext` package goes from 18 classes to 8), so the test is not vacuous. **No `keep`
+rules were needed.**
+
+While wiring this up, one gap was found and closed: **`check` did not depend on `integrationTest`**, so
+the distribution proof only ran when someone remembered to ask for it — exactly how a `minimize()`
+regression reaches users, since it passes every unit test. `tasks.check { dependsOn(integrationTest) }`
+is now in `java-metrics-cli/build.gradle.kts`.
+
+**DEBT-07 was deliberately not fixed here, and the conflict is worth stating.** The tracker assigns the
+locale fix to this task, but this task's own acceptance criteria require byte-identical output and zero
+golden regeneration, and a locale fix changes the emitted values on any non-English machine — on this
+one, `analyze` prints `"PRHVL" : "16,2535"` outside the pinned test JVM. Both are satisfiable at once in
+principle (pinning `Locale.ROOT` leaves the `en_US`-generated goldens untouched, and the lib tests are
+not locale-pinned and assert no formatted doubles), but it is a user-visible contract change on some
+machines and does not belong in a refactor whose promise is "nothing changes". DEBT-07 is updated with
+the precise one-line fix and the evidence that it is safe; it needs its own reviewed decision.
+
+**Tests.** `./gradlew check` green: 349 unit tests (271 lib + 78 CLI), 0 failures, 1 intentional skip,
+plus 3 distribution integration tests. `CliObjectMapperContractTest` is 6 of the CLI tests.
+
 ### TASK-301 — a declarative metric registry, and selection that filters at visit time — done (2026-09-17)
 
 **The task's premise had partly moved, and the entry says where.** It asks for a registry that replaces

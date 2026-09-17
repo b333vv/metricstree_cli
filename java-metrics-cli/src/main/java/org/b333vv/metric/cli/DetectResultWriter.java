@@ -2,23 +2,20 @@ package org.b333vv.metric.cli;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 
 final class DetectResultWriter {
-
-    private final ObjectMapper mapper = new ObjectMapper();
 
     String toJson(
             List<CombinationDetector.ClassMatch> classMatches,
             RulesSummary classRules,
             List<CombinationDetector.PackageMatch> packageMatches,
             RulesSummary packageRules) throws JsonProcessingException {
-        return mapper.writeValueAsString(new DetectResultView(
+        return CliObjectMapper.write(new DetectResultView(
                 "COMPLETED",
                 classMatches,
                 packageMatches,
-                new SummaryView(classRules, packageRules)));
+                new SummaryView(classRules, packageRules)), false);
     }
 
     private record DetectResultView(

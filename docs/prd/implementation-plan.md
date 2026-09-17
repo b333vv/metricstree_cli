@@ -150,6 +150,25 @@ the three writer paths converge on one ObjectMapper configuration. JSON output c
 is guarded by TASK-001 goldens. ShadowJar `minimize()` configuration verified as part of
 the task (reflective access to view/mixin classes).
 
+**Outcome (2026-09-17, TASK-302).** Built as decided, with three details worth recording:
+
+- **The mapper is not handed out.** `CliObjectMapper` exposes `write`/`readTree`/`readValue` rather than
+  the `ObjectMapper`, because it is mutable and one caller reconfiguring it would redefine the contract
+  for the other two commands. It is now the only class in the module that names `ObjectMapper`; a
+  constant-pool scan in `CliObjectMapperContractTest` enforces that. `ExclusionConfigLoader` is the
+  documented exception (YAML *input*, unified in TASK-402).
+- **`MetricDefinition`-style metadata needed a different trick here.** The mixins pin property *order*
+  for every report type, because the goldens compare emitted text. `MetricReport` also needed an
+  explicit ignore list: its convenience accessors (`classes()`, `methods()`, `hasWarnings()`, …) are
+  public no-argument methods, which Jackson reads as properties.
+- **`minimize()` needed no `keep` rules**, and the proof is now part of `check`. `check` previously did
+  not depend on `integrationTest`, so the distribution proof ran only on request — the exact gap through
+  which a `minimize()` regression reaches users. Fixed in `java-metrics-cli/build.gradle.kts`.
+- **DEBT-07 (locale-dependent values) was not fixed here**, despite the tracker assigning it to this
+  task: it changes emitted values on non-English machines, and this task's acceptance gate is
+  byte-identical output with zero golden regeneration. See DEBT-07 for the precise fix and why it is
+  safe.
+
 ### D5. Config unification (TASK-402)
 Both JSON and YAML accepted for thresholds, detection rules, and exclusions (Jackson
 dataformat already present); existing files keep working. Sample files remain as-is.

@@ -395,6 +395,48 @@ with differently named methods and asserts which one the resolved declaration ca
 - `validate` — Validate metrics against thresholds (for CI/CD)
 - `detect` — Detect class- and package-level antipattern rule matches
 
+### Serialization: one mapper, and mixins instead of view records
+
+Three commands write JSON, and they used to each construct their own `ObjectMapper`, so "what our JSON
+looks like" was decided in several places at once. `analyze` additionally mapped the report model onto a
+parallel set of private `*View` records by hand — ~137 lines mirroring `MetricReport`, `ProjectReport`,
+`PackageReport`, `ClassReport`, `MethodReport`, `AnalysisDiagnostic` and `SourceLocation` field by field,
+so every report field existed twice and the two could drift.
+
+Now `CliObjectMapper` is the single definition:
+
+- **One mapper, not handed out.** It exposes `write(value, pretty)`, `readTree(json)` and
+  `readValue(json, type)` rather than the mapper itself, because `ObjectMapper` is mutable and one
+  caller's `configure` call would redefine the contract for the other two commands. It is also the only
+  class in the module that names `ObjectMapper` at all — `CliObjectMapperContractTest` enforces that by
+  scanning the compiled package's constant pools, the same technique
+  `CorePackageAstIndependenceTest` uses for the core layer.
+- **Mixins carry the rules, so `java-metrics-lib` stays Jackson-free.** A mixin is added only where it
+  changes something. Every one pins its property *order*, because the goldens compare emitted text and
+  the order is therefore part of the contract. Two carry a second rule: `ProjectReport` puts
+  `resolutionCoverage` second although the record declares it last, and `AnalysisDiagnostic` marks
+  `symbolName`/`metricCode` `NON_NULL` so an unattributed diagnostic keeps the exact shape it had before
+  TASK-104.
+- **`MetricReport` needs the ignore list, and it is not obvious.** The record carries convenience
+  accessors — `packages()`, `classes()`, `methods()`, `hasDiagnostics()`, `hasWarnings()`,
+  `hasErrors()` — that are not part of the wire shape. Jackson treats any public no-argument method as a
+  property, so without the ignore list the report would grow six keys, three of them duplicating whole
+  subtrees.
+- **`Map<MetricCode, Value>` is written by hand, deliberately.** `Value extends Number`, so Jackson's
+  default would emit the number inside it and lose three contract properties: `UNDEFINED` renders as
+  `"N/A"` and `INFINITY` as `"Infinity"` (neither is a number), doubles are rounded by
+  `DecimalFormat("0.0###")` so the JSON matches what a threshold file compares against, and integers
+  keep their `Long` form. The serializer delegates to `Value.toString()` rather than reimplementing the
+  formatting, so `Value` remains the one owner of that rule — including the locale hazard recorded as
+  DEBT-07, which this consolidation did **not** change (see `docs/tech-debt-tracker.md`).
+- **Paths render as strings** through a module serializer registered for the `Path` interface, so no
+  mixin has to repeat the rule for each `Path` component.
+- **The distribution is part of the proof.** The shadow jar is built with `minimize()`, which strips
+  classes it cannot prove are reachable; the JSON path is reached reflectively (record accessors,
+  mixins, custom serializers), so it can only be proven against the packaged artifact.
+  `JavaMetricsCliDistributionSmokeTest` runs all three commands through the jar, and `check` now depends
+  on `integrationTest` so that proof is not optional. No `keep` rules were needed.
+
 ## Build System
 
 - **Gradle** with Kotlin DSL (`build.gradle.kts`)
