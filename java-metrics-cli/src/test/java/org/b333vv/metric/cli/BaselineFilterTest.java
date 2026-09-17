@@ -22,11 +22,11 @@ class BaselineFilterTest {
 
     private final BaselineFilter filter = new BaselineFilter();
 
-    private static final Map<String, ValidateCommand.Threshold> THRESHOLDS = Map.of(
-            "WMC", new ValidateCommand.Threshold(0, 12),
-            "CBO", new ValidateCommand.Threshold(0, 14),
-            "CC", new ValidateCommand.Threshold(0, 3),
-            "NOM", new ValidateCommand.Threshold(0, 7)
+    private static final Map<String, Threshold> THRESHOLDS = Map.of(
+            "WMC", new Threshold(0, 12),
+            "CBO", new Threshold(0, 14),
+            "CC", new Threshold(0, 3),
+            "NOM", new Threshold(0, 7)
     );
 
     @Test

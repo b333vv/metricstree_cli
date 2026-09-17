@@ -1,6 +1,5 @@
 package org.b333vv.metric.cli;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.ExclusionConfig;
@@ -71,7 +70,7 @@ final class DetectCommand implements Callable<Integer> {
         if (excludeFilePath == null) {
             return ExclusionConfig.empty();
         }
-        return ExclusionConfigLoader.load(excludeFilePath);
+        return ConfigLoader.exclusions(excludeFilePath);
     }
 
     @Override
@@ -108,9 +107,7 @@ final class DetectCommand implements Callable<Integer> {
         List<CombinationDetector.ClassMatch> classMatches = List.of();
         DetectResultWriter.RulesSummary classRulesSummary = emptyRulesSummary();
         if (classRulesFile != null) {
-            List<CombinationDefinition> classRules = CliObjectMapper.readValue(
-                    Files.readString(classRulesFile),
-                    new TypeReference<List<CombinationDefinition>>() {});
+            List<CombinationDefinition> classRules = ConfigLoader.classRules(classRulesFile);
             classMatches = detector.detectClasses(report, classRules);
             classRulesSummary = new DetectResultWriter.RulesSummary(
                     classRules.size(), classMatches.size(), detector.validateRules(classRules));
@@ -119,9 +116,7 @@ final class DetectCommand implements Callable<Integer> {
         List<CombinationDetector.PackageMatch> packageMatches = List.of();
         DetectResultWriter.RulesSummary packageRulesSummary = emptyRulesSummary();
         if (packageRulesFile != null) {
-            List<CombinationDefinition> packageRules = CliObjectMapper.readValue(
-                    Files.readString(packageRulesFile),
-                    new TypeReference<List<CombinationDefinition>>() {});
+            List<CombinationDefinition> packageRules = ConfigLoader.packageRules(packageRulesFile);
             packageMatches = detector.detectPackages(report, packageRules);
             packageRulesSummary = new DetectResultWriter.RulesSummary(
                     packageRules.size(), packageMatches.size(), detector.validateRules(packageRules));

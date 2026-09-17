@@ -1,6 +1,5 @@
 package org.b333vv.metric.cli;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.ClasspathEntry;
@@ -19,8 +18,6 @@ import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -79,7 +76,7 @@ final class ValidateCommand implements Callable<Integer> {
 
     @Override
     public Integer call() throws IOException {
-        Map<String, Threshold> thresholds = loadThresholds();
+        Map<String, Threshold> thresholds = ConfigLoader.thresholds(thresholdsFile);
 
         List<SourceRoot> sourceRoots = new ArrayList<>();
         List<SourceUnit> sourceUnits = new ArrayList<>();
@@ -125,25 +122,7 @@ final class ValidateCommand implements Callable<Integer> {
         if (excludeFilePath == null) {
             return ExclusionConfig.empty();
         }
-        return ExclusionConfigLoader.load(excludeFilePath);
-    }
-
-    private Map<String, Threshold> loadThresholds() throws IOException {
-        JsonNode root = CliObjectMapper.readTree(Files.readString(thresholdsFile));
-
-        Map<String, Threshold> thresholds = new HashMap<>();
-        Iterator<Map.Entry<String, JsonNode>> fields = root.fields();
-        while (fields.hasNext()) {
-            Map.Entry<String, JsonNode> entry = fields.next();
-            String metricName = entry.getKey();
-            JsonNode thresholdNode = entry.getValue();
-
-            double min = thresholdNode.has("min") ? thresholdNode.get("min").asDouble() : Double.MIN_VALUE;
-            double max = thresholdNode.has("max") ? thresholdNode.get("max").asDouble() : Double.MAX_VALUE;
-
-            thresholds.put(metricName, new Threshold(min, max));
-        }
-        return thresholds;
+        return ConfigLoader.exclusions(excludeFilePath);
     }
 
     private ValidationResult validateReport(MetricReport report, Map<String, Threshold> thresholds) {
@@ -219,8 +198,6 @@ final class ValidateCommand implements Callable<Integer> {
         }
         Files.writeString(normalizedOutputFile, content);
     }
-
-    public record Threshold(double min, double max) {}
 
     public record MetricValidationResult(
             String file,

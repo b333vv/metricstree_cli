@@ -200,6 +200,35 @@ run's schema step, since it validates against the published schema file. See cri
 Both JSON and YAML accepted for thresholds, detection rules, and exclusions (Jackson
 dataformat already present); existing files keep working. Sample files remain as-is.
 
+**Outcome (2026-09-17, TASK-402).** Built as decided, with three details worth recording:
+
+- **The extension decides the parser, and there are only two rules.** `*.json` → the strict JSON parser
+  (through `CliObjectMapper`, so strictness has one owner); everything else → YAML, which also reads JSON.
+  The asymmetry is the point: YAML accepts documents that are not valid JSON, so routing `.json` through
+  YAML would turn a JSON typo into a silently different config. **No `--format-config` flag was added**,
+  although the scope bullet allowed one: the extension already answers the question, and a flag would add
+  a way for the flag and the file to disagree.
+- **Three loaders became one facade, and the allow-list shrank in meaning if not in size.**
+  `ValidateCommand.loadThresholds`, the two duplicated rule-loading blocks in `DetectCommand`, and
+  `ExclusionConfigLoader` are gone; `ConfigLoader` exposes types (`Map<String, Threshold>`,
+  `List<CombinationDefinition>`, `ExclusionConfig`). `Threshold` moved out of `ValidateCommand` to become
+  a type in its own right, which also removed `BaselineFilter`'s dependency on a command class.
+  `CliObjectMapperContractTest`'s allow-list now names the facade rather than one of its three callers.
+- **One user-visible change, in the error text.** A missing thresholds or rules file used to surface as a
+  raw `NoSuchFileException` naming a path but not the argument that produced it; every config failure now
+  names its option (`--thresholds`, `--class-rules`, `--package-rules`, `--exclude-file`).
+
+**A defect found and deliberately not fixed.** The loader preserves the sentinel for an omitted threshold
+bound, and `Double.MIN_VALUE` is the smallest *positive* double — so a threshold with only a `max` rejects
+a metric whose value is `0`. This is live in the golden fixture (`"CBO": { "max": 0 }`), and fixing it
+would change `validate` output for every one-sided threshold in every user's config, which is exactly what
+this task's gate forbids. Recorded as DEBT-14 with the one-line fix and the consequence.
+
+**Verification.** The dual-format claim is proven end to end rather than by a map comparison:
+`ConfigLoaderTest` runs `validate` and `detect` twice — once with the `*.json` configs, once with
+hand-written `*.yml` copies — and requires **byte-identical report files**. The JSON path is separately
+held by `JsonContractGoldenTest`, which is untouched and still passes.
+
 ---
 
 ## 4. Task Index

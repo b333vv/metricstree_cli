@@ -14,7 +14,7 @@ import java.util.Map;
 final class BaselineFilter {
 
     BaselineCheckResult compare(MetricReport report,
-                                Map<String, ValidateCommand.Threshold> thresholds,
+                                Map<String, Threshold> thresholds,
                                 BaselineFile baseline) {
         Map<String, List<BaselineEntry>> currentViolations = collectViolations(report, thresholds);
 
@@ -71,7 +71,7 @@ final class BaselineFilter {
     }
 
     Map<String, List<BaselineEntry>> collectViolations(MetricReport report,
-                                                       Map<String, ValidateCommand.Threshold> thresholds) {
+                                                       Map<String, Threshold> thresholds) {
         Map<String, List<BaselineEntry>> violations = new LinkedHashMap<>();
 
         for (ClassReport classReport : report.classes()) {
@@ -87,12 +87,12 @@ final class BaselineFilter {
 
     private void collectMetricViolations(String entityKey,
                                          Map<MetricCode, Value> metrics,
-                                         Map<String, ValidateCommand.Threshold> thresholds,
+                                         Map<String, Threshold> thresholds,
                                          Map<String, List<BaselineEntry>> violations) {
         List<BaselineEntry> entries = new ArrayList<>();
         for (Map.Entry<MetricCode, Value> entry : metrics.entrySet()) {
             String metricName = entry.getKey().name();
-            ValidateCommand.Threshold threshold = thresholds.get(metricName);
+            Threshold threshold = thresholds.get(metricName);
             if (threshold == null) {
                 continue;
             }

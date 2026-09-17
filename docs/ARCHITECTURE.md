@@ -478,6 +478,58 @@ metrics catalogue, not an issue list.
 than a `@Command` attribute, so `JavaMetricsCliApplication` applies it to the root command **and to every
 subcommand**: a subcommand parses its own options and inherits nothing here.
 
+### Configuration: one facade, and the extension decides the parser
+
+Three config types are read in three places, and before TASK-402 they shared nothing.
+`ValidateCommand` walked a JSON tree by hand, `DetectCommand` deserialized a JSON list with the same four
+lines twice — once for class rules and once for package rules — and `ExclusionConfigLoader` configured its
+own YAML mapper. So "what a config file may contain" and "what a broken config file says" were decided
+three times, in two formats, with two error styles.
+
+`ConfigLoader` is now the only way a configuration file is read:
+
+- **It exposes types, not trees.** `thresholds(Path)` → `Map<String, Threshold>`, `classRules(Path)` and
+  `packageRules(Path)` → `List<CombinationDefinition>`, `exclusions(Path)` → `ExclusionConfig`. The two
+  rule methods differ only in the flag they name in an error message; the file shape is identical.
+- **The extension decides the parser, and only two rules exist.** `*.json` goes to the strict JSON parser
+  — through `CliObjectMapper`, so the strictness rule has one owner — and *everything else* goes to YAML,
+  which reads JSON too. The asymmetry is deliberate: YAML is permissive enough to accept a document that
+  is not valid JSON (unquoted keys, some trailing commas), so routing `.json` through YAML would turn a
+  JSON typo into a silently different config. There is deliberately no `--format-config` flag: the
+  extension already answers the question, and a flag would add a way for the flag and the file to
+  disagree.
+- **It names the option, not just the path.** Each method knows the flag that supplied its file, so a
+  missing file says `--thresholds` rather than throwing a `NoSuchFileException` from a deep read. That is
+  the one user-visible behaviour change: previously a missing thresholds file surfaced as a raw
+  `NoSuchFileException` with no mention of which argument produced it.
+- **Reading is not judging.** The loader does not validate metric codes (an unknown one is still silently
+  never matched) and does not reject unknown rule-condition keys (they are captured for
+  `CombinationDetector.validateRules` to report, per DEBT-04). Both are existing behaviour that other
+  tasks own, and both are preserved rather than quietly tightened.
+
+`ConfigLoader` is the second entry on `CliObjectMapperContractTest`'s allow-list of classes permitted to
+name `ObjectMapper`, and the reason is worth stating: reading configuration is a genuinely different job
+that needs a genuinely different configuration. `CliObjectMapper` defines how this tool *writes* JSON —
+property order, mixins, `Value` rendering — and none of that applies to a YAML file a user wrote, which is
+never serialized and whose permissiveness is wanted rather than fought. The allow-list previously named
+`ExclusionConfigLoader` and said unifying the config loaders was TASK-402's scope; TASK-402 did that, so
+the exception now names the facade instead of one of its three callers.
+
+### Backward compatibility: how it is proven, not asserted
+
+The gate for the consolidation is "existing files load with identical results", and two independent checks
+carry it:
+
+- **`JsonContractGoldenTest` is untouched and still passes.** The JSON path produces byte-for-byte what it
+  produced before, which covers every existing config file in use.
+- **The dual-format claim is an end-to-end equality, not a map comparison.** `ConfigLoaderTest` runs
+  `validate` and `detect` twice over the golden fixture project — once with the `*.json` configs, once with
+  hand-written `*.yml` copies — and requires the two report files to be byte-identical. That works because
+  a report contains the paths of the *source* files it analysed and never the path of the config that
+  produced it, so any difference is a real difference in what was loaded. The `detect` case also covers
+  the broken rule in the fixture, so the YAML path is proven to report rule problems identically rather
+  than to swallow them.
+
 ## Build System
 
 - **Gradle** with Kotlin DSL (`build.gradle.kts`)

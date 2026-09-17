@@ -30,7 +30,10 @@ java-metrics-cli --help
 |--------|-------------|
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version |
-| `--exclude-file, -e, --ignore=<path>` | Path to YAML file with exclusion patterns (packages, classes to skip). Available on all subcommands. |
+| `--exclude-file, -e, --ignore=<path>` | Path to a JSON or YAML file with exclusion patterns (packages, classes to skip). Available on all subcommands. |
+
+Every configuration file — thresholds, rules and exclusions — accepts JSON or YAML. See
+[Configuration files](#configuration-files) for the rule that decides which parser reads a file.
 
 ### `analyze` Command
 
@@ -187,7 +190,7 @@ array is worth reading in the first place.
 
 All subcommands support the `--exclude-file` flag. When provided, files matching any of the patterns are skipped entirely before parsing and metric computation.
 
-**exclusions.yml format:**
+**exclusions.yml format** (JSON is accepted too — see [Configuration files](#configuration-files)):
 
 ```yaml
 exclusions:
@@ -200,6 +203,92 @@ exclusions:
 ```
 
 Patterns from `packages` and `classes` are merged into one list and tested against the fully qualified class name (e.g., `com.myapp.api.UserController`). If any pattern matches (via `find()` semantics), the file is excluded.
+
+## Configuration files
+
+Three files configure this tool, and **all three accept JSON or YAML**:
+
+| Config | Options that take it | Schema documented at |
+|---|---|---|
+| Thresholds | `validate -t, --thresholds` | [thresholds.json format](#thresholdsjson-format) |
+| Class rules | `detect --class-rules` | [Rules file format](#rules-file-format) |
+| Package rules | `detect --package-rules` | [Rules file format](#rules-file-format) |
+| Exclusions | `--exclude-file` (`-e`, `--ignore`), on every command | [Exclusions](#exclusions) |
+
+### Which parser reads your file
+
+The file extension decides. There are two rules and no others:
+
+| File name | Read by | Why |
+|---|---|---|
+| `*.json` | a **strict JSON** parser | A JSON file with a JSON mistake stays an error. YAML is permissive enough to accept a document that is not valid JSON — unquoted keys, a stray trailing comma in some positions — so routing `.json` through YAML would turn a typo into a silently different config |
+| anything else — `*.yml`, `*.yaml`, `*.conf`, or no extension | the **YAML** parser | YAML is a superset of JSON, so this accepts either syntax, and it is what `--exclude-file` has always done |
+
+**There is deliberately no `--format-config` flag.** The extension already answers the question, and a flag would add a way for the flag and the file to disagree — a new failure mode in exchange for a case that only arises when a file's name lies about its content. Rename the file and the question disappears.
+
+### The same file in both syntaxes
+
+A thresholds file, written as JSON and as YAML. Both produce identical validation output — this is asserted end to end, not just described:
+
+```json
+{
+  "WMC": { "min": 0, "max": 100 },
+  "CBO": { "max": 0 }
+}
+```
+
+```yaml
+WMC: { min: 0, max: 100 }
+CBO: { max: 0 }
+```
+
+A rules file:
+
+```json
+[
+  { "name": "ComplexClass", "conditions": [ { "metric": "WMC", "min": 4 } ] }
+]
+```
+
+```yaml
+- name: ComplexClass
+  conditions:
+    - metric: WMC
+      min: 4
+```
+
+An exclusions file, which was already YAML and now also accepts JSON:
+
+```json
+{ "exclusions": { "packages": ["^com\\.mycompany\\.generated\\..*"], "classes": [".*Test$"] } }
+```
+
+```yaml
+exclusions:
+  packages:
+    - "^com\\.mycompany\\.generated\\..*"
+  classes:
+    - ".*Test$"
+```
+
+The shipped sample files at the repository root — `thresholds.json`, `class-level-rules.json`, `package-level-rules.json` — stay in JSON. Nothing requires you to convert anything.
+
+### When a config file is wrong
+
+Every failure names the option that supplied the file, because "a file is missing" is much less useful than "`--thresholds` pointed at a file that is missing":
+
+```
+Analysis failed: Error: Thresholds file not found at /work/thresholds.json (from --thresholds). Provide a JSON or YAML file with threshold values.
+Analysis failed: Error: Failed to parse class rules file /work/rules.yml (from --class-rules): ...
+```
+
+### What the loader does not do
+
+Reading a config file is not the same as judging it, and the difference is on purpose:
+
+- An **unknown metric name** in a thresholds file is still silently never matched — that behaviour is unchanged, and it is why a threshold on a metric that does not exist fails nothing rather than warning.
+- An **unknown key** in a rule condition is still captured and reported by `detect` rather than rejected at parse time — see [Rule problems](#rule-problems). A partially broken rule degrades instead of disappearing.
+- An **omitted `min` or `max`** in a thresholds entry is still filled with a sentinel rather than rejected, which has a known defect for one-sided thresholds — see DEBT-14 in `docs/tech-debt-tracker.md`.
 
 ## Examples
 

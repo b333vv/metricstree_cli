@@ -101,7 +101,7 @@ final class AnalyzeCommand implements Callable<Integer> {
         if (excludeFilePath == null) {
             return ExclusionConfig.empty();
         }
-        return ExclusionConfigLoader.load(excludeFilePath);
+        return ConfigLoader.exclusions(excludeFilePath);
     }
 
     AnalysisRequest buildRequest(ExclusionConfig exclusions) {

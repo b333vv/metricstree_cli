@@ -1,6 +1,71 @@
 # what has been done
 
-## Phase 2: the snapshot becomes the global-analysis contract (2026-09-16)
+## Phase 4: the ecosystem — SARIF output and one config format (2026-09-17)
+
+### TASK-402 — one config facade, JSON or YAML — done (2026-09-17)
+
+**Three config types were read in three places, in two formats, with two error styles.** `ValidateCommand`
+walked a JSON tree by hand, `DetectCommand` deserialized a JSON list with the same four lines **twice** —
+once for class rules and once for package rules — and `ExclusionConfigLoader` configured its own YAML
+mapper. Nothing was shared, so "what a config file may contain" and "what a broken config file says" were
+decided three times. All three now go through `ConfigLoader`.
+
+**The format rule, and why it is asymmetric.** `*.json` is read by the strict JSON parser — through
+`CliObjectMapper`, so the strictness rule has one owner — and *everything else* goes to YAML, which reads
+JSON too. The asymmetry is the whole point: YAML is permissive enough to accept a document that is not
+valid JSON (unquoted keys, some trailing commas), so routing `.json` through YAML would turn a JSON typo
+into a silently different config. A test pins exactly that: a `.json` file containing a YAML document must
+fail to parse.
+
+**No `--format-config` flag, although the task's scope allowed one.** The extension already answers the
+question, and a flag would add a way for the flag and the file to disagree — a new failure mode in
+exchange for a case that only arises when a file's name lies about its content. That is a scope decision,
+so it is recorded rather than left as an omission.
+
+**What the facade exposes.** Types, not trees: `thresholds(Path)` → `Map<String, Threshold>`,
+`classRules(Path)` / `packageRules(Path)` → `List<CombinationDefinition>`, `exclusions(Path)` →
+`ExclusionConfig`. The two rule methods differ only in the flag they name in an error message.
+
+Two smaller consequences:
+
+- **`Threshold` moved out of `ValidateCommand`** to become a type in its own right. It was
+  `ValidateCommand.Threshold`, which made a configuration type a detail of the command that happens to
+  consume it first and left `BaselineFilter` reaching into a command class to name the type it operates on.
+- **`CliObjectMapperContractTest`'s allow-list changed meaning, not size.** It named
+  `ExclusionConfigLoader` and said unifying the config loaders was TASK-402's scope. It now names
+  `ConfigLoader`, so the exception is the config facade rather than one of its three callers.
+
+**The one user-visible change is in an error message, and it is an improvement.** A missing thresholds or
+rules file used to surface as a raw `NoSuchFileException` naming a path but not the argument that produced
+it. Every config failure now names its option: `--thresholds`, `--class-rules`, `--package-rules`,
+`--exclude-file`.
+
+**Backward compatibility is proven two ways, not asserted once.** `JsonContractGoldenTest` is untouched and
+still passes, which covers the JSON path byte for byte. And the dual-format claim is an **end-to-end
+equality**: `ConfigLoaderTest` runs `validate` and `detect` twice over the golden fixture project — once
+with the `*.json` configs, once with hand-written `*.yml` copies — and requires the two report files to be
+**byte-identical**. That works because a report contains the paths of the *source* files it analysed and
+never the path of the config that produced it, so any difference is a real difference in what was loaded.
+The `detect` half also covers the fixture's deliberately broken rule, so the YAML path is proven to report
+rule problems identically rather than to swallow them.
+
+**A defect found on the way, and deliberately not fixed.** The loader preserves the sentinel for an omitted
+threshold bound, and `Double.MIN_VALUE` is the smallest *positive* double — so a threshold with only a
+`max` has an effective minimum of `4.9e-324` and **rejects a metric whose value is `0`**, with a nonsense
+message to match (`"CBO is 0.0, below the configured minimum 4.9E-324"`). This is live, not hypothetical:
+the golden fixture contains `"CBO": { "max": 0 }` and the golden `validate.json` pins the consequence
+(`"expectedMin": 5e-324`). The fix is one line per bound, but it changes `validate` output — and can turn a
+`PASSED` into a `FAILED` — for every one-sided threshold in every user's config, which is exactly what this
+task's acceptance gate forbids. Recorded as **DEBT-14** with the fix and the consequence, and it needs its
+own reviewed decision.
+
+No ADR was written for this one. The decisions above are real, but they are CLI-internal plumbing rather
+than a contract other layers depend on, and ADRs 0001–0003 each record something that constrains future
+design well beyond their task. The rationale lives in `docs/ARCHITECTURE.md` instead.
+
+**Tests.** `./gradlew check` green: **369 unit tests (271 lib + 98 CLI), 0 failures, 1 intentional skip**,
+plus 3 distribution integration tests. `ConfigLoaderTest` is 16 of the CLI tests — the 8 exclusion tests
+moved from `ExclusionConfigLoaderTest` unchanged apart from the call they make, plus 8 new.
 
 ### TASK-401 — SARIF output and the `--format` flag — done (2026-09-17)
 
@@ -82,6 +147,8 @@ validates against the published schema file rather than a hand-written list of s
 
 **Tests.** `./gradlew check` green: **361 unit tests (271 lib + 90 CLI), 0 failures, 1 intentional skip**,
 plus 3 distribution integration tests. `SarifReportWriterTest` is 12 of the CLI tests.
+
+## Phase 2: the snapshot becomes the global-analysis contract (2026-09-16)
 
 ### TASK-302 — one mapper, mixins instead of view records — done (2026-09-17)
 

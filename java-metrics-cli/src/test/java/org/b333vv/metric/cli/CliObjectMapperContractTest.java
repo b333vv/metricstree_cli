@@ -46,15 +46,20 @@ class CliObjectMapperContractTest {
     /**
      * The only types allowed to name {@code ObjectMapper}.
      *
-     * <p>{@code CliObjectMapper} is the shared configuration. {@code ExclusionConfigLoader} is listed
-     * because it needs a YAML mapper, which is a genuinely different configuration for a genuinely
-     * different job — reading configuration, not writing the report contract — and unifying the two
-     * is TASK-402's scope, not this one's. Any third entry is a decision, not an accident, which is
-     * the point of the assertion.
+     * <p>{@code CliObjectMapper} is the shared configuration for <em>output</em>.
+     * {@code ConfigLoader} is listed because reading configuration is a genuinely different job that
+     * needs a genuinely different configuration: YAML input is never serialized, so none of the
+     * output contract — property order, mixins, {@code Value} rendering — applies to it, and YAML's
+     * permissiveness is wanted rather than fought. Any third entry is a decision, not an accident,
+     * which is the point of the assertion.
+     *
+     * <p>This list used to name {@code ExclusionConfigLoader}, the single exclusions loader, and the
+     * comment said unifying the config loaders was TASK-402's scope. TASK-402 did that: there is now
+     * one config facade, so the exception names the facade instead of one of its three callers.
      */
     private static final Set<String> ALLOWED_TO_NAME_OBJECT_MAPPER = Set.of(
             "CliObjectMapper.class",
-            "ExclusionConfigLoader.class");
+            "ConfigLoader.class");
 
     /** A floor on the scan, so a scan that finds nothing because it looked elsewhere fails loudly. */
     private static final int MINIMUM_EXPECTED_CLASSES = 12;

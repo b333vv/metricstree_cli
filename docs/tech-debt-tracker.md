@@ -162,6 +162,26 @@
   `informationUri` need no mechanism, only facts the build does not currently carry — this module's Gradle
   `version` is `unspecified`, and the project has no published URL — so they close the day either exists.
 
+- **DEBT-14 — A one-sided threshold rejects a metric whose value is `0`.** Found while moving the
+  thresholds loader in TASK-402 (2026-09-17) and deliberately **not** fixed there, because that task's
+  acceptance gate is "existing config files load with identical results" and this changes validation
+  results.
+  `ConfigLoader.thresholds` fills an omitted bound with `Double.MIN_VALUE` / `Double.MAX_VALUE`, and
+  `ValidateCommand` then tests `value >= min && value <= max`. `Double.MIN_VALUE` is the smallest
+  *positive* double (`4.9e-324`), not the most negative one, so a threshold that configures only a maximum
+  has an effective minimum of `4.9e-324` — and `0 >= 4.9e-324` is false, so a metric that is legitimately
+  zero is reported as **below the minimum**. The message is nonsense in the same way:
+  `"CBO is 0.0, below the configured minimum 4.9E-324"`.
+  This is live, not hypothetical: `java-metrics-cli/src/test/resources/golden-config/thresholds.json`
+  contains `"CBO": { "max": 0 }`, and the golden `validate.json` pins the consequence —
+  `"expectedMin": 5e-324` on every `CBO` result. Any class in that fixture with a `CBO` of `0` would be
+  reported as a violation.
+  The fix is one line per bound — `-Double.MAX_VALUE` for an omitted `min`, `Double.MAX_VALUE` for an
+  omitted `max` — and it is safe in the sense that nothing depends on the sentinel *as a value*; but it
+  **changes the emitted `expectedMin` and can change a `PASSED` to `FAILED`** for every one-sided
+  threshold in every user's config, and it requires regenerating the `validate` golden. It needs its own
+  reviewed decision, and the golden regeneration is the visible part of it.
+
 ## Resolved Debt Items
 - **DEBT-10 — Five method visitors kept mutable state while being shared across parallel workers.**
   Resolved 2026-09-17 (the DEBT-10 fix commit). Found by TASK-203's corpus equivalence check, and the
