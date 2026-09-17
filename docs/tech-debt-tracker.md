@@ -227,13 +227,19 @@
   FQCN *and* simple name) and its accessor are gone. The sweep also found `getEnhancedUnits()` and
   the `enhancedUnits` field to be equally dead, so they were removed too: the units stay reachable
   through the declarations' own parent chain and through the analyzer's local `parsedUnits` list,
-  so nothing depended on the context's copy. `EnhancedJavaParserContext` is now just
+  so nothing depended on the context's copy. `EnhancedJavaParserContext` was then just
   `getAllClassDeclarations()` + `fromEnhancedUnits`.
-  Evidence: `EnhancedJavaParserContextTest` pins the public surface reflectively
+  Evidence: `EnhancedJavaParserContextTest` pinned the public surface reflectively
   (`expected: [fromEnhancedUnits, getAllClassDeclarations]` / `actual: [..., getCompilationUnitsByClass,
   getEnhancedUnits]` before the removal), plus characterization tests for nested/inner declaration
   collection, default-package handling and list immutability. The TASK-001 goldens are unchanged,
   which proves no metric value moved.
+  **Superseded by [TASK-204](tasks/TASK-204-two-pass-pipeline.md) (2026-09-17):** the class had no
+  production caller left once TASK-202 and TASK-203 removed the global context and the declaration
+  index, so it moved to the test source set as a fixture. The reflection guard went with it — it
+  existed to stop *production* from regrowing unused accessors, and there is no production class to
+  guard any more; the characterization tests stayed. See the TASK-204 entry in
+  [PROGRESS.md](PROGRESS.md).
 
 ## Tracking Rule
 Close a debt item only when automated checks prove the replacement path is active and stable.

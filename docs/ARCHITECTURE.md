@@ -50,8 +50,9 @@ metricstree_cli/
 
 **library/javaparser** — Analysis engine
 - `JavaMetricsAnalyzer` — Main analyzer interface
-- `JavaParserJavaMetricsAnalyzer` — Implementation using JavaParser
+- `JavaParserJavaMetricsAnalyzer` — Implementation using JavaParser; `analyze()` runs the global pass, `analyzeClasses()` runs pass 1 and returns snapshots
 - `AstMemoryManager` — Owns the lifetime of every parsed unit: parses in windows, releases each unit once its task returns
+- `AnalysisParserConfiguration` — The parsing policy every parse site shares, so a file is never read one way during analysis and another during resolution
 - `AnalysisPhaseListener` — Observational per-phase timing hook used by the benchmark
 - `ClasspathInspector` / `UsableClasspath` — Decide what each `--classpath` entry can back, split by the solver it needs
 - `JavaParserTypeSolverFactory` — Builds the solver chain in the precedence order below
@@ -137,6 +138,32 @@ symbol resolver of its own, so `ResolverAttachingTypeSolver` attaches the analys
 units the solver hands out. Without it, resolving *through* a re-parsed declaration fails — which is
 exactly what the DIT visitor does when it walks up an `extends` chain. Full reasoning in ADR
 `docs/adr/0002-bounded-ast-residency.md`.
+
+#### Pass 1 has its own scope, and what may still hold a unit
+
+The window bounds *when* a unit is dropped. The other half of the guarantee is *who can still reach
+anything*, and that is a matter of scope: pass 1 lives in `analyzeClasses()`, which returns snapshots,
+so the type solver, its caches, the parser configuration and the units named on the command line are
+locals of that method and are unreachable before the global pass starts. They used to be locals of
+`analyze()` and stayed reachable to the end of the run.
+
+The structures that can still hold a parsed unit or a symbol past its window, and why each is
+acceptable:
+
+| Holder | Holds | Why it is acceptable |
+|---|---|---|
+| `AstMemoryManager.ParsedUnit` | the unit being analysed | released in a `finally`; asserted with `WeakReference`s |
+| `MemoryTypeSolver` | units named by `--source-file` | a file named individually has no package root, so a path-based solver cannot answer for it — the in-memory index is the only mechanism, and it is limited to exactly those files |
+| `JavaParserTypeSolver` cache | up to `SOLVER_CACHE_SIZE` (512) units per solver, soft values | bounded explicitly; soft values let the collector reclaim them |
+| `JavaParserFacade` / `CombinedTypeSolver` | resolved types | JavaParser's own caches, not ours (see DEBT-11) |
+| everything else in `src/main` | — | no static mutable state, and `library.core` has no JavaParser reference at all |
+
+Two tests hold that line. `AnalyzerAstResidencyTest` drives the whole analyzer over a project spanning
+several windows and asserts the peak stayed within one window, and that repeated analyses do not
+accumulate units. `CorePackageAstIndependenceTest` scans every compiled `library.core` type for a
+`com/github/javaparser` reference in its constant pool — the snapshot and report layer must stay
+expressible without JavaParser types, because one `Node` field there would put every AST back within the
+global pass's reach without changing a single metric value.
 
 ### Diagnostics
 
@@ -278,11 +305,13 @@ java-metrics validate -s <source> -t <thresholds.json> -o <report.json> [--stric
 1. CLI parses arguments → creates `AnalysisRequest`
 2. `JavaMetricsAnalyzer.analyze()` resolves the file list, keeps the individually-named files for the
    in-memory index, and builds the type solver from the source roots and classpath entries
-3. **Parse + pass 1 (per class, windowed):** `AstMemoryManager` parses a window of files in parallel;
-   for each unit the JavaParser visitors compute local metrics and build the class's
-   `DependencySnapshot`, and the unit is released as soon as that task returns
+3. **Parse + pass 1 (per class, windowed):** `analyzeClasses()` runs this phase; `AstMemoryManager`
+   parses a window of files in parallel; for each unit the JavaParser visitors compute local metrics
+   and build the class's `DependencySnapshot`, and the unit is released as soon as that task returns.
+   The method returns snapshots, which is what puts the type solver and the parser configuration out
+   of reach before pass 2 begins
 4. **Pass 2 (global):** `CrossClassMetricCalculator` inverts the snapshots into NOC/FDP, with no AST
-   and no resolver; the collected classes are sorted by qualified name to restore the global order
+   and no resolver; the collected classes were sorted by qualified name to restore the global order
 5. Results assembled into an `AnalyzedClass` per class, then folded into the `MetricReport` tree
 6. For `analyze`: `MetricReportJsonWriter` serializes to JSON
 7. For `validate`: Compare metrics against thresholds, produce validation report

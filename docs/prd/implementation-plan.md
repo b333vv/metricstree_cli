@@ -198,7 +198,7 @@ different answer to the same question and the cap remains a reporting-policy dec
 
 | # | Criterion | Measured by | Task |
 |---|---|---|---|
-| 1 | Peak heap −30% on a 500+ class project | TASK-002 baseline vs TASK-204 benchmark run | 002, 204 |
+| 1 | **Live set −30%** on a 500+ class project — *heap after GC* at the end of VISIT, and the corpus still completing at a reduced `-Xmx` | TASK-002 baseline vs TASK-204 benchmark run | 002, 204 |
 | 2 | `diagnostics` section warns on unresolved symbols; CBO/LCOM match reference values with full classpath | golden corpus + diagnostics assertions | 102–105 |
 | 3 | New simple metric = 1 visitor class + 1 registry entry, <30 min | TASK-301 dry run ("Number of Return Statements") | 301 |
 | 4 | SARIF report loads into GitHub Code Scanning | TASK-401 acceptance | 401 |
@@ -293,17 +293,99 @@ corpus):
 
 Two consequences for the remaining Phase 2 tasks:
 
-- **Criterion 1 (peak heap −30%) is measured with the same instrument and should be re-stated** in
-  terms of the live set, or the peak redefined as sampled after a collection. As written, TASK-204 can
-  meet the memory goal and still fail the criterion, because the criterion is not measuring memory.
+- **Criterion 1 has been re-stated** in terms of the live set (see §5 and the TASK-204 measurement
+  below): the sampled peak is an instrument artefact, and as originally written the criterion could be
+  failed by a change that met the memory goal — TASK-203 is exactly that case.
 - **The CLI's ceiling is now the serialiser, not the analysis** (`MetricReportJsonWriter` builds the
   whole 62 MB report as one `String`). That belongs to TASK-302.
 - **`resolutionCoverage` is unchanged** by TASK-203 — bit-identical at `0.6491621776056496` — and the
   class / method / package counts (4 020 / 19 994 / 1 318) and diagnostic count (121 494) are
   identical, so the memory win cost no accuracy.
-- **Note for any corpus-based comparison:** the corpus is not deterministic run-to-run (two runs of one
-  jar differ in 256 metric values, all in `CC`/`CCM`/`CND`/`LND`/`MND` and their derivatives). See
-  **DEBT-10** in [the tracker](../tech-debt-tracker.md) before treating a corpus diff as evidence.
+- **Note for any corpus-based comparison:** the corpus is *almost* an exact oracle. It was not one at
+  the time of this measurement (two runs of one jar differed in 256 metric values, all in
+  `CC`/`CCM`/`CND`/`LND`/`MND` and their derivatives) — that was **DEBT-10**, **fixed 2026-09-17**. One
+  class still varies run-to-run: **DEBT-11** in [the tracker](../tech-debt-tracker.md). Check both
+  before treating a corpus diff as evidence.
+
+### TASK-204 measurement (2026-09-17)
+
+Same machine, same command, same `-Xmx4g`. "Before" is the pre-TASK-204 build (a worktree at
+`69f4c4c`, i.e. after TASK-203 and the DEBT-10 fix). TASK-204 made **no metric-value change**, so this
+is a regression check against TASK-203 rather than a new memory win — TASK-203 had already met the
+−30% goal by a wide margin.
+
+**Per-phase (three runs of the TASK-204 build, to show the spread)**
+
+| Phase | Run A | Run B | Run C |
+|---|---|---|---|
+| VISIT, heap after GC | 528 MB | 530 MB | 526 MB |
+| AGGREGATE, heap after GC | 541 MB | 542 MB | 538 MB |
+| Overall peak heap (sampled) | 3 308 MB | 3 303 MB | 3 214 MB |
+| VISIT time | 28 362 ms | 30 158 ms | 30 330 ms |
+| Total wall time | 29 587 ms | 31 409 ms | 31 574 ms |
+
+**Against the baseline and TASK-203**
+
+| | TASK-002 baseline | TASK-203 | TASK-204 (range of 3) | vs baseline |
+|---|---|---|---|---|
+| VISIT, heap after GC | 1 949 MB | 526 MB | 526 – 530 MB | **−73%** |
+| AGGREGATE, heap after GC | 1 958 MB | 538 MB | 538 – 542 MB | −72% |
+| Overall peak heap (sampled) | 3 815 MB | 3 542 MB | 3 214 – 3 308 MB | −13% |
+| VISIT time | 41 273 ms | — | 28 362 – 30 330 ms | −30% |
+| Total wall time | 46 161 ms | 32 293 ms | 29 587 – 31 574 ms | −32% |
+
+**The gate is met, and there is no regression.** The live set at the end of VISIT is **−73%** against
+the 1 949 MB baseline (criterion 1 needs −30%), and TASK-203's 526 MB sits *inside* TASK-204's own
+526–530 MB run-to-run spread rather than below it — the difference between the two builds is smaller
+than the measurement's noise. The sampled peak improved as well (−13% against the baseline, −7% to
+−9% against TASK-203), which is the opposite of what a residency regression would look like.
+
+**Heap ceiling** (CLI, same corpus, `analyze --source-root … --output-file …`):
+
+| Heap cap | TASK-203 | TASK-204 |
+|---|---|---|
+| `-Xmx1g` | completes in 44 s | **completes in 32 s**, exit 0, 61.8 MB report |
+
+**Equivalence: TASK-204 moved no metric value.** The two builds were run back to back over the corpus
+and the reports diffed entity by entity — 4 020 classes, 19 994 methods and 1 318 packages, 25 332
+metric-bearing entities in total:
+
+- **0 metric values differ** across all 25 332 entities, and neither build reports an entity the other
+  does not.
+- Diagnostics: **121 494 in both**. The only difference is the one class in DEBT-11
+  (`SolverPermissionManager`'s suppressed count, 89 ↔ 90).
+- `resolutionCoverage` differs in its 15th digit (`0.6491613636326637` ↔ `0.6491621776056496`) — the
+  same DEBT-11 spread, in the direction opposite to the one recorded when DEBT-11 was written, which
+  confirms it is a two-way run-to-run variation rather than a trend.
+- The TASK-001 goldens are green without regeneration.
+
+**What TASK-204 actually changed, given the numbers were already in place.** The road-map's Task 2.1
+topology — local metrics computed while a class's unit is resident, global metrics from lightweight
+snapshots afterwards — was delivered by TASK-202 and TASK-203. TASK-204 closed the task by making that
+topology a property of the code rather than a convention, and by proving it:
+
+1. **Pass 1 got its own scope.** `analyze()` was split so that parsing and per-class analysis happen in
+   `analyzeClasses()`, which returns snapshots. The type solver, its caches, the parser configuration
+   and the units named on the command line are locals of *that* method, so they are unreachable by the
+   time the global pass runs. Previously they were locals of `analyze()` and stayed reachable to the
+   end of the run.
+2. **The dead global structure is gone from production.** `EnhancedJavaParserContext` — the
+   `allClassDeclarations` list the road-map names — had no production caller left, so it moved to the
+   test source set as a fixture. `EnhancedJavaParserContextBuilder` was deleted; all that remained of
+   it was the parsing policy, now `AnalysisParserConfiguration`.
+3. **The residency bound is asserted end to end**, not just for the manager: `AnalyzerAstResidencyTest`
+   drives the whole analyzer over a project spanning several windows and asserts the peak stayed within
+   one window, and that repeated analyses do not accumulate units.
+4. **The two-pass boundary is asserted at the class-file level**:
+   `CorePackageAstIndependenceTest` scans every compiled `library.core` type for a
+   `com/github/javaparser` reference in its constant pool. It fails if any snapshot or report type
+   grows a field, method signature, generic bound, local variable or cast that names an AST type —
+   which is the one change that would silently put every AST back within the global pass's reach.
+5. **The retention audit is recorded** in [PROGRESS.md](../PROGRESS.md) and summarised in
+   [ARCHITECTURE.md](../ARCHITECTURE.md): no static mutable state in `src/main`, no AST reference in
+   `library.core` at all, `AnalysisCollector` holds no node, and the only structures that outlive a
+   window are the by-design in-memory index for `--source-file` units, the solver's bounded 512-file
+   cache, and JavaParser's own caches.
 
 ---
 

@@ -7,8 +7,6 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.resolution.TypeSolver;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -18,39 +16,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Direct test for {@link EnhancedJavaParserContext}, added by DEBT-05 / TASK-005.
+ * Direct test for {@link EnhancedJavaParserContext}.
  *
- * <p>The class previously exposed three accessors, but only {@code getAllClassDeclarations()} had
- * callers: {@code getEnhancedUnits()} and {@code getCompilationUnitsByClass()} were dead, and the
- * latter kept a second full-project index (FQCN *and* simple name per class) alive for the whole
- * analysis. The dead structures are gone, and {@link #exposesOnlyTheLiveAccessors()} is the
- * regression test for that: it fails if a new unused accessor (or the removed map) comes back.
+ * <p>The class was added by DEBT-05 / TASK-005, which removed the two dead accessors it used to
+ * expose: {@code getEnhancedUnits()} and {@code getCompilationUnitsByClass()}, the latter keeping a
+ * second full-project index (FQCN *and* simple name per class) alive for the whole analysis.
  *
- * <p>Asserting on the accessor set is deliberate — a pure deletion task has no observable behaviour
- * change to assert on, so the shape of the public surface is the contract worth pinning.
+ * <p>TASK-204 then moved the class itself into the test source set: the production analysis stopped
+ * building a context over every unit, so nothing in {@code src/main} constructs it any more. Its
+ * public-surface guard — a reflection assertion that no unused accessor had come back — went with it,
+ * because the class is now a fixture: a new accessor here needs a test that calls it, not a
+ * production caller. What remains below is the fixture's behaviour, which the visitor tests rely on.
  */
 class EnhancedJavaParserContextTest {
-
-    /**
-     * The complete public surface of the context after DEBT-05. Any addition here must come with a
-     * caller and an updated expectation.
-     */
-    private static final Set<String> EXPECTED_PUBLIC_METHODS =
-            Set.of("fromEnhancedUnits", "getAllClassDeclarations");
-
-    @Test
-    void exposesOnlyTheLiveAccessors() {
-        Set<String> publicMethods = java.util.Arrays.stream(EnhancedJavaParserContext.class.getDeclaredMethods())
-                .filter(method -> Modifier.isPublic(method.getModifiers()))
-                .map(Method::getName)
-                .collect(Collectors.toCollection(TreeSet::new));
-
-        assertEquals(
-                new TreeSet<>(EXPECTED_PUBLIC_METHODS),
-                publicMethods,
-                "EnhancedJavaParserContext must not grow unused accessors; the compilation-unit index "
-                        + "removed by DEBT-05 must not come back without a caller");
-    }
 
     @Test
     void collectsDeclarationsFromEveryUnitIncludingNestedOnes() {
@@ -108,7 +86,7 @@ class EnhancedJavaParserContextTest {
 
         TypeSolver typeSolver = new JavaParserTypeSolverFactory()
                 .create(units, List.of(), List.of(), EnhancedJavaParserContextTest.class.getClassLoader());
-        return new EnhancedJavaParserContextBuilder().build(units, typeSolver);
+        return EnhancedJavaParserContext.fromUnits(units, typeSolver);
     }
 
     private static CompilationUnit parse(String sourceCode) {

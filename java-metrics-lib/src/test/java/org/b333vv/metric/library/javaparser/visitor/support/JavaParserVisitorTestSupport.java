@@ -12,7 +12,6 @@ import org.b333vv.metric.library.core.MetricResult;
 import org.b333vv.metric.library.core.ResolutionStats;
 import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.library.javaparser.EnhancedJavaParserContext;
-import org.b333vv.metric.library.javaparser.EnhancedJavaParserContextBuilder;
 import org.b333vv.metric.library.javaparser.JavaParserTypeSolverFactory;
 import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserClassMetricVisitor;
@@ -54,7 +53,7 @@ public abstract class JavaParserVisitorTestSupport {
 
         TypeSolver typeSolver = new JavaParserTypeSolverFactory()
                 .create(units, List.of(), List.of(), getClass().getClassLoader());
-        return new EnhancedJavaParserContextBuilder().build(units, typeSolver);
+        return EnhancedJavaParserContext.fromUnits(units, typeSolver);
     }
 
     protected ClassOrInterfaceDeclaration findClass(EnhancedJavaParserContext context, String qualifiedName) {

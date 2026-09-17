@@ -2,6 +2,91 @@
 
 ## Phase 2: the snapshot becomes the global-analysis contract (2026-09-16)
 
+### TASK-204 — two-pass pipeline, made structural and proved — done (2026-09-17)
+
+**The road-map topology was already in place; this task made it a property of the code.** The
+road-map's Task 2.1 asks for local metrics computed while a class's unit is resident and global metrics
+computed afterwards from lightweight snapshots. TASK-202 built the snapshot contract and TASK-203 built
+the window and released the units, so by the time this task started the pipeline *ran* in two passes.
+What it could not do was *guarantee* it: pass 1's collaborators were locals of the same method as pass
+2, alive to the end of the run. TASK-204 closes that, and proves the memory gate.
+
+**What changed.**
+
+- **Pass 1 got its own scope.** `analyze()` was split: `analyzeClasses()` parses, analyses each class
+  while its unit is resident, and returns snapshots; `analyze()` runs the global pass over them. The
+  type solver and its caches, the parser configuration, and the units named individually on the command
+  line are locals of `analyzeClasses()` and nothing else, so they are unreachable by the time the global
+  pass begins. This is the same idea as the window, applied to the other half of the retention: not
+  "when is a unit dropped" but "who can still reach anything".
+- **The dead global structure is gone from production.** `EnhancedJavaParserContext` — the
+  `allClassDeclarations` retained list the road-map names — had **no production caller** left once
+  TASK-202 and TASK-203 removed the context and the declaration index, so it moved to the test source
+  set as a fixture (`fromUnits` attaches the resolver and collects declarations, which is what the ~15
+  visitor tests need). `EnhancedJavaParserContextBuilder` is deleted; all that remained of it was the
+  parsing policy, now `AnalysisParserConfiguration`. The reflection test that guarded the class's public
+  surface went with it — it existed to stop *production* regrowing unused accessors, and there is no
+  production class to guard.
+- **The residency bound is asserted end to end.** `AnalyzerAstResidencyTest` drives the whole analyzer
+  over a 120-class project — several windows on any machine — and asserts the peak stayed within one
+  window and that every class was still analysed. A second test runs `analyze` three times on one
+  analyzer and asserts the observed peak does not rise, which is what a leak between runs would look
+  like.
+- **The two-pass boundary is asserted at the class-file level.** `CorePackageAstIndependenceTest` scans
+  every compiled `library.core` type for a `com/github/javaparser` reference in its constant pool. This
+  is the one change that would silently undo the whole phase — one `Node` field on `AnalyzedClass` or
+  `DependencySnapshot` puts every AST back within the global pass's reach, and no metric value would
+  change to announce it. Verified to fail when broken: adding
+  `private static final Class<?> … = com.github.javaparser.ast.Node.class;` to `DependencySnapshot`
+  makes it report `[DependencySnapshot.class]`; the break was then reverted.
+- **A first assertion in that test earned its keep immediately.** It also asserts a floor on the number
+  of classes scanned, so a scan that looks in the wrong place fails instead of passing vacuously — and
+  it did exactly that: `Class.getResource("")` resolved to the *test* classes directory, because the
+  guard test shares the package with the classes it scans and the test output is on the classpath. It
+  now resolves the class file of a main class instead.
+
+**Retention audit.** TASK-204's risks section asks for one; this is it. Every structure that can hold a
+parsed unit or a symbol past the window it belongs to:
+
+| Holder | Holds | Verdict |
+|---|---|---|
+| `AstMemoryManager.ParsedUnit.compilationUnit` | the unit being analysed | released in a `finally`, asserted with `WeakReference`s |
+| `JavaParserJavaMetricsAnalyzer` fields | factories, calculators, listeners — no AST | clean |
+| `EnhancedJavaParserContext.allClassDeclarations` | every declaration | **no longer in production** — moved to the test tree |
+| `AnalysisCollector` | metrics, diagnostics, counts, a `SourceLocation` | no node; `Node` appears only as a transient parameter |
+| `MemoryTypeSolver` | the units named by `--source-file` | by design, and documented — such a file has no package root, so a path-based solver cannot answer for it |
+| `JavaParserTypeSolver` re-parse cache | up to 512 units per solver, soft values | bounded, with the bound set explicitly (`SOLVER_CACHE_SIZE`) |
+| `JavaParserFacade` / `CombinedTypeSolver` caches | resolved types | JavaParser's own; see DEBT-11 |
+| static mutable state in `java-metrics-lib/src/main` | — | **none**: every `static` field is a `final` immutable collection |
+
+**Measured** (same machine, same command, same `-Xmx4g`; three runs of this build against a pre-change
+worktree at `69f4c4c`):
+
+| | TASK-002 baseline | TASK-203 | TASK-204 (3 runs) | vs baseline |
+|---|---|---|---|---|
+| VISIT, heap after GC | 1 949 MB | 526 MB | 526 – 530 MB | **−73%** |
+| AGGREGATE, heap after GC | 1 958 MB | 538 MB | 538 – 542 MB | −72% |
+| Overall peak heap (sampled) | 3 815 MB | 3 542 MB | 3 214 – 3 308 MB | −13% |
+| Total wall time | 46 161 ms | 32 293 ms | 29 587 – 31 574 ms | −32% |
+
+The **live-set gate is met** (−73% against a −30% requirement) and there is **no regression against
+TASK-203**: 526 MB is inside this build's own 526–530 MB spread, so the gap between the two builds is
+below the measurement's noise, and the sampled peak *improved* rather than worsened. At the heap
+ceiling the corpus completes at `-Xmx1g` in **32 s** (TASK-203 recorded 44 s), exit 0, 61.8 MB report.
+
+**No metric value moved.** The two builds were run back to back over the corpus and the reports diffed
+entity by entity — 4 020 classes, 19 994 methods, 1 318 packages, 25 332 metric-bearing entities:
+**0 differing values**, and neither build reports an entity the other does not. Diagnostics are 121 494
+in both, the only difference being DEBT-11's one class (`SolverPermissionManager`'s suppressed count,
+89 ↔ 90), and `resolutionCoverage` differs in its 15th digit
+(`0.6491613636326637` ↔ `0.6491621776056496`) — DEBT-11's documented spread, in the direction opposite
+to the one recorded when it was written, which shows it is a two-way variation rather than a trend.
+Goldens green without regeneration.
+
+- Tests: 3 new (`AnalyzerAstResidencyTest` ×2, `CorePackageAstIndependenceTest`), 1 removed (the
+  now-moot reflection guard in `EnhancedJavaParserContextTest`). `./gradlew check` green: 316 tests,
+  0 failures, 1 skipped.
+
 ### DEBT-10 — five method visitors were shared across parallel workers — done (2026-09-17)
 
 Found while verifying TASK-203, fixed before TASK-204 rather than left to TASK-205. It is the reason

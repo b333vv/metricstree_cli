@@ -174,10 +174,9 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
     private final JavaParserTypeSolverFactory typeSolverFactory;
     /**
-     * Owns how long a parsed unit stays alive. It replaced the injected
-     * {@link EnhancedJavaParserContextBuilder}: the analysis no longer builds a global context over
-     * every unit, so the only thing it needs from that collaborator is the parser configuration,
-     * which is a static call.
+     * Owns how long a parsed unit stays alive. It replaced the injected global context builder: the
+     * analysis no longer builds a context over every unit, so all that is left of that collaborator
+     * is the parsing policy, {@link AnalysisParserConfiguration}.
      */
     private final AstMemoryManager astMemoryManager;
     private final DerivedMetricCalculator derivedMetricCalculator;
@@ -294,7 +293,67 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             return new MetricReport(new ProjectReport(request.projectName(), Map.of(), List.of()), diagnostics);
         }
 
+        // One tally for the whole run, shared by every collector, so the coverage reported at the end
+        // describes this analysis rather than one class. Never reused between runs. Created here
+        // because the global pass reports it; the local pass is what fills it.
+        ResolutionStats resolutionStats = new ResolutionStats();
+
+        // Pass 1, in its own method so that everything it needs — the type solver and its caches, the
+        // units named individually on the command line, the parser configuration — is out of scope
+        // once it returns. Pass 2 below therefore runs with only the snapshots reachable, which is
+        // what makes "the cross-class metrics are computed after the ASTs are released" a property of
+        // the code rather than a convention. See docs/adr/0002-bounded-ast-residency.md.
+        List<ClassAnalysis> classAnalyses = analyzeClasses(
+                request,
+                sourceFiles,
+                diagnostics,
+                metricSelection,
+                resolutionStats,
+                options.unresolvedSymbolDiagnosticCap());
+
+        List<AnalyzedClass> analyzedClasses = classAnalyses.stream()
+                .map(ClassAnalysis::analyzedClass)
+                .toList();
+
         phaseStart = System.nanoTime();
+        // The global pass. Everything from here on reads snapshots, never an AST: the cross-class
+        // metrics are computed from what each class recorded about itself while it was being
+        // analysed. FDP cannot know it is undefined until every class has been seen, so its
+        // diagnostics belong here rather than to the per-class pass that produced the snapshot.
+        Map<String, Map<MetricCode, Value>> crossClassMetrics = calculateCrossClassMetrics(classAnalyses);
+        List<PackageReport> packageReports = buildPackageReports(
+                analyzedClasses, crossClassMetrics, metricSelection);
+        // The project-level metrics do not include NOC or FDP — neither is aggregated upwards — so
+        // this pass needs the snapshots but not the cross-class results.
+        ProjectReport projectReport = buildProjectReport(
+                request.projectName(), packageReports, analyzedClasses, metricSelection, resolutionStats);
+        phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.AGGREGATE, System.nanoTime() - phaseStart);
+
+        return new MetricReport(projectReport, diagnostics);
+    }
+
+    /**
+     * Pass 1: parse every source file and compute each class's local and resolving metrics while its
+     * unit is resident, returning one snapshot per class.
+     *
+     * <p>This is a separate method rather than a block inside {@link #analyze} for one reason:
+     * <strong>scope</strong>. The type solver and its caches, the parser configuration and the units
+     * named individually on the command line are reachable from here and from nowhere else, so the
+     * moment this method returns they are unreachable, and the global pass cannot reach an AST even
+     * by accident. The previous shape kept them as locals of {@code analyze()}, alive for the whole
+     * run — exactly the retention TASK-203 and TASK-204 exist to remove.
+     *
+     * <p>The returned list is in qualified-name order: the parse window produces class analyses in
+     * path order, and the rest of the analysis expects the order the old global sort produced.
+     */
+    private List<ClassAnalysis> analyzeClasses(
+            AnalysisRequest request,
+            List<Path> sourceFiles,
+            List<AnalysisDiagnostic> diagnostics,
+            MetricSelection metricSelection,
+            ResolutionStats resolutionStats,
+            int unresolvedSymbolDiagnosticCap) {
+        long phaseStart = System.nanoTime();
 
         // Files named individually on the command line are the one case a source root cannot cover:
         // such a declaration has no package root to be found under, so it has to be indexed in
@@ -320,15 +379,10 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.PARSE, System.nanoTime() - phaseStart);
 
         phaseStart = System.nanoTime();
-        // One tally for the whole run, shared by every collector, so the coverage reported at the end
-        // describes this analysis rather than one class. Never reused between runs.
-        ResolutionStats resolutionStats = new ResolutionStats();
-        int unresolvedSymbolDiagnosticCap = options.unresolvedSymbolDiagnosticCap();
-
         // The AST window. Each file is parsed, analysed and dropped in turn, so what is resident is a
         // window's worth of ASTs rather than the project's worth; the units named on the command line
         // are the one exception, because the in-memory index that resolves them holds them.
-        ParserConfiguration parserConfiguration = EnhancedJavaParserContextBuilder.createParserConfiguration();
+        ParserConfiguration parserConfiguration = AnalysisParserConfiguration.create();
         List<FileAnalysis> fileAnalyses = new ArrayList<>();
         for (ParsedFile explicitFile : explicitFiles) {
             fileAnalyses.add(analyzeUnit(explicitFile.path(), explicitFile.compilationUnit(), typeSolver,
@@ -359,26 +413,9 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 .flatMap(fileAnalysis -> fileAnalysis.classes().stream())
                 .sorted(Comparator.comparing(classAnalysis -> classAnalysis.analyzedClass().qualifiedName()))
                 .toList();
-        List<AnalyzedClass> analyzedClasses = classAnalyses.stream()
-                .map(ClassAnalysis::analyzedClass)
-                .toList();
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.VISIT, System.nanoTime() - phaseStart);
 
-        phaseStart = System.nanoTime();
-        // The global pass. Everything from here on reads snapshots, never an AST: the cross-class
-        // metrics are computed from what each class recorded about itself while it was being
-        // analysed. FDP cannot know it is undefined until every class has been seen, so its
-        // diagnostics belong here rather than to the per-class pass that produced the snapshot.
-        Map<String, Map<MetricCode, Value>> crossClassMetrics = calculateCrossClassMetrics(classAnalyses);
-        List<PackageReport> packageReports = buildPackageReports(
-                analyzedClasses, crossClassMetrics, metricSelection);
-        // The project-level metrics do not include NOC or FDP — neither is aggregated upwards — so
-        // this pass needs the snapshots but not the cross-class results.
-        ProjectReport projectReport = buildProjectReport(
-                request.projectName(), packageReports, analyzedClasses, metricSelection, resolutionStats);
-        phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.AGGREGATE, System.nanoTime() - phaseStart);
-
-        return new MetricReport(projectReport, diagnostics);
+        return classAnalyses;
     }
 
     private List<Path> resolveSourceFiles(AnalysisRequest request, List<AnalysisDiagnostic> diagnostics) {
@@ -553,7 +590,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         if (explicitSourceUnits.isEmpty()) {
             return List.of();
         }
-        ParserConfiguration parserConfig = EnhancedJavaParserContextBuilder.createParserConfiguration();
+        ParserConfiguration parserConfig = AnalysisParserConfiguration.create();
 
         return runInDedicatedPool(() ->
                 explicitSourceUnits.parallelStream()

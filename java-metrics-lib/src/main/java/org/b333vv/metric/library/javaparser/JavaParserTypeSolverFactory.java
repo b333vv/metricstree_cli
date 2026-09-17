@@ -104,7 +104,7 @@ public class JavaParserTypeSolverFactory {
         //    The resolver is built here, before the solvers that carry it, because it has to be the one
         //    attached to the root solver; the solvers are added to that root immediately afterwards,
         //    and nothing resolves before the analysis starts.
-        ParserConfiguration parserConfiguration = EnhancedJavaParserContextBuilder.createParserConfiguration();
+        ParserConfiguration parserConfiguration = AnalysisParserConfiguration.create();
         SymbolResolver symbolResolver = new JavaSymbolSolver(combinedTypeSolver);
         for (Path sourceRoot : sourceRoots) {
             try {

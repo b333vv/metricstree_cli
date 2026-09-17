@@ -35,8 +35,7 @@ class AstMemoryManagerTest {
     @TempDir
     Path tempDir;
 
-    private static final ParserConfiguration PARSER_CONFIGURATION =
-            EnhancedJavaParserContextBuilder.createParserConfiguration();
+    private static final ParserConfiguration PARSER_CONFIGURATION = AnalysisParserConfiguration.create();
 
     @Test
     void neverHoldsMoreUnitsThanItsWindow() throws IOException {
