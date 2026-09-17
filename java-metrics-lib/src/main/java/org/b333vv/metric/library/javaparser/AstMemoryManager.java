@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -26,8 +27,8 @@ import java.util.function.Consumer;
  * ({@code Position}, {@code Range}, {@code JavaToken}, {@code TokenRange}) of every class at once —
  * none of which is needed once that class's metrics have been computed.
  *
- * <p>So the manager parses in <em>windows</em>: it parses up to {@link #windowSize()} files, hands
- * each unit to a {@link UnitTask} while it is resident, and drops its reference the moment the task
+ * <p>So the manager admits files under a <em>window</em>: at most {@link #windowSize()} units exist at
+ * once, each handed to a {@link UnitTask} while it is resident and dropped the moment the task
  * returns. The task is where the per-class work happens — visitors, snapshot extraction — so an AST
  * is alive only for as long as something is reading it. Nothing here reorders which visitors run;
  * it changes only <em>when</em> a unit is parsed relative to when it is used.
@@ -37,7 +38,12 @@ import java.util.function.Consumer;
  * moment, whatever the pool's parallelism. That is what {@link #peakResidentUnits()} reports, and
  * what {@code AstMemoryManagerTest} asserts: the peak stays at or below the window however many
  * workers are running. The default is {@code PARALLELISM × 4}, small enough to bound memory and
- * large enough that a window's parse and visit work overlap usefully.
+ * large enough that parse and visit work overlap usefully.
+ *
+ * <p>It is enforced with a semaphore rather than by processing the files in batches, and the
+ * difference is not cosmetic — see {@link #parseInWindows}. Batching made the window a scheduling
+ * barrier too, which cost most of the available speedup on a corpus whose per-file cost has a long
+ * tail.
  *
  * <h2>What this does not do</h2>
  * It does not free an AST that something else still points at. A caller that keeps a
@@ -97,59 +103,124 @@ public final class AstMemoryManager {
     }
 
     /**
-     * Parses {@code sourceFiles} in windows and hands each unit to {@code task} while it is
-     * resident, releasing it as soon as the task returns.
+     * Parses {@code sourceFiles}, handing each unit to {@code task} while it is resident and releasing
+     * it as soon as the task returns. At most {@link #windowSize()} files are in flight at any moment.
      *
      * <p>Results are returned in file order, with files the parser could not read left out — the
-     * failure is reported through {@code diagnostics} instead, exactly as it was before the window
-     * existed.
+     * failure is reported through {@code mergeDiagnostics} instead, exactly as it was before the
+     * window existed.
+     *
+     * <p><strong>Parse diagnostics are merged once, from the calling thread.</strong> Each file gets
+     * its own buffer, filled by the one worker that owns that file; when every file is done, the
+     * buffers are handed to {@code mergeDiagnostics} in a single call. The manager therefore never
+     * touches the caller's collection from a worker, which matters because the caller's collection is
+     * typically a plain list: this method used to report straight through a {@code Consumer} that the
+     * analyzer bound to {@code ArrayList::add}, and concurrent {@code add} from parse workers silently
+     * dropped diagnostics — measured at 9 of 400 lost on a corpus of deliberately broken files.
+     *
+     * <p>Diagnostics the task produces are the task's own: it returns them, and the caller merges them
+     * when it is ready to. The manager merges nothing but what the parser reported.
+     *
+     * <h2>Why admission control and not batches</h2>
+     * The bound used to be enforced by splitting the file list into batches of {@code windowSize} and
+     * waiting for each batch to finish before starting the next. That made the window a
+     * <em>scheduling barrier</em> as well as a residency bound, and because per-file cost has a long
+     * tail — a file full of generics costs an order of magnitude more than a trivial one — every batch
+     * ended with one worker finishing a straggler while the rest sat idle. Measured on the benchmark
+     * corpus with 8 workers, the pool was busy about a third of the time and the visit phase scaled
+     * 1.8× over a single worker instead of the ~6× the core count allows. Thread dumps showed no lock
+     * contention at all: the workers were parked in {@code awaitWork} with nothing to do.
+     *
+     * <p>So the bound is now a {@link Semaphore} of {@code windowSize} permits, taken for the whole
+     * life of a file — parse included — and the files are streamed in one pass. The pool stays fed to
+     * the end of the list, and the residency bound is unchanged, because the permits cap how many units
+     * can exist at once exactly as the batch size did. This is what "the window is a residency bound,
+     * not a thread count" was always supposed to mean; the barrier was an accident of how the bound was
+     * implemented.
      *
      * <p>The units are parsed on the ambient {@link java.util.concurrent.ForkJoinPool}, so a caller
      * that wants its own pool (and its own lifecycle) should invoke this from inside one.
      *
-     * @param task the per-unit work; it must not retain the unit or any node inside it
+     * @param task             the per-unit work; it must not retain the unit or any node inside it
+     * @param mergeDiagnostics receives one batch, on the thread that called this method; never from a
+     *                         parse worker, and never concurrently with itself
      * @return one result per successfully parsed unit, in the order the files were given
      */
     public <T> List<T> parseInWindows(
             List<Path> sourceFiles,
             ParserConfiguration parserConfiguration,
-            Consumer<AnalysisDiagnostic> diagnostics,
+            Consumer<List<AnalysisDiagnostic>> mergeDiagnostics,
             UnitTask<T> task) {
-        List<T> results = new ArrayList<>();
-        for (int start = 0; start < sourceFiles.size(); start += windowSize) {
-            int end = Math.min(start + windowSize, sourceFiles.size());
-            List<Path> window = sourceFiles.subList(start, end);
-            // Collected per window and appended, rather than accumulated into `results` from inside a
-            // parallel stream: a terminal `forEach` writes from every worker at once, and an
-            // ArrayList written that way loses results. `toList()` is ordered and safe, and it also
-            // keeps the results in file order, which the caller's global sort then builds on.
-            results.addAll(window.parallelStream()
-                    .map(sourceFile -> parse(sourceFile, parserConfiguration, diagnostics))
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
-                    .map(unit -> withResidencyTracked(unit, task))
-                    .toList());
+        if (sourceFiles.isEmpty()) {
+            return List.of();
+        }
+        Semaphore admission = new Semaphore(windowSize);
+        // `toList()` rather than a terminal `forEach`: it is ordered and safe, whereas a `forEach`
+        // writes from every worker at once and a plain ArrayList written that way loses results. It
+        // also keeps the results in file order, which the caller's global sort then builds on.
+        List<FileOutcome<T>> outcomes = sourceFiles.parallelStream()
+                .map(sourceFile -> parseFile(sourceFile, parserConfiguration, task, admission))
+                .toList();
+
+        List<T> results = new ArrayList<>(outcomes.size());
+        List<AnalysisDiagnostic> parseDiagnostics = new ArrayList<>();
+        for (FileOutcome<T> outcome : outcomes) {
+            parseDiagnostics.addAll(outcome.diagnostics());
+            if (outcome.analysed()) {
+                results.add(outcome.result());
+            }
+        }
+        if (!parseDiagnostics.isEmpty()) {
+            mergeDiagnostics.accept(parseDiagnostics);
         }
         return results;
     }
 
     /**
-     * Runs the task while the unit counts towards the residency bound, and releases the manager's
-     * reference in a {@code finally} so a failing task cannot leak a window's worth of ASTs.
+     * Parses one file and analyses it if it parsed, collecting the result and this file's parse
+     * diagnostics into a buffer private to this call — which is what makes the buffer safe to write
+     * from a worker.
+     *
+     * <p>The permit is held for the whole call, so the number of permits in use is the number of
+     * parsed-but-not-yet-released units, which is exactly the residency bound. The unit's reference is
+     * dropped before the permit goes back, so a slot never becomes available while the unit it
+     * belonged to is still reachable through this class.
      */
-    private <T> T withResidencyTracked(ParsedUnit unit, UnitTask<T> task) {
+    private <T> FileOutcome<T> parseFile(Path sourceFile, ParserConfiguration parserConfiguration,
+            UnitTask<T> task, Semaphore admission) {
+        admission.acquireUninterruptibly();
         int resident = residentUnits.incrementAndGet();
         peakResidentUnits.accumulateAndGet(resident, Math::max);
         try {
-            return task.onUnit(unit.path(), unit.compilationUnit());
+            List<AnalysisDiagnostic> parseDiagnostics = new ArrayList<>();
+            Optional<ParsedUnit> parsed = parse(sourceFile, parserConfiguration, parseDiagnostics);
+            if (parsed.isEmpty()) {
+                return new FileOutcome<>(false, null, parseDiagnostics);
+            }
+            ParsedUnit unit = parsed.get();
+            try {
+                return new FileOutcome<>(
+                        true, task.onUnit(unit.path(), unit.compilationUnit()), parseDiagnostics);
+            } finally {
+                // Released before the permit: the point of the bound is that a slot is only free once
+                // the AST that occupied it is unreachable from here.
+                unit.release();
+            }
         } finally {
             residentUnits.decrementAndGet();
-            unit.release();
+            admission.release();
         }
     }
 
+    /**
+     * One file's outcome: whether it was analysed (a file that did not parse is not), the task's
+     * result, and the parse diagnostics that file produced.
+     */
+    private record FileOutcome<T>(boolean analysed, T result, List<AnalysisDiagnostic> diagnostics) {
+    }
+
     private Optional<ParsedUnit> parse(
-            Path sourceFile, ParserConfiguration parserConfiguration, Consumer<AnalysisDiagnostic> diagnostics) {
+            Path sourceFile, ParserConfiguration parserConfiguration, List<AnalysisDiagnostic> diagnostics) {
         try {
             JavaParser javaParser = new JavaParser(parserConfiguration);
             ParseResult<CompilationUnit> parseResult = javaParser.parse(sourceFile);
@@ -171,9 +242,9 @@ public final class AstMemoryManager {
         }
     }
 
-    private static void report(Consumer<AnalysisDiagnostic> diagnostics, String code,
+    private static void report(List<AnalysisDiagnostic> diagnostics, String code,
             AnalysisSeverity severity, String message, Path at) {
-        diagnostics.accept(new AnalysisDiagnostic(code, severity, message, new SourceLocation(at, 1, 1)));
+        diagnostics.add(new AnalysisDiagnostic(code, severity, message, new SourceLocation(at, 1, 1)));
     }
 
     /**
@@ -182,6 +253,12 @@ public final class AstMemoryManager {
      * <p>The unit is passed rather than returned on purpose: an implementation that needs to keep
      * something must copy out of the AST (names, locations, counts) rather than hold the AST, which
      * is the whole point of the window.
+     *
+     * <p>The task owns whatever diagnostics it produces, and must keep them out of any collection the
+     * caller shares: it runs on a parse worker, so a collection several workers can reach is exactly
+     * the mistake that lost diagnostics before. The analyzer's task therefore returns its own buffer
+     * and the caller merges it later; the manager only ever merges its own parse diagnostics, from the
+     * thread that called {@link #parseInWindows}.
      */
     @FunctionalInterface
     public interface UnitTask<T> {

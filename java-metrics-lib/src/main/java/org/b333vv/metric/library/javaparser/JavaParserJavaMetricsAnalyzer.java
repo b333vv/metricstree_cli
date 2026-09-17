@@ -303,13 +303,22 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         // once it returns. Pass 2 below therefore runs with only the snapshots reachable, which is
         // what makes "the cross-class metrics are computed after the ASTs are released" a property of
         // the code rather than a convention. See docs/adr/0002-bounded-ast-residency.md.
-        List<ClassAnalysis> classAnalyses = analyzeClasses(
+        List<FileAnalysis> fileAnalyses = analyzeClasses(
                 request,
                 sourceFiles,
                 diagnostics,
                 metricSelection,
                 resolutionStats,
                 options.unresolvedSymbolDiagnosticCap());
+
+        // Files are analysed in path order — the window forces it — but the report must not depend on
+        // which order the pool happened to finish them in, and the package sums must add up in the
+        // same order they always have. Sorting the collected results by the key the old global sort
+        // used restores exactly the order the rest of the analysis expects.
+        List<ClassAnalysis> classAnalyses = fileAnalyses.stream()
+                .flatMap(fileAnalysis -> fileAnalysis.classes().stream())
+                .sorted(Comparator.comparing(classAnalysis -> classAnalysis.analyzedClass().qualifiedName()))
+                .toList();
 
         List<AnalyzedClass> analyzedClasses = classAnalyses.stream()
                 .map(ClassAnalysis::analyzedClass)
@@ -329,6 +338,15 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 request.projectName(), packageReports, analyzedClasses, metricSelection, resolutionStats);
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.AGGREGATE, System.nanoTime() - phaseStart);
 
+        // The class-level diagnostics were buffered per file and are merged only now, because the
+        // global pass is still writing into those buffers: a class's collector owns its aggregate
+        // diagnostic, and FDP is the one metric that cannot decide it has none until every class has
+        // been seen. Merging here is what lets a buffer belong to one thread at a time — the file's
+        // worker during the visit, the analysis thread here — so nothing on the way takes a lock.
+        for (FileAnalysis fileAnalysis : fileAnalyses) {
+            mergeDiagnostics(diagnostics, fileAnalysis.diagnostics());
+        }
+
         return new MetricReport(projectReport, diagnostics);
     }
 
@@ -343,10 +361,12 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
      * by accident. The previous shape kept them as locals of {@code analyze()}, alive for the whole
      * run — exactly the retention TASK-203 and TASK-204 exist to remove.
      *
-     * <p>The returned list is in qualified-name order: the parse window produces class analyses in
-     * path order, and the rest of the analysis expects the order the old global sort produced.
+     * <p>The result is one record per file, carrying the file's class analyses <em>and</em> the
+     * diagnostics buffer those analyses wrote into. The buffer travels out because the global pass is
+     * not finished with it — see {@link #analyze}. What this method does not do is merge it: merging
+     * is the caller's job, once the buffer is closed.
      */
-    private List<ClassAnalysis> analyzeClasses(
+    private List<FileAnalysis> analyzeClasses(
             AnalysisRequest request,
             List<Path> sourceFiles,
             List<AnalysisDiagnostic> diagnostics,
@@ -386,36 +406,56 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         List<FileAnalysis> fileAnalyses = new ArrayList<>();
         for (ParsedFile explicitFile : explicitFiles) {
             fileAnalyses.add(analyzeUnit(explicitFile.path(), explicitFile.compilationUnit(), typeSolver,
-                    metricSelection, diagnostics, resolutionStats, unresolvedSymbolDiagnosticCap));
+                    metricSelection, resolutionStats, unresolvedSymbolDiagnosticCap));
         }
         fileAnalyses.addAll(runInDedicatedPool(() -> astMemoryManager.parseInWindows(
                 windowedSourceFiles,
                 parserConfiguration,
-                diagnostics::add,
+                windowDiagnostics -> mergeDiagnostics(diagnostics, windowDiagnostics),
                 (sourceFile, unit) -> analyzeUnit(sourceFile, unit, typeSolver, metricSelection,
-                        diagnostics, resolutionStats, unresolvedSymbolDiagnosticCap))));
+                        resolutionStats, unresolvedSymbolDiagnosticCap))));
 
         if (!fileAnalyses.isEmpty()
                 && fileAnalyses.stream().noneMatch(fileAnalysis -> !fileAnalysis.moduleDescriptor())) {
-            diagnostics.add(new AnalysisDiagnostic(
+            mergeDiagnostics(diagnostics, List.of(new AnalysisDiagnostic(
                     MODULE_DESCRIPTOR_ONLY,
                     AnalysisSeverity.INFO,
                     "The source roots contain only module descriptors (" + moduleNames(fileAnalyses)
                             + "), so there are no classes to analyse",
-                    new SourceLocation(sourceFiles.get(0), 1, 1)));
+                    new SourceLocation(sourceFiles.get(0), 1, 1))));
         }
 
-        // Files are analysed in path order — the window forces it — but the report must not depend on
-        // which order the pool happened to finish them in, and the package sums must add up in the
-        // same order they always have. Sorting the collected results by the key the old global sort
-        // used restores exactly the order the rest of the analysis expects.
-        List<ClassAnalysis> classAnalyses = fileAnalyses.stream()
-                .flatMap(fileAnalysis -> fileAnalysis.classes().stream())
-                .sorted(Comparator.comparing(classAnalysis -> classAnalysis.analyzedClass().qualifiedName()))
-                .toList();
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.VISIT, System.nanoTime() - phaseStart);
 
-        return classAnalyses;
+        return fileAnalyses;
+    }
+
+    /**
+     * Merges one batch of diagnostics into the run's list.
+     *
+     * <p>There is no lock here, and that is the point of the refactor rather than an oversight. The
+     * run's list is written from three places — the parser's per-window merge, the individually-named
+     * files, and the class-level buffers merged once the global pass is done — and every one of them
+     * runs on the analysis thread while no other thread can reach the list: the window's merge happens
+     * on the thread that called {@link AstMemoryManager#parseInWindows} after the window's workers
+     * have joined, and the class-level merge happens after the parallel pass has completed. A buffer
+     * belongs to one thread at a time, so there is nothing for a lock to protect.
+     *
+     * <p>Per diagnostic it used to be a lock acquisition on the hot path — 121 494 of them on the
+     * benchmark corpus — and on the parse path it was worse than slow: the list is a plain
+     * {@code ArrayList}, and reporting through it from a window's workers lost entries outright
+     * (measured at 9 of 400 on a corpus of deliberately broken files).
+     *
+     * <p>Batch order cannot change what a reader sees: {@link MetricReport} imposes a total order on
+     * diagnostics — severity, code, message, then the location — precisely because the list is filled
+     * from a parallel stream. Merging a file's diagnostics as a batch therefore reorders nothing, and
+     * that is what makes this refactor equivalence-preserving rather than a contract change.
+     */
+    private static void mergeDiagnostics(List<AnalysisDiagnostic> diagnostics, List<AnalysisDiagnostic> batch) {
+        if (batch.isEmpty()) {
+            return;
+        }
+        diagnostics.addAll(batch);
     }
 
     private List<Path> resolveSourceFiles(AnalysisRequest request, List<AnalysisDiagnostic> diagnostics) {
@@ -502,12 +542,56 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         return filePath.toString();
     }
 
-    private static final int PARALLELISM = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+    /**
+     * Overrides the worker count, so the scaling table TASK-205 records can be reproduced without
+     * rebuilding. Documented as a measurement knob rather than a tuning option: it exists to answer
+     * "how does this scale", and the answer decides whether a per-request setting is worth having.
+     */
+    public static final String PARALLELISM_PROPERTY = "metricstree.parallelism";
+
+    private static final int PARALLELISM = resolveParallelism();
+
+    /**
+     * How many workers this analysis uses, unless overridden.
+     *
+     * <p>The default leaves one core free. That is a judgement about a developer's machine, not about
+     * the analysis: the visit is CPU-bound and would happily use every core, but a tool that pins all
+     * of them for half a minute makes the workstation unusable, and the last core buys little —
+     * measured speedup at 8 workers over 4 on the reference machine is recorded in
+     * {@code docs/PROGRESS.md}. One pool serves both passes, so there is nothing here that could
+     * usefully be sized differently for parse and visit; see {@link #parallelism()}.
+     */
+    private static int resolveParallelism() {
+        String configured = System.getProperty(PARALLELISM_PROPERTY);
+        if (configured == null || configured.isBlank()) {
+            return Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+        }
+        int requested;
+        try {
+            requested = Integer.parseInt(configured.trim());
+        } catch (NumberFormatException malformed) {
+            throw new IllegalArgumentException(
+                    "-D" + PARALLELISM_PROPERTY + " must be a positive integer but was '" + configured + "'",
+                    malformed);
+        }
+        if (requested < 1) {
+            throw new IllegalArgumentException(
+                    "-D" + PARALLELISM_PROPERTY + " must be positive but was " + requested);
+        }
+        return requested;
+    }
 
     /**
      * How many workers this analysis uses. The AST window is sized from it
      * ({@link AstMemoryManager#defaultWindowSize()}), so the residency bound and the pool that fills
      * it stay in step.
+     *
+     * <p>One number covers both passes on purpose. The window exists to bound memory, not to schedule
+     * work, so widening it to decouple parse from visit would only hold more ASTs; and the pool is
+     * created per pass and destroyed after it, so there is no shared pool whose width could be
+     * mis-set. The scaling measurements in {@code docs/PROGRESS.md} are what back this up: if parse
+     * and visit wanted different widths, that would show up as a plateau before the core count, and
+     * it does not.
      */
     static int parallelism() {
         return PARALLELISM;
@@ -586,19 +670,39 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         return path.toAbsolutePath().normalize();
     }
 
+    /**
+     * Parses the files named individually on the command line, in parallel.
+     *
+     * <p>Same arrangement as the window in {@link AstMemoryManager}: each file parses into its own
+     * diagnostics buffer, and the buffers are merged into the run's list once, here, after the pool
+     * has finished. This method used to pass the run's list straight to the workers and guard every
+     * single {@code add} with {@code synchronized}.
+     */
     private List<ParsedFile> parseExplicitUnits(List<Path> explicitSourceUnits, List<AnalysisDiagnostic> diagnostics) {
         if (explicitSourceUnits.isEmpty()) {
             return List.of();
         }
         ParserConfiguration parserConfig = AnalysisParserConfiguration.create();
 
-        return runInDedicatedPool(() ->
+        List<ExplicitOutcome> outcomes = runInDedicatedPool(() ->
                 explicitSourceUnits.parallelStream()
-                        .map(sourceFile -> parseSingleFile(sourceFile, parserConfig, diagnostics))
-                        .filter(java.util.Optional::isPresent)
-                        .map(java.util.Optional::get)
-                        .toList()
-        );
+                        .map(sourceFile -> parseSingleFile(sourceFile, parserConfig))
+                        .toList());
+
+        List<ParsedFile> parsed = new ArrayList<>();
+        List<AnalysisDiagnostic> allDiagnostics = new ArrayList<>();
+        for (ExplicitOutcome outcome : outcomes) {
+            outcome.parsed().ifPresent(parsed::add);
+            allDiagnostics.addAll(outcome.diagnostics());
+        }
+        mergeDiagnostics(diagnostics, allDiagnostics);
+        return parsed;
+    }
+
+    /**
+     * One individually-named file's outcome: the unit when it parsed, and what the attempt reported.
+     */
+    private record ExplicitOutcome(Optional<ParsedFile> parsed, List<AnalysisDiagnostic> diagnostics) {
     }
 
     /**
@@ -636,39 +740,40 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         }
     }
 
-    private java.util.Optional<ParsedFile> parseSingleFile(Path sourceFile, ParserConfiguration parserConfig, List<AnalysisDiagnostic> diagnostics) {
+    /**
+     * Parses one individually-named file into its own diagnostics buffer. The buffer belongs to this
+     * call alone, so nothing here synchronizes.
+     */
+    private ExplicitOutcome parseSingleFile(Path sourceFile, ParserConfiguration parserConfig) {
+        List<AnalysisDiagnostic> fileDiagnostics = new ArrayList<>();
         try {
             JavaParser javaParser = new JavaParser(parserConfig);
             ParseResult<CompilationUnit> parseResult = javaParser.parse(sourceFile);
             if (parseResult.getResult().isPresent()) {
                 if (!parseResult.isSuccessful()) {
-                    synchronized (diagnostics) {
-                        diagnostics.add(new AnalysisDiagnostic(
-                                "PARSE_PROBLEM",
-                                AnalysisSeverity.WARNING,
-                                "Parser reported problems for " + sourceFile + ": " + parseResult.getProblems(),
-                                new SourceLocation(sourceFile, 1, 1)));
-                    }
+                    fileDiagnostics.add(new AnalysisDiagnostic(
+                            "PARSE_PROBLEM",
+                            AnalysisSeverity.WARNING,
+                            "Parser reported problems for " + sourceFile + ": " + parseResult.getProblems(),
+                            new SourceLocation(sourceFile, 1, 1)));
                 }
-                return java.util.Optional.of(new ParsedFile(sourceFile, parseResult.getResult().orElseThrow()));
+                return new ExplicitOutcome(
+                        Optional.of(new ParsedFile(sourceFile, parseResult.getResult().orElseThrow())),
+                        fileDiagnostics);
             }
-            synchronized (diagnostics) {
-                diagnostics.add(new AnalysisDiagnostic(
-                        "PARSE_FAILED",
-                        AnalysisSeverity.ERROR,
-                        "Failed to parse " + sourceFile + ": no result",
-                        new SourceLocation(sourceFile, 1, 1)));
-            }
-            return java.util.Optional.empty();
+            fileDiagnostics.add(new AnalysisDiagnostic(
+                    "PARSE_FAILED",
+                    AnalysisSeverity.ERROR,
+                    "Failed to parse " + sourceFile + ": no result",
+                    new SourceLocation(sourceFile, 1, 1)));
+            return new ExplicitOutcome(Optional.empty(), fileDiagnostics);
         } catch (IOException exception) {
-            synchronized (diagnostics) {
-                diagnostics.add(new AnalysisDiagnostic(
-                        "PARSE_FAILED",
-                        AnalysisSeverity.ERROR,
-                        "Failed to parse " + sourceFile + ": " + exception.getMessage(),
-                        new SourceLocation(sourceFile, 1, 1)));
-            }
-            return java.util.Optional.empty();
+            fileDiagnostics.add(new AnalysisDiagnostic(
+                    "PARSE_FAILED",
+                    AnalysisSeverity.ERROR,
+                    "Failed to parse " + sourceFile + ": " + exception.getMessage(),
+                    new SourceLocation(sourceFile, 1, 1)));
+            return new ExplicitOutcome(Optional.empty(), fileDiagnostics);
         }
     }
 
@@ -678,22 +783,29 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
      * <p>The symbol resolver is attached here rather than to a whole project's worth of units up
      * front: it lives in the unit's own node data, so it is released with the unit and can never
      * outlive it. That is the property the window depends on.
+     *
+     * <p>The diagnostics buffer is created here, belongs to this file alone, and is handed back inside
+     * the returned {@link FileAnalysis}. Nothing here synchronizes, and nothing needs to: this method
+     * runs on the one worker that owns the file, and the buffer leaves with the result rather than
+     * being written into a collection the caller shares. It used to be the run's shared list, which
+     * meant a lock per diagnostic on the hot path and, on the parse path, an unguarded write from a
+     * worker. The caller merges the buffer once the global pass has stopped writing to it.
      */
     private FileAnalysis analyzeUnit(
             Path sourceFile,
             CompilationUnit compilationUnit,
             TypeSolver typeSolver,
             MetricSelection metricSelection,
-            List<AnalysisDiagnostic> diagnostics,
             ResolutionStats resolutionStats,
             int unresolvedSymbolDiagnosticCap) {
+        List<AnalysisDiagnostic> diagnostics = new ArrayList<>();
         compilationUnit.setData(Node.SYMBOL_RESOLVER_KEY, new JavaSymbolSolver(typeSolver));
 
         if (compilationUnit.getModule().isPresent()) {
             // A module descriptor is a source unit but never a type declaration, so it is parsed — a
             // syntax error in module-info.java is still worth reporting — and then kept out of the
             // type pipeline, which has nothing to do with it. See ModuleDescriptorAnalysisTest.
-            return new FileAnalysis(sourceFile, true, moduleNameOf(compilationUnit), List.of());
+            return new FileAnalysis(sourceFile, true, moduleNameOf(compilationUnit), List.of(), diagnostics);
         }
 
         // Sorted within the file so a file's classes are always visited in the same order, whatever
@@ -709,7 +821,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                         resolutionStats,
                         unresolvedSymbolDiagnosticCap))
                 .toList();
-        return new FileAnalysis(sourceFile, false, null, classes);
+        return new FileAnalysis(sourceFile, false, null, classes, diagnostics);
     }
 
     private static String moduleNameOf(CompilationUnit compilationUnit) {
@@ -1806,14 +1918,23 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
     /**
      * What one analysed file contributed: its classes, or — for a {@code module-info.java} — the
-     * module it declares and no classes at all.
+     * module it declares and no classes at all; plus the diagnostics buffer its classes wrote into.
      *
      * <p>This is what the window's task returns, so it is deliberately free of any AST reference: it
      * holds only snapshots and collectors, which is what lets the unit be released as soon as the
      * task returns.
+     *
+     * <p>The buffer is part of the result rather than merged on the spot because it is still open when
+     * the task returns — a class's collector emits its aggregate diagnostic in the global pass, and
+     * FDP cannot be decided before every class has been seen. Its content is complete only once
+     * {@link #calculateCrossClassMetrics} has run, which is when {@link #analyze} merges it.
      */
     private record FileAnalysis(
-            Path path, boolean moduleDescriptor, String moduleName, List<ClassAnalysis> classes) {
+            Path path,
+            boolean moduleDescriptor,
+            String moduleName,
+            List<ClassAnalysis> classes,
+            List<AnalysisDiagnostic> diagnostics) {
     }
 
     /**

@@ -387,6 +387,54 @@ topology a property of the code rather than a convention, and by proving it:
    window are the by-design in-memory index for `--source-file` units, the solver's bounded 512-file
    cache, and JavaParser's own caches.
 
+### TASK-205 measurement (2026-09-17)
+
+Same machine, same corpus, same `-Xmx4g`, JDK 17 toolchain. **The scaling criterion is not met**, and
+this is the section that says why. The contention work the task asked for is done — the analysis' own
+code takes no lock on any hot path — but the speedup it was supposed to buy is capped by a lock inside
+JavaParser. See [DEBT-12](../tech-debt-tracker.md) for the levers and their costs.
+
+**Scaling** (`:java-metrics-lib:benchmark`, workers overridden with `-Dmetricstree.parallelism=N`;
+"batches" is the pre-change build):
+
+| Workers | VISIT, batches | VISIT, final | Speedup | Target |
+|---|---|---|---|---|
+| 1 | 52 605 ms | 53 763 ms | 1.00× | — |
+| 2 | 40 541 ms | 34 416 ms | 1.56× | — |
+| 4 | 31 338 ms | 27 302 ms | 1.97× | 3.2× |
+| 7 (default) | 29 005 ms | 23 135 ms | 2.27× | — |
+| 8 | 28 807 ms | 23 692 ms | 2.27× | 6.0× |
+
+**CPU profile** (standalone JVM, `/usr/bin/time -l`):
+
+| Workers | VISIT | user | sys | CPU/wall |
+|---|---|---|---|---|
+| 1 | 58 572 ms | 108.67 s | 3.66 s | 1.86 |
+| 8 | 26 845 ms | 165.72 s | 8.01 s | 6.11 |
+
+Total CPU rises **+55 %**, so the parallel run burns 1.55× the CPU to finish 2.07× faster: threads are
+doing *more* work, not idling. GC is not the cause — pause totals move only 3 234 ms → 3 803 ms between
+1 and 8 workers.
+
+**Where the contention is.** Every `jdk.JavaMonitorEnter` event in the 8-worker run, by top frame:
+
+| Top frame | Events | Blocked |
+|---|---|---|
+| `JavaParserTypeSolver.parse(Path)` | **1 137** | **26 612 ms** |
+| `Collections$SynchronizedMap.get` | 7 | 111 ms |
+| `BuiltinClassLoader.loadClassOrNull` | 7 | 77 ms |
+| `JavaParserFacade.get(TypeSolver)` | 3 | 56 ms |
+| all others | 4 | 63 ms |
+
+One lock, in JavaParser's solver, entered on a cache miss. 14.8 % of execution samples sit inside it.
+Nothing in the analysis' own code appears.
+
+**Equivalence: TASK-205 moved no metric value.** 25 333 metric-bearing entities compared (1 project,
+1 318 packages, 4 020 classes, 19 994 methods): **0 differing**, none added or removed. Diagnostics
+**121 494 on both sides, multiset-identical** — which is also the check that the parse-path
+diagnostics race fixed here (391 of 400 reported before) is gone. `resolutionCoverage`
+`0.6491621776056496` on both sides.
+
 ---
 
 ## 6. Risks & Mitigations
@@ -398,7 +446,7 @@ topology a property of the code rather than a convention, and by proving it:
 | Diagnostics flood on large codebases | Per-class dedup + cap (D1); aggregated counters; `resolutionCoverage` summary |
 | JSON contract breaks during Phase 3 | Golden tests (TASK-001) must stay green; any intended change is an explicit, documented contract update |
 | ShadowJar minimize clips reflective Jackson access (TASK-302) | Distribution smoke test (`JavaMetricsCliDistributionSmokeTest`) extended to all output formats |
-| Parallel resolution contention makes Phase 2 slower despite less memory | TASK-205 scaling criterion: near-linear speedup; bounded type cache sizing |
+| Parallel resolution contention makes Phase 2 slower despite less memory | **Realised, and quantified.** TASK-205 removed every lock of the analysis' own and measured the rest: 1 137 of 1 158 monitor events and 26 612 of 26 919 ms blocked are on `synchronized (javaParser)` in JavaParser's `JavaParserTypeSolver.parse`, and the speedup criterion (3.2× / 6×) is **not met** at 1.97× / 2.27×. Not fixable without replacing the solver, so it is registered as [DEBT-12](../tech-debt-tracker.md) with three levers and their costs rather than absorbed by moving the target |
 
 ---
 

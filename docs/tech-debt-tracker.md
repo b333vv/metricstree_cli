@@ -107,6 +107,28 @@
   Anyone treating a corpus diff as evidence should expect this one class to move and should not
   attribute it to their change.
 
+- **DEBT-12 — The symbol solver re-parses from disk behind a single JVM-wide-ish lock, and that lock
+  is what caps analysis scaling.** Found by TASK-205's profiling (2026-09-17), measured, and left
+  unfixed because the lock is JavaParser's and the task scopes the solver as "document, don't fix".
+  `JavaParserTypeSolver.parse` wraps the whole parse in `synchronized (javaParser)` — its own comment:
+  *"JavaParser only allow one parse at time"* — and it is entered on a **cache miss**, because the
+  solver's `parsedFiles` / `foundTypes` caches are Guava `softValues()` caches bounded at
+  `SOLVER_CACHE_SIZE = 512` entries over a 4 074-file corpus.
+  Measured on the benchmark corpus at 8 workers: **1 137 of the run's 1 158 `jdk.JavaMonitorEnter`
+  events and 26 612 of its 26 919 ms blocked time** are on that frame (the next-largest entry is
+  111 ms), and 14.8 % of execution samples sit inside it. The consequence is a speedup ceiling:
+  TASK-205 measured 1.97× at 4 workers and 2.27× at 8 against targets of 3.2× and 6×, while the pool
+  was genuinely busy (CPU-per-wall 6.11 of 8 cores) and total CPU rose 55 % — i.e. threads are doing
+  *more* work, not idling.
+  Levers, in increasing order of cost and risk: raise `SOLVER_CACHE_SIZE` (measured: 512 → 8 192 gives
+  −12 % `VISIT` and −8 % CPU at 8 workers, but peak heap 4 088 MB against a 4 GB ceiling — this is why
+  it was not taken, since memory belongs to TASK-203/204); shard the solver per worker so each thread
+  has its own `JavaParser` and its own lock (costs N× the cache memory and N× the re-parsing, and
+  **risks changing metric values**, because DEBT-11 shows resolution outcomes already depend on cache
+  state — the shard that answers would decide the answer); or reinstate a project-wide declaration
+  index so the solver is not asked at all (ADR 0002 retired it for memory reasons, so this trades
+  directly against TASK-203/204's gate). Anyone re-opening this should decide which of those three the
+  project wants rather than starting from the lock.
 ## Resolved Debt Items
 - **DEBT-10 — Five method visitors kept mutable state while being shared across parallel workers.**
   Resolved 2026-09-17 (the DEBT-10 fix commit). Found by TASK-203's corpus equivalence check, and the

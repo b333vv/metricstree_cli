@@ -52,10 +52,21 @@ import java.util.stream.Collectors;
  * classpath.
  *
  * <h2>Thread-safety</h2>
- * The analyzer visits classes on a parallel stream, so the shared diagnostics list is written
- * concurrently; every write goes through {@link #publish} which synchronizes on that list, matching
- * the discipline already used by the parser. The collector's own bookkeeping is synchronized too, so
- * the cap holds exactly even under contention.
+ * A collector belongs to one class and is driven by <em>one thread at a time</em>, so it takes no
+ * locks. During the visit that thread is the worker that owns the class's file; during the global pass
+ * it is the analysis thread, which closes the collector with {@link #flush()} and is the only one that
+ * can raise the deferred FDP diagnostic. The two are ordered — the parallel pass completes before the
+ * global pass starts — so {@link #publish} is never called from two threads at once.
+ *
+ * <p>That is why the sink is a parameter and not a shared list the collector reaches for. The analyzer
+ * gives each file its own buffer, so what a collector writes stays private to the class's file until
+ * the analysis thread merges it. Reaching for the run's list is what the previous shape did, and it
+ * cost a lock acquisition per diagnostic — 121 494 of them on the benchmark corpus — while on the
+ * parse path the same mistake lost diagnostics outright (see {@code AstMemoryManager}).
+ *
+ * <p>The dedup and cap collections stay concurrent anyway. They are not on the critical path, and if
+ * someone ever does share a collector between threads, a concurrent map degrades where a plain
+ * {@code HashMap} would corrupt. Redundant, deliberate, and cheap.
  */
 public final class AnalysisCollector implements Consumer<MetricResult> {
 
@@ -101,7 +112,9 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
 
     /**
      * @param metricConsumer   where metric values go
-     * @param diagnostics      the analyzer's shared diagnostics list
+     * @param diagnostics      this class's own diagnostics sink — the buffer of the file the class was
+     *                         declared in. Never a list shared between workers; see the thread-safety
+     *                         note on the class.
      * @param resolutionStats  the run's shared resolution tally, fed by every attempt this collector
      *                         and its children see
      * @param subject          what is being analysed (class qualified name, or method signature),
@@ -149,9 +162,9 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
      * Creates a collector for a nested computation — a visitor that runs another visitor internally to
      * derive its own metric (as WMC does with the McCabe visitor).
      *
-     * <p>The child writes diagnostics to the same shared list, so nothing is silently dropped, and
-     * inherits the parent's cap. It keeps its own dedup state, so the child's findings are not
-     * suppressed by the parent's.
+     * <p>The child writes diagnostics to the same sink as its parent — the file's buffer — so nothing
+     * is silently dropped, and inherits the parent's cap. It keeps its own dedup state, so the child's
+     * findings are not suppressed by the parent's.
      */
     public AnalysisCollector childCollector(Consumer<MetricResult> metricConsumer, String subject) {
         return new AnalysisCollector(metricConsumer, diagnostics, resolutionStats, subject, fallbackLocation, cap);
@@ -250,8 +263,12 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
     /**
      * Emits one aggregated diagnostic per code that hit the cap. Called once per class by the
      * analyzer; calling it again does nothing.
+     *
+     * <p>Not synchronized, because the collector is confined to one thread at a time and this is
+     * called from the global pass — after the parallel pass that filled the counters has finished.
+     * See the thread-safety note on the class.
      */
-    public synchronized void flush() {
+    public void flush() {
         if (flushed) {
             return;
         }
@@ -270,7 +287,7 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
         });
     }
 
-    private synchronized void report(String code, String metricContext, String name, Node at, String message) {
+    private void report(String code, String metricContext, String name, Node at, String message) {
         String key = code + '|' + (metricContext == null ? "" : metricContext) + '|' + name;
         if (!reportedKeys.add(key)) {
             return;
@@ -298,10 +315,13 @@ public final class AnalysisCollector implements Consumer<MetricResult> {
         return metricContext != null && METRIC_CODE_NAMES.contains(metricContext) ? metricContext : null;
     }
 
+    /**
+     * The sink this collector writes to. Private to the class's file while the visit runs, and merged
+     * by the analysis thread once the global pass has closed every collector — so it is written by one
+     * thread at a time and needs no lock. See the thread-safety note on the class.
+     */
     private void publish(AnalysisDiagnostic diagnostic) {
-        synchronized (diagnostics) {
-            diagnostics.add(diagnostic);
-        }
+        diagnostics.add(diagnostic);
     }
 
     private static String decorate(String metricContext, String message) {

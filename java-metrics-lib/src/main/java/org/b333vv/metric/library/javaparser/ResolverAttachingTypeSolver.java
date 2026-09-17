@@ -75,6 +75,13 @@ final class ResolverAttachingTypeSolver implements TypeSolver {
     }
 
     private void attachResolver(CompilationUnit unit) {
+        // The check is repeated outside the lock on purpose: attachment happens once per unit and
+        // resolution happens constantly, so the steady state must not take the monitor at all. This
+        // used to lock on every call, which put a shared monitor on the hottest path in the analysis
+        // for no benefit — the data is either there or it is not.
+        if (unit.containsData(Node.SYMBOL_RESOLVER_KEY)) {
+            return;
+        }
         synchronized (unit) {
             if (!unit.containsData(Node.SYMBOL_RESOLVER_KEY)) {
                 unit.setData(Node.SYMBOL_RESOLVER_KEY, symbolResolver);

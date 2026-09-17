@@ -35,8 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>The interesting behaviour is the bookkeeping, not the message text: dedup so one broken symbol is
  * reported once per metric instead of once per AST node, a cap so a project with an incomplete
- * classpath cannot flood the report, and thread-safety because the shared diagnostics list is written
- * from the analyzer's parallel stream.
+ * classpath cannot flood the report, and confinement — the analyzer runs classes in parallel but gives
+ * each file its own sink, so a collector is never written from two threads at once.
  */
 class AnalysisCollectorTest {
 
@@ -274,39 +274,62 @@ class AnalysisCollectorTest {
     }
 
     /**
-     * The analyzer writes to one shared diagnostics list from a parallel stream, so the collector must
-     * not lose reports or double-count them under contention.
+     * Many classes analysed at once, each with its own collector and its own sink — which is what the
+     * analyzer actually does, and what replaced "one collector, many threads".
+     *
+     * <p>This test used to drive a <em>single</em> collector from eight threads, because the collector
+     * used to be handed the run's shared list and had to synchronize on it. After DEBT-10 a class is
+     * analysed by one thread, and after TASK-205 the sink is the file's own buffer, so the property
+     * that matters is no longer "one collector survives contention" but "concurrent classes never
+     * touch each other's buffers". That is what is asserted: every class keeps its own cap and its own
+     * aggregate, and every report reaches the buffer it belongs to.
+     *
+     * <p>The buffers stay plain {@code ArrayList}s on purpose. If the confinement were broken, an
+     * unsynchronized {@code add} from two workers would drop entries — so the exact counts below are
+     * what makes the confinement testable rather than merely documented.
      */
     @Test
-    void staysConsistentUnderConcurrentUse() throws InterruptedException {
-        int threads = 8;
-        int symbolsPerThread = 25;
-        List<AnalysisDiagnostic> diagnostics = new ArrayList<>();
-        AnalysisCollector collector = collector(new ArrayList<>(), diagnostics, CAP);
+    void concurrentClassesNeverShareASink() throws InterruptedException {
+        int classes = 8;
+        int symbolsPerClass = 25;
+        List<List<AnalysisDiagnostic>> buffers = new ArrayList<>();
+        List<AnalysisCollector> collectors = new ArrayList<>();
+        for (int index = 0; index < classes; index++) {
+            List<AnalysisDiagnostic> buffer = new ArrayList<>();
+            buffers.add(buffer);
+            collectors.add(collector(new ArrayList<>(), buffer, CAP));
+        }
 
-        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        ExecutorService executor = Executors.newFixedThreadPool(classes);
         CountDownLatch start = new CountDownLatch(1);
         try {
-            IntStream.range(0, threads).forEach(thread -> executor.submit(() -> {
+            IntStream.range(0, classes).forEach(index -> executor.submit(() -> {
                 await(start);
-                for (int index = 0; index < symbolsPerThread; index++) {
-                    collector.warnUnresolved("CBO", "t" + thread + "s" + index + "()", new MethodCallExpr("x"));
+                AnalysisCollector collector = collectors.get(index);
+                for (int symbol = 0; symbol < symbolsPerClass; symbol++) {
+                    collector.warnUnresolved(
+                            "CBO", "c" + index + "s" + symbol + "()", new MethodCallExpr("x"));
                 }
+                collector.flush();
             }));
             start.countDown();
         } finally {
             executor.shutdown();
             assertTrue(executor.awaitTermination(30, TimeUnit.SECONDS), "Workers did not finish");
         }
-        collector.flush();
 
-        int distinct = threads * symbolsPerThread;
-        assertEquals(CAP, withCode(diagnostics, AnalysisCollector.UNRESOLVED_SYMBOL).size());
-        assertEquals(1, withCode(diagnostics, AnalysisCollector.UNRESOLVED_SYMBOL_BULK).size());
-        assertTrue(
-                withCode(diagnostics, AnalysisCollector.UNRESOLVED_SYMBOL_BULK).get(0).message()
-                        .contains(String.valueOf(distinct - CAP)),
-                () -> "Every suppressed symbol must be counted exactly once, got: " + diagnostics);
+        for (int index = 0; index < classes; index++) {
+            List<AnalysisDiagnostic> buffer = buffers.get(index);
+            int classIndex = index;
+            assertEquals(CAP, withCode(buffer, AnalysisCollector.UNRESOLVED_SYMBOL).size(),
+                    () -> "class " + classIndex + " must keep its own cap; got " + buffer);
+            List<AnalysisDiagnostic> bulk = withCode(buffer, AnalysisCollector.UNRESOLVED_SYMBOL_BULK);
+            assertEquals(1, bulk.size(),
+                    () -> "class " + classIndex + " must emit one aggregate; got " + buffer);
+            assertTrue(bulk.get(0).message().contains(String.valueOf(symbolsPerClass - CAP)),
+                    () -> "class " + classIndex + " must count only its own suppressed symbols; got "
+                            + bulk.get(0).message());
+        }
     }
 
     /**

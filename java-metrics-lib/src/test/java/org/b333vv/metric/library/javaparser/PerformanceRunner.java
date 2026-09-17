@@ -150,6 +150,9 @@ public final class PerformanceRunner {
         out.println("JVM         : " + System.getProperty("java.version")
                 + " (" + System.getProperty("java.vm.name") + ")");
         out.println("Max heap    : " + megabytes(maxHeapBytes) + " MB");
+        // Recorded rather than assumed: the scaling table is only meaningful if each row says which
+        // worker count produced it, and the count can be overridden by -Dmetricstree.parallelism.
+        out.println("Parallelism : " + JavaParserJavaMetricsAnalyzer.parallelism() + " workers");
         out.println("Project     : " + result.files() + " files, " + result.lines() + " lines, "
                 + result.classes() + " classes, " + result.methods() + " methods, "
                 + result.packages() + " packages");

@@ -2,6 +2,124 @@
 
 ## Phase 2: the snapshot becomes the global-analysis contract (2026-09-16)
 
+### TASK-205 — concurrency: contention removed, and what actually bounds scaling — done (2026-09-17)
+
+**The task's own targets are not met, and this entry is mostly the evidence for why.** The contention
+work it asks for is done and measured; the speedup target (≥3.2× at 4 threads, ≥6× at 8) is not, on
+this hardware, because the remaining limit is a lock inside JavaParser that the analysis is not allowed
+to touch. The task's risks section anticipates exactly this — *"the numbers above are agreed targets …
+and may be adjusted with evidence"* — so the target is adjusted here, with the evidence below, rather
+than met by moving work out of the phase that owns it.
+
+**A real defect was found and fixed first: the parse path lost diagnostics.** `AstMemoryManager` handed
+the run's diagnostics list to its window workers through a `Consumer` the analyzer bound to
+`ArrayList::add` — an unsynchronized `add` from several threads at once. On a corpus of 400
+deliberately broken files the analyzer reported **391 of 400** `PARSE_PROBLEM` diagnostics: 9 silently
+lost, and which 9 varied between runs. The temporary reproducer that found it was replaced by two
+permanent tests (`reportsEveryParseProblemExactlyOnceUnderParallelism`,
+`mergesDiagnosticsOnceOnTheCallingThread`), and the count is now 400/400.
+
+**What changed.**
+
+- **Every file owns its diagnostics buffer, and the buffers are merged once.** `AnalysisCollector`'s
+  `publish` is now `diagnostics.add(...)` with no monitor, `flush()` and `report(...)` lost theirs, and
+  the analyzer's `mergeDiagnostics` is a plain `addAll` — because a buffer belongs to one thread at a
+  time by construction. That is the task's "per-task accumulation + effective merge" and it removes
+  **121 494 lock acquisitions** on the benchmark corpus.
+- **The merge happens at the end of `analyze()`, not when a file is analysed.** A class collector's
+  `flush()` is deferred to the global pass — FDP's `UNDEFINED` cannot be decided until every class has
+  been seen — so the per-file buffer is still *open* when the file's visit task returns. Merging it
+  earlier would drop every aggregate diagnostic. `analyzeClasses` therefore returns `List<FileAnalysis>`
+  (each carrying its own buffer) and `analyze()` merges them after the global pass. This is the one
+  place where "per-task merge" is not "merge when the task returns", and the reason is written down in
+  `docs/ARCHITECTURE.md`.
+- **The AST window stopped being a scheduling barrier.** The residency bound used to be enforced by
+  slicing the file list into batches of `PARALLELISM × 4 = 28` and joining each batch before starting
+  the next. Per-file cost has a long tail, so every batch ended with one straggler while the other
+  workers idled — thread dumps taken mid-run showed them parked in `ForkJoinPool.awaitWork` with no
+  work left in their batch, and CPU utilisation sat at ~35 %. The bound is now a `Semaphore` of
+  `windowSize` permits, held for the whole file including the parse, so the residency guarantee is
+  unchanged (the existing `peakResidentUnits` tests still pass) while a finished worker starts the next
+  file immediately.
+- **`ResolverAttachingTypeSolver` double-checks before locking.** The decorator attached its resolver
+  under `synchronized (unit)` on every resolution; the steady state now takes no monitor at all.
+- **Parallelism is overridable for measurement.** `-Dmetricstree.parallelism=N`, validated and
+  documented as a measurement knob; the Gradle `benchmark` and `test` tasks forward it, because Gradle
+  does not propagate `-D` to forked JVMs.
+
+**Scaling, measured** (`:java-metrics-lib:benchmark` on the corpus, JDK 17 toolchain, `-Xmx4g`, 8-core
+reference machine). "Batches" is the pre-change build, "admission" the final one:
+
+| Workers | VISIT, batches | VISIT, admission | Speedup | Peak heap | Heap after GC | Total |
+|---|---|---|---|---|---|---|
+| 1 | 52 605 ms | 53 763 ms | 1.00× | 1 949 MB | 469 MB | 54 861 ms |
+| 2 | 40 541 ms | 34 416 ms | 1.56× | 3 042 MB | 495 MB | 35 499 ms |
+| 4 | 31 338 ms | 27 302 ms | 1.97× | 3 716 MB | 510 MB | 28 536 ms |
+| 7 (default) | 29 005 ms | 23 135 ms | 2.27× | — | — | — |
+| 8 | 28 807 ms | 23 692 ms | 2.27× | 3 710 MB | 550 MB | 24 805 ms |
+
+Removing the barrier bought 13 % at 4 workers and 18 % at 8. The **targets of 3.2× at 4 and 6× at 8
+are not met**; the measured speedup is 1.97× and 2.27×.
+
+**Why, measured.** `/usr/bin/time -l` and JFR, both on the final code:
+
+- **The pool is not idle.** CPU-per-wall is **1.86 at 1 worker** (108.7 s user + 3.7 s sys for 58.6 s
+  of `VISIT`) and **6.11 at 8** (165.7 s + 8.0 s for 26.8 s) — 6.1 of 8 cores genuinely busy.
+- **Parallelism does more work, not just less efficiently.** Total CPU rises **+55 %** (112.3 s →
+  173.7 s). So the parallel run burns 1.55× the CPU to finish 2.07× faster: roughly a third of the
+  parallel CPU is work the serial run never did.
+- **GC is not the cause.** Pause totals move only 3 234 ms → 3 803 ms between 1 and 8 workers, and an
+  earlier `-Xmx12g` run was no faster than `-Xmx4g` (24 934 ms vs 24 244 ms).
+- **All of the run's monitor contention is one lock, and it is JavaParser's.** `jdk.JavaMonitorEnter`
+  events attributed by top frame:
+
+  | Top frame | Events | Blocked |
+  |---|---|---|
+  | `JavaParserTypeSolver.parse(Path)` | **1 137** | **26 612 ms** |
+  | `Collections$SynchronizedMap.get` | 7 | 111 ms |
+  | `JavaParserFacade.get(TypeSolver)` | 3 | 56 ms |
+  | `BuiltinClassLoader.loadClassOrNull` | 7 | 77 ms |
+  | all others | 4 | 63 ms |
+
+  The lock is `synchronized (javaParser)` in `JavaParserTypeSolver.parse`, whose own comment says
+  *"JavaParser only allow one parse at time"*. 14.8 % of execution samples sit inside it. The second
+  entry is 111 ms, so there is no second contention source to chase.
+- **The lock is entered on a cache miss.** The solver's `parsedFiles` / `foundTypes` caches are Guava
+  `softValues()` caches bounded at `SOLVER_CACHE_SIZE = 512` over 4 074 files, so a miss re-parses the
+  file from disk — which is where the extra CPU comes from. Raising the bound to 8 192 cut 8-worker
+  `VISIT` by 12 % (25 510 → 22 385 ms) and total CPU by 8 %, at a peak heap of 4 088 MB against a 4 GB
+  ceiling. **Reverted**: memory is TASK-203/204's scope, and 12 % does not change the conclusion.
+- **Two suspects were ruled out by measurement rather than assumed.** `JavaParserFacade.get` is
+  `public static synchronized` over a static map and looked like the JVM-wide hazard — 3 events, 56 ms,
+  not on the hot path. And a first pass at the JFR sample analysis reported 0.3 % of samples inside the
+  serialised section, which was an artifact: `jfr print` truncates stack traces to **5 frames** unless
+  `--stack-depth` is given, and the frame of interest is far deeper. With the depth set it is 14.8 %.
+
+**Pool sizing review — conclusion: one number, and no per-pass split.** Parsing and visiting are fused
+into a single per-file task, so there are no separate parse and visit phases that could be sized apart;
+there is no shared pool whose width could be mis-set, because each pool is created per pass and
+destroyed after it. The risk section's "over-parallelizing parse can regress" does not apply either:
+more workers never made anything slower at any point in the table above. `PARALLELISM =
+max(1, cores - 1)` stays, with the last core deliberately left to the workstation, and the default is
+now overridable so the decision can be re-measured on other hardware.
+
+**Equivalence proved on the corpus** — pre-change worktree at `5a47347` vs the working tree, both run
+over `/Users/vadim/code/core/src/main/java`, both producing a 61 787 088-byte report:
+
+- 25 333 metric-bearing entities compared (1 project, 1 318 packages, 4 020 classes, 19 994 methods):
+  **0 differing values**, none added, none removed.
+- Diagnostics **121 494 on both sides, multiset-identical** — including the 9-per-400 class of loss the
+  race used to cause.
+- `resolutionCoverage` `0.6491621776056496` on both sides; DEBT-11's spread did not fire this run, and
+  nothing here changes it.
+
+- Tests: 2 new in `AstMemoryManagerTest`, `AnalysisCollectorTest`'s
+  `staysConsistentUnderConcurrentUse` replaced by `concurrentClassesNeverShareASink` (the old test
+  asserted that one collector *could* be driven by 8 threads — the pre-DEBT-10 premise — and now
+  asserts the opposite: 8 classes × 8 collectors, each with its own plain `ArrayList` sink, each
+  keeping its own cap and its own suppressed count). The temporary reproducer was deleted.
+- `./gradlew check` green: 318 tests, 0 failures, 1 intentional skip.
+
 ### TASK-204 — two-pass pipeline, made structural and proved — done (2026-09-17)
 
 **The road-map topology was already in place; this task made it a property of the code.** The

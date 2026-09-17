@@ -104,15 +104,16 @@ without the analyzer. Three properties of the snapshot are deliberate:
 ### AST residency: a window, and re-parsing instead of an index
 
 Pass 1 is where an AST is needed, and only for the class being read. `AstMemoryManager` makes that
-literal: it parses the file list in windows of `PARALLELISM × 4` (minimum 4) and hands each unit to a
-task that does the per-class work, dropping the manager's reference the moment the task returns.
+literal: it admits files through a **semaphore** with `windowSize` permits — `PARALLELISM × 4`,
+minimum 4 — and hands each unit to a task that does the per-class work, dropping the manager's
+reference the moment the task returns.
 
 ```
 source files
-  → window of W files, parsed in parallel
+  → acquire a permit (at most W files in flight)
       → per unit: local visitors + resolving visitors + snapshot build → FileAnalysis
         (the unit is released here; FileAnalysis holds no AST reference)
-  → next window
+  → release the permit
 ```
 
 Two properties matter and both are load-bearing:
@@ -121,6 +122,15 @@ Two properties matter and both are load-bearing:
   manager" holds whatever the pool is doing, and `peakResidentUnits()` exposes it so a test can
   assert it. The default is deliberately larger than the pool: a window narrower than the parallelism
   would starve workers, and a much wider one would hold ASTs nobody is reading.
+- **The bound must not also be a scheduling barrier.** It used to be enforced by slicing the file list
+  into batches of `windowSize` and joining each batch before starting the next. Per-file cost has a
+  long tail — a file that pulls a large part of the symbol graph through the solver costs orders of
+  magnitude more than a leaf class — so every batch ended with one straggler while the other workers
+  sat idle: thread dumps taken during a run showed them parked in `ForkJoinPool.awaitWork` with no
+  work left in the batch. The semaphore keeps the same residency guarantee (the permits are held for
+  the whole file, parse included) while letting a finished worker start the next file immediately.
+  Measured on the benchmark corpus: `VISIT` 31 338 → 25 474 ms at 4 workers, 28 807 → 25 576 ms at 8.
+  See [PROGRESS.md](PROGRESS.md) for the full table.
 - **The task must not retain the unit.** An implementation that keeps a `CompilationUnit` — or any
   node inside it — alive past its task keeps the whole AST alive, which is why the analyzer hands the
   manager the per-class work directly rather than collecting units and analysing them later.
@@ -165,6 +175,64 @@ accumulate units. `CorePackageAstIndependenceTest` scans every compiled `library
 expressible without JavaParser types, because one `Node` field there would put every AST back within the
 global pass's reach without changing a single metric value.
 
+### What bounds scaling
+
+The analysis is parallelised over files on a dedicated `ForkJoinPool` of
+`max(1, availableProcessors - 1)` workers, overridable for measurement with
+`-Dmetricstree.parallelism=N`. One number covers both passes, and that is a consequence of the
+topology rather than a simplification: parsing and visiting are fused into a single per-file task, so
+there are no separate parse and visit phases that could be sized apart. See `parallelism()`'s javadoc.
+
+What the analysis can and cannot scale past is **one lock inside JavaParser**. The analysis' own code
+has no serialisation point left (the diagnostics path takes no lock at all — see below — and the
+residency counters are touched once per file), but it resolves symbols through JavaParser's symbol
+solver, and that solver re-parses files from disk behind a monitor:
+
+```java
+// com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver
+private Optional<CompilationUnit> parse(Path srcFile) {
+    ...
+    // JavaParser only allow one parse at time.
+    synchronized (javaParser) { ... }
+}
+```
+
+Measured on the benchmark corpus at 8 workers, this one lock **is** the run's contention:
+
+| Top frame of `jdk.JavaMonitorEnter` | Events | Blocked |
+|---|---|---|
+| `JavaParserTypeSolver.parse(Path)` | **1 137** | **26 612 ms** |
+| `Collections$SynchronizedMap.get` | 7 | 111 ms |
+| `JavaParserFacade.get(TypeSolver)` | 3 | 56 ms |
+| `BuiltinClassLoader.loadClassOrNull` | 7 | 77 ms |
+| everything else | 4 | 63 ms |
+| **total** | 1 158 | 26 919 ms |
+
+The next-largest entry is 111 ms, so there is no second contention source to chase.
+`JavaParserFacade.get` is `public static synchronized` over a `static Map<TypeSolver, JavaParserFacade>`
+and looks like a JVM-wide hazard, but it is not on the hot path — 3 events, 56 ms. 14.8 % of execution
+samples sit inside `JavaParserTypeSolver.parse`, i.e. inside the serialised block.
+
+The lock is entered on a **cache miss**, and the caches are `softValues()` Guava caches bounded at
+`SOLVER_CACHE_SIZE` (512) entries over a 4 074-file corpus — so a miss re-parses the file from disk.
+Enlarging the bound to 8 192 cut 8-worker `VISIT` by 12 % and total CPU by 8 %, at a peak heap of
+4 088 MB against a 4 GB ceiling; the experiment was reverted because memory belongs to TASK-203/204,
+not here, and because the recovered 12 % does not change the conclusion.
+
+Both the lock and the cache bound are JavaParser's own structures, and the task scopes them
+"document, don't fix". The analysis cannot remove the lock without replacing the solver.
+
+Two consequences worth knowing when reading a scaling number:
+
+- **Parallelism costs extra CPU, not just lost efficiency.** On the reference machine, 1 worker uses
+  108.7 s of user CPU for 58.6 s of `VISIT`; 8 workers use 165.7 s for 26.8 s. The parallel run
+  therefore burns **1.55× the CPU** to finish 2.07× faster — a third of the parallel CPU is work the
+  serial run never did, which is what a cache that re-parses on a miss does under 8× the allocation
+  rate. A scaling table alone would hide this; CPU-per-wall does not.
+- **The pool is genuinely busy, and GC is not the problem.** CPU-per-wall is 1.86 at 1 worker and 6.11
+  at 8, so workers are not idle; and GC pause totals move only 3.2 s → 3.8 s between the two runs.
+  The limit is the solver's serial section, not scheduling and not the collector.
+
 ### Diagnostics
 
 Resolution failures are not errors: a symbol the solver cannot resolve lowers the affected metric,
@@ -173,8 +241,9 @@ and the analysis continues. To keep that from being invisible, every such proble
 ```
 visitor catch block
   → AnalysisCollector.warnUnresolved / warnUnresolvedType / warnUnresolvedName   (per class, deduped + capped)
-    → MetricReport.diagnostics                              (one shared list, total order)
-      → JSON "diagnostics" array / CLI output
+    → this file's diagnostics buffer                      (one writer at a time, no lock)
+      → MetricReport.diagnostics                          (merged after the global pass, total order)
+        → JSON "diagnostics" array / CLI output
 
 visitor success path
   → AnalysisCollector.recordResolved()                      (no dedup, no cap)
@@ -198,7 +267,7 @@ threshold cannot pass on an empty run.
 
 `AnalysisCollector` is created once per analysed class and is what that class's class-level visitors
 report through, so the same broken symbol is reported once per metric rather than once per AST node.
-Each method then gets a **child collector** (`childCollector`) that writes to the same shared list but
+Each method then gets a **child collector** (`childCollector`) that writes to the same buffer but
 keeps its own dedup state and cap, so one method's findings are not suppressed by another's. After
 `AnalysisOptions.unresolvedSymbolDiagnosticCap` (default 20) individual diagnostics, the remainder is
 aggregated into one `UNRESOLVED_SYMBOL_BULK` / `UNRESOLVED_TYPE_BULK` entry carrying the suppressed
@@ -208,9 +277,17 @@ Three properties are load-bearing and tested:
 
 - **Determinism** — classes are visited on a parallel stream, so diagnostics arrive in
   non-deterministic order. `MetricReport` sorts them by severity, code, message *and location*; the
-  location is required because messages repeat across classes.
-- **No lost reports** — the collector synchronizes on the shared diagnostics list, matching the
-  discipline the parser already uses.
+  location is required because messages repeat across classes. That total order is also what lets
+  diagnostics be merged in batches rather than one at a time: a batch can reorder the list without
+  changing what a reader sees.
+- **No lost reports** — each file has its own diagnostics buffer, and the run's list is only ever
+  written by one thread at a time: the parser's buffer is merged per window from the thread that called
+  `AstMemoryManager.parseInWindows`, and the class-level buffers are merged by the analysis thread once
+  the global pass has finished writing to them. Nothing on the way takes a lock, because a buffer
+  belongs to one thread at a time. This replaced a `synchronized` per diagnostic — 121 494 lock
+  acquisitions on the benchmark corpus — and, on the parse path, an unguarded write from a window's
+  workers into a plain `ArrayList` that lost 9 of 400 diagnostics on a corpus of deliberately broken
+  files. `AstMemoryManagerTest` asserts the merge happens on the calling thread and in batches.
 - **Flush after every producer, before the report** — aggregation happens in `flush()`, which is
   idempotent and must run *after* the last thing that can report for a given collector. Every
   collector owns its own flush: the analyzer flushes each method collector once its visitors have run,
@@ -220,7 +297,9 @@ Three properties are load-bearing and tested:
   mechanism exists to prevent. Since the global pass runs last, a class collector is kept alongside
   its `AnalyzedClass` and flushed only once NOC/FDP are known, so that FDP's own diagnostics go
   through the same dedup and cap; the collectors are flushed in analysis order to keep the list
-  deterministic.
+  deterministic. **The buffer a class collector writes into therefore stays open until the global pass
+  is done**, which is why the per-file buffers are merged at the end of `analyze()` rather than when
+  the file is analysed: merging them earlier would drop every aggregate diagnostic.
 
 #### What is worth reporting
 
