@@ -83,7 +83,13 @@ class AstMemoryManagerTest {
     @Test
     void releasesEveryUnitOnceItsTaskHasReturned() throws IOException {
         List<Path> sourceFiles = writeSources(6);
-        List<WeakReference<CompilationUnit>> references = new ArrayList<>();
+        // CopyOnWriteArrayList, not ArrayList: the task runs on the window's worker threads, so a
+        // plain ArrayList would lose an add whenever two workers resized it at once and the assertion
+        // below would fail with "expected: <6> but was: <5>" — intermittently, and through no fault of
+        // the manager. That is the same unsynchronized-add defect TASK-205 fixed in the analyzer's
+        // diagnostics path; it is easy to reintroduce here because the failure looks like the
+        // manager dropping a file.
+        List<WeakReference<CompilationUnit>> references = new CopyOnWriteArrayList<>();
 
         AstMemoryManager manager = new AstMemoryManager(2);
         manager.parseInWindows(sourceFiles, PARSER_CONFIGURATION, diagnostics -> {
