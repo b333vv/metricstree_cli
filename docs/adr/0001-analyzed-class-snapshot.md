@@ -17,7 +17,7 @@ Every cross-class metric was computed by a visitor that, while analysing *one* c
   to count one class's providers.
 
 Both are O(classes²) in resolution work. On the benchmark corpus (4 074 files, 4 020 classes)
-this cost 58 s of wall time for the full analysis, and — more importantly — it forced the whole
+this cost 59.7 s of wall time for the full analysis, and — more importantly — it forced the whole
 project's ASTs to stay reachable for the entire run. Road-map Phase 2 wants to release ASTs
 after each class is visited, and the plan named "global metric accuracy" as its explicitly
 acknowledged risk: you cannot free an AST that a later class's metric still needs.
@@ -92,9 +92,14 @@ shared `SUPERTYPES` / `DEPENDENCIES` contexts would have been equally true but w
 
 - **NOC and FDP are computed from snapshots alone**, with no AST and no resolver. The global pass
   is now the prerequisite Phase 2 needs: a class's AST can be released once its snapshot is built.
-- **Runtime on the benchmark corpus: 58 s → 32 s.** The O(classes²) resolution work is gone.
-- **Every metric value and every diagnostic is unchanged** on the golden corpus and on the
-  benchmark corpus: 0 NOC/FDP value differences across all 4 020 classes.
+- **Runtime on the benchmark corpus: 59.7 s → 32.7 s.** The O(classes²) resolution work is gone.
+- **NOC and FDP are unchanged on the benchmark corpus: 0 value differences across all 4 020
+  classes.** Re-verified against the pre-change build (`2f0d2f1`) by diffing the full JSON of both
+  runs: the *only* metric codes that differ at all are `CC`/`CCM`/`CND`/`MND`/`LND` and what derives
+  from them (`CCC`, `CMI`, `MMI`, `PAMI`) — and those differ because of the pre-existing visitor race
+  recorded as **DEBT-10**, not because of this change. `NOC` and `FDP` do not appear in the diff at
+  all. The diagnostic total did move, legitimately: 121 456 → 121 494, with `NOC` 33 → 20, `FDP`
+  2 262 → 2 074 and the unattributed contexts 6 372 → 6 611; every other context is identical.
 - The snapshot model is **testable without the analyzer** — 29 new tests (`CrossClassMetricCalculatorTest`,
   `AnalyzedClassTest`, `DependencySnapshotTest`) build snapshots by hand and assert the graph.
 - The contract is **public API**, so future incremental analysis and the IDE plugin can consume it.
@@ -102,7 +107,7 @@ shared `SUPERTYPES` / `DEPENDENCIES` contexts would have been equally true but w
 ### Negative
 
 - **`resolutionCoverage` drops.** On the golden corpus `0.9522184300341296` → `0.9467680608365019`;
-  on the benchmark corpus `0.9222126026432128` → `0.6520965502196913`. This is a **semantic
+  on the benchmark corpus `0.9215568215067099` → `0.6491621776056496`. This is a **semantic
   consequence, not a regression**: the O(classes²) scans counted a great many *successful*
   resolutions (every class resolving every other class's supertypes and field accesses), and those
   attempts are gone. The metric's own definition — TASK-104's javadoc — says it "describes this
@@ -122,7 +127,11 @@ shared `SUPERTYPES` / `DEPENDENCIES` contexts would have been equally true but w
 
 ## Related ADRs
 
-- None yet. This is the first ADR in the repository.
+- [ADR 0002](0002-bounded-ast-residency.md) — bounded AST residency. It is the direct consequence of
+  this decision: making the global pass AST-free is what allows an AST to be released as soon as its
+  class has been analysed.
 - Relevant task records: `docs/tasks/TASK-202-snapshot-enrichment.md` (this decision),
-  `docs/tasks/TASK-203-*.md` / `TASK-204-*.md` (releasing ASTs, which this unblocks),
-  `docs/tasks/TASK-104-*.md` (`resolutionCoverage`, whose meaning this ADR clarifies).
+  `docs/tasks/TASK-203-ast-memory-manager.md` / `TASK-204-two-pass-pipeline.md` (releasing ASTs,
+  which this unblocks),
+  `docs/tasks/TASK-104-resolution-coverage.md` (`resolutionCoverage`, whose meaning this ADR
+  clarifies).

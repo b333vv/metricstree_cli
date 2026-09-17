@@ -1,10 +1,13 @@
 package org.b333vv.metric.library.javaparser;
 
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.resolution.TypeSolver;
+import com.github.javaparser.resolution.SymbolResolver;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
+import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserClassDeclaration;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserInterfaceDeclaration;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ClassLoaderTypeSolver;
@@ -46,6 +49,22 @@ public class JavaParserTypeSolverFactory {
      */
     public static final String CLASSPATH_PROBLEM = "CLASSPATH_PROBLEM";
 
+    /**
+     * How many parsed files each {@link JavaParserTypeSolver} keeps before it starts evicting.
+     *
+     * <p>These caches are the price of resolving the project's own declarations from disk instead of
+     * from an in-memory index of every declaration: a solver that re-parses a file per lookup would
+     * turn every cross-file reference into a disk read, and one that caches without a bound would
+     * rebuild the very retention the in-memory index was removed for. The limit is expressed in files
+     * per solver and is deliberately larger than the analysis' AST window, because a solver cache
+     * entry is a re-parsed unit that is never mutated and can be dropped at any time — unlike a
+     * resident unit, nothing is walking it.
+     *
+     * <p>JavaParser's cache uses soft references on top of the size bound, so a solver under memory
+     * pressure gives entries up before the analysis has to.
+     */
+    private static final long SOLVER_CACHE_SIZE = 512L;
+
     private static final Consumer<AnalysisDiagnostic> DISCARD = diagnostic -> {
     };
 
@@ -70,16 +89,26 @@ public class JavaParserTypeSolverFactory {
             ClassLoader classLoader, Consumer<AnalysisDiagnostic> diagnostics) {
         CombinedTypeSolver combinedTypeSolver = new CombinedTypeSolver();
 
-        // 1. The project's own parsed declarations. Highest fidelity — exact AST, ranges and comments —
-        //    and the answer the user is actually asking about when a name is declared in their sources.
+        // 1. The project's own declarations, for the files the request named individually. A file
+        //    under a source root is covered by step 2; a file named on the command line has no package
+        //    root to be found under, so it is the one thing that has to be indexed in memory.
         MemoryTypeSolver memoryTypeSolver = new MemoryTypeSolver();
         populateMemoryTypeSolver(allUnits, combinedTypeSolver, memoryTypeSolver, diagnostics);
         combinedTypeSolver.add(memoryTypeSolver);
 
-        // 2. The project's source roots, for declarations the in-memory pass above did not index.
+        // 2. The project's source roots — which is where the project's own types are answered from
+        //    now that the in-memory index covers only step 1. They re-parse from disk on demand, so
+        //    they must parse with the same configuration as the main pass: a different language level
+        //    would make a re-parsed declaration differ from the one being analysed.
+        //
+        //    The resolver is built here, before the solvers that carry it, because it has to be the one
+        //    attached to the root solver; the solvers are added to that root immediately afterwards,
+        //    and nothing resolves before the analysis starts.
+        ParserConfiguration parserConfiguration = EnhancedJavaParserContextBuilder.createParserConfiguration();
+        SymbolResolver symbolResolver = new JavaSymbolSolver(combinedTypeSolver);
         for (Path sourceRoot : sourceRoots) {
             try {
-                combinedTypeSolver.add(new JavaParserTypeSolver(sourceRoot));
+                combinedTypeSolver.add(reParsingSolver(sourceRoot, parserConfiguration, symbolResolver));
             } catch (RuntimeException exception) {
                 // JavaParserTypeSolver throws IllegalStateException — not UnsupportedOperationException,
                 // which is what this catch used to look for, making the message it printed unreachable.
@@ -104,7 +133,7 @@ public class JavaParserTypeSolverFactory {
         //    a source file is the more precise of the two answers.
         for (Path sourceDirectory : classpath.sourceDirectories()) {
             try {
-                combinedTypeSolver.add(new JavaParserTypeSolver(sourceDirectory));
+                combinedTypeSolver.add(reParsingSolver(sourceDirectory, parserConfiguration, symbolResolver));
             } catch (RuntimeException exception) {
                 report(diagnostics, "Class directory " + sourceDirectory
                         + " cannot be indexed and is skipped: " + exception.getMessage(), sourceDirectory);
@@ -142,6 +171,19 @@ public class JavaParserTypeSolverFactory {
         combinedTypeSolver.add(new ReflectionTypeSolver());
 
         return combinedTypeSolver;
+    }
+
+    /**
+     * A source-root solver whose re-parsed units carry {@code symbolResolver}.
+     *
+     * <p>Without the resolver, resolving <em>through</em> a re-parsed unit fails — see
+     * {@link ResolverAttachingTypeSolver}, which exists for exactly that reason.
+     */
+    private static TypeSolver reParsingSolver(
+            Path sourceRoot, ParserConfiguration parserConfiguration, SymbolResolver symbolResolver) {
+        JavaParserTypeSolver solver =
+                new JavaParserTypeSolver(sourceRoot, parserConfiguration, SOLVER_CACHE_SIZE);
+        return new ResolverAttachingTypeSolver(solver, symbolResolver);
     }
 
     private void populateMemoryTypeSolver(List<CompilationUnit> allUnits, CombinedTypeSolver combinedTypeSolver,

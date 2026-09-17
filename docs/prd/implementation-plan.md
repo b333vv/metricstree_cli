@@ -264,6 +264,47 @@ Throughput: 88.26 files/s, 87.09 classes/s, 433.14 methods/s.
 - Run-to-run variance on this machine is a few percent (an earlier run of the same revision
   measured 47 812 ms / 3 806 MB), so only differences well above that are meaningful.
 
+### TASK-203 measurement (2026-09-17)
+
+Same machine, same command, same `-Xmx4g`. "Before" is the pre-TASK-203 build (a worktree at
+`020ed4a`), measured back to back with "after" so the machine state is comparable.
+
+| | TASK-002 baseline | Before TASK-203 | After TASK-203 | vs baseline |
+|---|---|---|---|---|
+| VISIT, heap after GC | 1 949 MB | 2 006 MB | **526 MB** | **−73%** |
+| AGGREGATE, heap after GC | 1 958 MB | 2 018 MB | **538 MB** | **−73%** |
+| Overall peak heap (sampled) | 3 815 MB | 3 781 MB | 3 542 MB | −7.2% |
+| Total wall time | 46 161 ms | 65 717 ms | 32 293 ms | −30% |
+| CLI wall / CPU time | — | 32.7 s / 186 s | 30.7 s / 117 s | −6% wall, −37% CPU |
+
+**The peak-heap criterion is not met by this task, and the instrument is the reason.** `Peak heap` is
+`MemoryMXBean.getHeapMemoryUsage().getUsed()` sampled every 10 ms, so it counts *garbage* as well as
+live objects; a JVM handed 4 GB and a high allocation rate has no reason to collect early, and the
+sampled peak therefore tracks the collector's willingness to expand rather than the analysis' live
+set. The **heap after GC** column is the live set, and that is where the change is: −73%.
+
+The user-facing claim was tested directly instead, by lowering the ceiling until it broke (CLI, same
+corpus):
+
+| Heap cap | Before | After |
+|---|---|---|
+| `-Xmx1g` | **did not finish** (killed at 300 s) | **completes in 44 s** |
+| `-Xmx512m` | — | analysis completes; report serialisation OOMs in `MetricReportJsonWriter` |
+
+Two consequences for the remaining Phase 2 tasks:
+
+- **Criterion 1 (peak heap −30%) is measured with the same instrument and should be re-stated** in
+  terms of the live set, or the peak redefined as sampled after a collection. As written, TASK-204 can
+  meet the memory goal and still fail the criterion, because the criterion is not measuring memory.
+- **The CLI's ceiling is now the serialiser, not the analysis** (`MetricReportJsonWriter` builds the
+  whole 62 MB report as one `String`). That belongs to TASK-302.
+- **`resolutionCoverage` is unchanged** by TASK-203 — bit-identical at `0.6491621776056496` — and the
+  class / method / package counts (4 020 / 19 994 / 1 318) and diagnostic count (121 494) are
+  identical, so the memory win cost no accuracy.
+- **Note for any corpus-based comparison:** the corpus is not deterministic run-to-run (two runs of one
+  jar differ in 256 metric values, all in `CC`/`CCM`/`CND`/`LND`/`MND` and their derivatives). See
+  **DEBT-10** in [the tracker](../tech-debt-tracker.md) before treating a corpus diff as evidence.
+
 ---
 
 ## 6. Risks & Mitigations

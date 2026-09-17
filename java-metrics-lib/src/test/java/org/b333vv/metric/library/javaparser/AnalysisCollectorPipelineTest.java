@@ -243,7 +243,7 @@ class AnalysisCollectorPipelineTest {
         Path sourceRoot = writeFixture(source);
         JavaParserJavaMetricsAnalyzer analyzer = new JavaParserJavaMetricsAnalyzer(
                 new JavaParserTypeSolverFactory(),
-                new EnhancedJavaParserContextBuilder(),
+                new AstMemoryManager(),
                 new DerivedMetricCalculator(),
                 AnalysisPhaseListener.NO_OP,
                 classVisitors,

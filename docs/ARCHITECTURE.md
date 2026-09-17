@@ -51,9 +51,11 @@ metricstree_cli/
 **library/javaparser** — Analysis engine
 - `JavaMetricsAnalyzer` — Main analyzer interface
 - `JavaParserJavaMetricsAnalyzer` — Implementation using JavaParser
+- `AstMemoryManager` — Owns the lifetime of every parsed unit: parses in windows, releases each unit once its task returns
 - `AnalysisPhaseListener` — Observational per-phase timing hook used by the benchmark
 - `ClasspathInspector` / `UsableClasspath` — Decide what each `--classpath` entry can back, split by the solver it needs
 - `JavaParserTypeSolverFactory` — Builds the solver chain in the precedence order below
+- `ResolverAttachingTypeSolver` — Gives the units a re-parsing solver hands out the analysis' symbol resolver
 
 **library/javaparser/visitor** — Metric visitors
 - `AnalysisCollector` — Delivers metric values *and* resolution problems for one analysed class
@@ -97,6 +99,44 @@ without the analyzer. Three properties of the snapshot are deliberate:
   snapshot can be incomplete, and both metrics report `Value.UNDEFINED` rather than a number when
   they are set — see ADR `docs/adr/0001-analyzed-class-snapshot.md`, which also records the
   inherited FDP behaviour this reproduces and the `resolutionCoverage` consequence.
+
+### AST residency: a window, and re-parsing instead of an index
+
+Pass 1 is where an AST is needed, and only for the class being read. `AstMemoryManager` makes that
+literal: it parses the file list in windows of `PARALLELISM × 4` (minimum 4) and hands each unit to a
+task that does the per-class work, dropping the manager's reference the moment the task returns.
+
+```
+source files
+  → window of W files, parsed in parallel
+      → per unit: local visitors + resolving visitors + snapshot build → FileAnalysis
+        (the unit is released here; FileAnalysis holds no AST reference)
+  → next window
+```
+
+Two properties matter and both are load-bearing:
+
+- **The window is a residency bound, not a thread count.** "At most W units are reachable from the
+  manager" holds whatever the pool is doing, and `peakResidentUnits()` exposes it so a test can
+  assert it. The default is deliberately larger than the pool: a window narrower than the parallelism
+  would starve workers, and a much wider one would hold ASTs nobody is reading.
+- **The task must not retain the unit.** An implementation that keeps a `CompilationUnit` — or any
+  node inside it — alive past its task keeps the whole AST alive, which is why the analyzer hands the
+  manager the per-class work directly rather than collecting units and analysing them later.
+
+Because parsing is now windowed, the class analyses come out in a different order than the old
+"parse everything, then analyse the list" flow. Every per-class datum is keyed by qualified name and
+each class's raw metrics are computed in isolation, so the only ordering that mattered was the
+collected order — which is restored by sorting on `qualifiedName()`, the same key the previous global
+sort used.
+
+Retiring the in-memory index has one consequence worth knowing when reading a stack trace: the
+project's own types are now answered by `JavaParserTypeSolver` **re-parsing the file from disk**,
+cached at 512 files per solver. A re-parsed unit is a second AST of the same source and carries no
+symbol resolver of its own, so `ResolverAttachingTypeSolver` attaches the analysis' resolver to the
+units the solver hands out. Without it, resolving *through* a re-parsed declaration fails — which is
+exactly what the DIT visitor does when it walks up an `extends` chain. Full reasoning in ADR
+`docs/adr/0002-bounded-ast-residency.md`.
 
 ### Diagnostics
 
@@ -182,8 +222,8 @@ that a jar outranks a directory no matter how the command line was written.
 
 | # | Solver | Answers for | Why here |
 |---|--------|-------------|----------|
-| 1 | `MemoryTypeSolver` | The project's own parsed declarations | Highest fidelity — exact AST, ranges, comments — and the answer the user is asking about when a name is declared in their own sources |
-| 2 | `JavaParserTypeSolver` per source root | Declarations the in-memory pass did not index | Still the project's sources |
+| 1 | `MemoryTypeSolver` | The files named **individually** on the command line | Highest fidelity — exact AST, ranges, comments — and the only way to answer for a file that has no package root to be found under |
+| 2 | `JavaParserTypeSolver` per source root | Everything else the project declares, re-parsed from disk on demand | The project's own sources; since TASK-203 this is the *normal* path, not a fallback |
 | 3 | `JarTypeSolver` per `--classpath` jar | User-supplied dependencies | Explicitly requested, so it outranks anything the tool was built with |
 | 4 | `JavaParserTypeSolver` per `--classpath` source directory | User-supplied sources | More precise than the same directory's compiled output |
 | 5 | `ClassLoaderTypeSolver` over a directory-first `URLClassLoader` | User-supplied directories of `.class` files | A directory cannot be read by `JarTypeSolver`, so it is loaded instead |
@@ -236,9 +276,13 @@ java-metrics validate -s <source> -t <thresholds.json> -o <report.json> [--stric
 ## Data Flow
 
 1. CLI parses arguments → creates `AnalysisRequest`
-2. `JavaMetricsAnalyzer.analyze()` processes Java sources
-3. **Pass 1 (per class):** JavaParser visits the AST, computes local metrics, builds the class's `DependencySnapshot`
-4. **Pass 2 (global):** `CrossClassMetricCalculator` inverts the snapshots into NOC/FDP
+2. `JavaMetricsAnalyzer.analyze()` resolves the file list, keeps the individually-named files for the
+   in-memory index, and builds the type solver from the source roots and classpath entries
+3. **Parse + pass 1 (per class, windowed):** `AstMemoryManager` parses a window of files in parallel;
+   for each unit the JavaParser visitors compute local metrics and build the class's
+   `DependencySnapshot`, and the unit is released as soon as that task returns
+4. **Pass 2 (global):** `CrossClassMetricCalculator` inverts the snapshots into NOC/FDP, with no AST
+   and no resolver; the collected classes are sorted by qualified name to restore the global order
 5. Results assembled into an `AnalyzedClass` per class, then folded into the `MetricReport` tree
 6. For `analyze`: `MetricReportJsonWriter` serializes to JSON
 7. For `validate`: Compare metrics against thresholds, produce validation report

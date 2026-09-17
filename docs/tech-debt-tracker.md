@@ -81,10 +81,57 @@
   code a reader wants before the rest become an aggregate.
   TASK-202 (2026-09-16) removed the other NOC amplifier for good: with the AST-walking scan retired,
   the broken-supertype failure is met once, while its declaring class is analysed, instead of once per
-  class. On the benchmark corpus `NOC` went 33 → 20 diagnostics. It also shifted the FDP count
-  (2,273 → 2,078) and the shared contexts (`DEPENDENCIES` 1,674 → 1,856, `SUPERTYPES` 142 → 152) for
-  a net 121,029 → 121,066 — the total barely moved, which confirms the array is bounded by the
-  per-class cap rather than by any single amplifier. **The project-level cap remains the fix.**
+  class. Re-measured on the benchmark corpus against the pre-TASK-202 build (`2f0d2f1`), context by
+  context: `NOC` **33 → 20**, `FDP` **2,262 → 2,074**, and the shared (unattributed) contexts
+  **6,372 → 6,611** — for a net **121,456 → 121,494**. Every other context is byte-identical
+  (`CBO` 30,936, `CDISP` 36,176, `CINT` 27,364, `LCOM` 4,827, `RFC` 4,563, `ATFD` 3,618, `NOAV` 2,727,
+  `MPC` 1,226, `SIZE2` 636, `DIT` 295, `LAA` 197, `DAC` 116, `NOA` 108). The total barely moved, which
+  confirms the array is bounded by the per-class cap rather than by any single amplifier — and note
+  the array has grown from TASK-102's 51,833 to 121,494 as the caps became reachable and the
+  diagnostics became more precisely attributed. **The project-level cap remains the fix.**
+- **DEBT-10 — Five method visitors keep mutable state while being shared across parallel workers.**
+  Found by TASK-203's corpus equivalence check (2026-09-17), and the reason that check could not be
+  used as an exact oracle. `JavaParserJavaMetricsAnalyzer` holds its visitor sets as **instance
+  fields** (`classVisitors` / `methodVisitors`) and iterates them from inside the per-file parallel
+  stream, so every worker drives the *same* visitor objects. Five of the twelve method visitors
+  accumulate into instance fields while doing so:
+
+  | Visitor | Fields | Metric |
+  |---|---|---|
+  | `JavaParserMcCabeCyclomaticComplexityMetricVisitor` | `complexity` | `CC` |
+  | `JavaParserCognitiveComplexityMetricVisitor` | `complexity`, `nesting` | `CCM` |
+  | `JavaParserConditionNestingDepthMetricVisitor` | `depth`, `maxDepth` | `CND` |
+  | `JavaParserLoopNestingDepthMetricVisitor` | `depth`, `maxDepth` | `LND` |
+  | `JavaParserMaximumNestingDepthMetricVisitor` | `depth`, `maxDepth` | `MND` |
+
+  Two concurrent `visit(...)` calls on one instance interleave their increments and their
+  `nesting++` / `nesting--` pairs, so the result depends on thread interleaving. The blast radius is
+  wider than those five codes: `CCC` is the class-level **sum of the methods' `CCM`**, and the
+  maintainability indices (`CMI`, `MMI`, `PAMI`) are derived from the complexity family, so one racy
+  method value moves a class, a package and a project number.
+
+  **Evidence.** Two runs of the *same* jar (`analyze --source-root …/core/src/main/java`, 4 074 files
+  / 4 020 classes) differ in 256 metric values: class `CCC` 43 + `CMI` 30, method `CCM` 47 + `CC` 32 +
+  `MMI` 32 + `CND` 24 + `MND` 17 + `LND` 4, package `PAMI` 27 — exactly the five racy codes plus what
+  derives from them, and nothing else. 235 diagnostics differ each way, and `resolutionCoverage`
+  differs in its 15th digit. Values are not merely noisy but sometimes *impossible*: one method's
+  cognitive complexity reads 0 in one run and 4 in the other. A control run confirms the effect is
+  present with no TASK-203 code involved.
+
+  **Not fixed by TASK-203**, and not a TASK-203 regression: the control above predates it, and
+  TASK-203's own diff against the baseline (190 values) is *smaller* than the run-to-run noise of a
+  single jar. The reason it is not a one-liner is the shape of the fix: the visitors' accumulators
+  must be threaded through the recursive `visit(Node, AnalysisCollector)` dispatch, which is a change
+  to the visitor contract, not a `synchronized` block — adding a lock would serialise the hot path
+  this task is trying to speed up. The precedent is DEBT-01, where the fix was to make the Halstead
+  visitors stateless via a per-`visit` accumulator rather than to guard them.
+  **This is TASK-205's stated scope** ("audit remaining shared mutable state"; "metric values and
+  diagnostics unchanged (goldens green)"), and it should be fixed there — or promoted to its own task,
+  because until it is fixed the tool reports wrong complexity and maintainability numbers on any
+  multi-core machine, which is every machine it runs on.
+  Reproducer: run `analyze` twice over the same multi-file corpus and diff the JSON; the method-level
+  `CC`/`CCM`/`CND`/`MND`/`LND` values will differ. `JavaParserHalsteadParallelDeterminismTest` is the
+  pattern to copy (it asserts bit-identical values over 100 repeated parallel runs).
 
 ## Resolved Debt Items
 - **DEBT-04 — Dead `HAS_METHOD_RULE` in `class-level-rules.json`.** Resolved by
@@ -125,10 +172,14 @@
   method-level Halstead values across 100 repeated parallel runs over a 12-class / 36-method
   fixture — it failed within a few runs on the pre-fix code and passes now. The pre-existing
   `JavaParserHalsteadMetricVisitorsRegressionTest` (single-threaded expected values) passes
-  unchanged. Audit sweep: no other shared visitor keeps mutable instance state
-  (`JavaParserNumberOfChildrenMetricVisitor` and `JavaParserForeignDataProvidersMetricVisitor` held
+  unchanged. Audit sweep: the two other visitors checked at the time
+  (`JavaParserNumberOfChildrenMetricVisitor` and `JavaParserForeignDataProvidersMetricVisitor`) held
   constructor-injected immutable class lists and were instantiated per class — both classes were
-  deleted by TASK-202, which is why that audit can no longer be repeated against them).
+  deleted by TASK-202, which is why that part of the audit can no longer be repeated against them.
+  **⚠️ That audit sweep's conclusion — "no other shared visitor keeps mutable instance state" — was
+  wrong.** Five method visitors do, and they are shared across parallel workers; see DEBT-10, found
+  by TASK-203's corpus verification. TASK-003 fixed the Halstead visitor specifically rather than the
+  sharing that made it racy, so the same defect survived in its siblings.
 - **DEBT-02 — ForkJoinPool leak.** Resolved by
   [TASK-004](tasks/TASK-004-forkjoinpool-lifecycle.md). Both phases now run through a single
   `runInDedicatedPool(Supplier<T>)` helper in `JavaParserJavaMetricsAnalyzer` that always tears the

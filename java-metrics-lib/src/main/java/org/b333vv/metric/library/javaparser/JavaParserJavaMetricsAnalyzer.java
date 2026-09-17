@@ -22,6 +22,7 @@ import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclar
 import com.github.javaparser.resolution.declarations.ResolvedTypeDeclaration;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
 import com.github.javaparser.resolution.types.ResolvedType;
+import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import org.b333vv.metric.library.core.AnalysisDiagnostic;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
@@ -171,7 +172,13 @@ import static org.b333vv.metric.library.core.MetricCode.WMC;
 public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
     private final JavaParserTypeSolverFactory typeSolverFactory;
-    private final EnhancedJavaParserContextBuilder enhancedContextBuilder;
+    /**
+     * Owns how long a parsed unit stays alive. It replaced the injected
+     * {@link EnhancedJavaParserContextBuilder}: the analysis no longer builds a global context over
+     * every unit, so the only thing it needs from that collaborator is the parser configuration,
+     * which is a static call.
+     */
+    private final AstMemoryManager astMemoryManager;
     private final DerivedMetricCalculator derivedMetricCalculator;
     private final AnalysisPhaseListener phaseListener;
     private final List<JavaParserClassMetricVisitor> classVisitors;
@@ -186,7 +193,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     public JavaParserJavaMetricsAnalyzer() {
         this(
                 new JavaParserTypeSolverFactory(),
-                new EnhancedJavaParserContextBuilder(),
+                new AstMemoryManager(),
                 new DerivedMetricCalculator(),
                 AnalysisPhaseListener.NO_OP);
     }
@@ -198,24 +205,24 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     public JavaParserJavaMetricsAnalyzer(AnalysisPhaseListener phaseListener) {
         this(
                 new JavaParserTypeSolverFactory(),
-                new EnhancedJavaParserContextBuilder(),
+                new AstMemoryManager(),
                 new DerivedMetricCalculator(),
                 phaseListener);
     }
 
     JavaParserJavaMetricsAnalyzer(
             JavaParserTypeSolverFactory typeSolverFactory,
-            EnhancedJavaParserContextBuilder enhancedContextBuilder,
+            AstMemoryManager astMemoryManager,
             DerivedMetricCalculator derivedMetricCalculator) {
-        this(typeSolverFactory, enhancedContextBuilder, derivedMetricCalculator, AnalysisPhaseListener.NO_OP);
+        this(typeSolverFactory, astMemoryManager, derivedMetricCalculator, AnalysisPhaseListener.NO_OP);
     }
 
     JavaParserJavaMetricsAnalyzer(
             JavaParserTypeSolverFactory typeSolverFactory,
-            EnhancedJavaParserContextBuilder enhancedContextBuilder,
+            AstMemoryManager astMemoryManager,
             DerivedMetricCalculator derivedMetricCalculator,
             AnalysisPhaseListener phaseListener) {
-        this(typeSolverFactory, enhancedContextBuilder, derivedMetricCalculator, phaseListener, null, null);
+        this(typeSolverFactory, astMemoryManager, derivedMetricCalculator, phaseListener, null, null);
     }
 
     /**
@@ -229,13 +236,13 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
      */
     JavaParserJavaMetricsAnalyzer(
             JavaParserTypeSolverFactory typeSolverFactory,
-            EnhancedJavaParserContextBuilder enhancedContextBuilder,
+            AstMemoryManager astMemoryManager,
             DerivedMetricCalculator derivedMetricCalculator,
             AnalysisPhaseListener phaseListener,
             List<JavaParserClassMetricVisitor> classVisitors,
             List<JavaParserMethodMetricVisitor> methodVisitors) {
         this.typeSolverFactory = typeSolverFactory;
-        this.enhancedContextBuilder = enhancedContextBuilder;
+        this.astMemoryManager = astMemoryManager;
         this.derivedMetricCalculator = derivedMetricCalculator;
         this.phaseListener = phaseListener == null ? AnalysisPhaseListener.NO_OP : phaseListener;
         this.classVisitors = classVisitors == null ? buildClassVisitors() : List.copyOf(classVisitors);
@@ -262,47 +269,70 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         }
 
         phaseStart = System.nanoTime();
-        List<ParsedSourceUnit> parsedSourceUnits = parseSourceFiles(sourceFiles, diagnostics);
-        // A module descriptor is a source unit but never a type declaration, so it is parsed — a syntax
-        // error in module-info.java is still worth reporting — and then kept out of the type pipeline,
-        // which has nothing to do with it. See ModuleDescriptorAnalysisTest for what this guarantees.
-        List<ParsedSourceUnit> typeDeclaringUnits = parsedSourceUnits.stream()
-                .filter(unit -> !unit.moduleDescriptor())
+
+        // Files named individually on the command line are the one case a source root cannot cover:
+        // such a declaration has no package root to be found under, so it has to be indexed in
+        // memory, and an in-memory index holds its AST. A project analysed through its source roots —
+        // the normal case — holds no unit at all beyond the current window.
+        List<Path> explicitSourceUnits = explicitSourceUnits(request, sourceFiles);
+        List<ParsedFile> explicitFiles = parseExplicitUnits(explicitSourceUnits, diagnostics);
+        Set<Path> explicitSourceUnitPaths = Set.copyOf(explicitSourceUnits);
+        List<Path> windowedSourceFiles = sourceFiles.stream()
+                .filter(sourceFile -> !explicitSourceUnitPaths.contains(sourceFile))
                 .toList();
-        List<CompilationUnit> parsedUnits = typeDeclaringUnits.stream()
-                .map(ParsedSourceUnit::compilationUnit)
-                .toList();
-        if (parsedUnits.isEmpty() && !parsedSourceUnits.isEmpty()) {
-            diagnostics.add(new AnalysisDiagnostic(
-                    MODULE_DESCRIPTOR_ONLY,
-                    AnalysisSeverity.INFO,
-                    "The source roots contain only module descriptors (" + moduleNames(parsedSourceUnits)
-                            + "), so there are no classes to analyse",
-                    new SourceLocation(sourceFiles.get(0), 1, 1)));
-        }
 
         UsableClasspath classpath = ClasspathInspector.inspect(request.classpathEntries(), diagnostics::add);
+        // Built from paths alone. The project's own declarations are resolved from the source roots on
+        // demand, through JavaParserTypeSolver's bounded cache, instead of from an in-memory index of
+        // every declaration — which is what used to keep every AST reachable for the whole run.
         TypeSolver typeSolver = typeSolverFactory.create(
-                parsedUnits,
+                explicitFiles.stream().map(ParsedFile::compilationUnit).toList(),
                 request.sourceRoots().stream().map(SourceRoot::path).toList(),
                 classpath,
                 getClass().getClassLoader(),
                 diagnostics::add);
-        EnhancedJavaParserContext enhancedContext = enhancedContextBuilder.build(parsedUnits, typeSolver);
-        Map<String, Path> sourcePathByQualifiedName = buildSourcePathIndex(parsedSourceUnits);
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.PARSE, System.nanoTime() - phaseStart);
 
         phaseStart = System.nanoTime();
         // One tally for the whole run, shared by every collector, so the coverage reported at the end
         // describes this analysis rather than one class. Never reused between runs.
         ResolutionStats resolutionStats = new ResolutionStats();
-        List<ClassAnalysis> classAnalyses = analyzeClasses(
-                enhancedContext,
-                sourcePathByQualifiedName,
-                metricSelection,
-                diagnostics,
-                resolutionStats,
-                options.unresolvedSymbolDiagnosticCap());
+        int unresolvedSymbolDiagnosticCap = options.unresolvedSymbolDiagnosticCap();
+
+        // The AST window. Each file is parsed, analysed and dropped in turn, so what is resident is a
+        // window's worth of ASTs rather than the project's worth; the units named on the command line
+        // are the one exception, because the in-memory index that resolves them holds them.
+        ParserConfiguration parserConfiguration = EnhancedJavaParserContextBuilder.createParserConfiguration();
+        List<FileAnalysis> fileAnalyses = new ArrayList<>();
+        for (ParsedFile explicitFile : explicitFiles) {
+            fileAnalyses.add(analyzeUnit(explicitFile.path(), explicitFile.compilationUnit(), typeSolver,
+                    metricSelection, diagnostics, resolutionStats, unresolvedSymbolDiagnosticCap));
+        }
+        fileAnalyses.addAll(runInDedicatedPool(() -> astMemoryManager.parseInWindows(
+                windowedSourceFiles,
+                parserConfiguration,
+                diagnostics::add,
+                (sourceFile, unit) -> analyzeUnit(sourceFile, unit, typeSolver, metricSelection,
+                        diagnostics, resolutionStats, unresolvedSymbolDiagnosticCap))));
+
+        if (!fileAnalyses.isEmpty()
+                && fileAnalyses.stream().noneMatch(fileAnalysis -> !fileAnalysis.moduleDescriptor())) {
+            diagnostics.add(new AnalysisDiagnostic(
+                    MODULE_DESCRIPTOR_ONLY,
+                    AnalysisSeverity.INFO,
+                    "The source roots contain only module descriptors (" + moduleNames(fileAnalyses)
+                            + "), so there are no classes to analyse",
+                    new SourceLocation(sourceFiles.get(0), 1, 1)));
+        }
+
+        // Files are analysed in path order — the window forces it — but the report must not depend on
+        // which order the pool happened to finish them in, and the package sums must add up in the
+        // same order they always have. Sorting the collected results by the key the old global sort
+        // used restores exactly the order the rest of the analysis expects.
+        List<ClassAnalysis> classAnalyses = fileAnalyses.stream()
+                .flatMap(fileAnalysis -> fileAnalysis.classes().stream())
+                .sorted(Comparator.comparing(classAnalysis -> classAnalysis.analyzedClass().qualifiedName()))
+                .toList();
         List<AnalyzedClass> analyzedClasses = classAnalyses.stream()
                 .map(ClassAnalysis::analyzedClass)
                 .toList();
@@ -412,6 +442,15 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     private static final int PARALLELISM = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
 
     /**
+     * How many workers this analysis uses. The AST window is sized from it
+     * ({@link AstMemoryManager#defaultWindowSize()}), so the residency bound and the pool that fills
+     * it stay in step.
+     */
+    static int parallelism() {
+        return PARALLELISM;
+    }
+
+    /**
      * Explains a report that is empty for a legitimate reason: the source roots hold nothing but module
      * descriptors. Without this the user gets a report with no classes, no metrics and no diagnostics,
      * and nothing to distinguish "your module declares no types" from "the tool found nothing to do".
@@ -419,15 +458,14 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     private static final String MODULE_DESCRIPTOR_ONLY = "MODULE_DESCRIPTOR_ONLY";
 
     /**
-     * The module names declared by the given source units, for the message above. Falls back to the
-     * file path when a descriptor parsed far enough to be a source unit but not far enough to name a
-     * module — a syntax error, in practice.
+     * The module names declared by the analysed files, for the message above. A descriptor that
+     * parsed far enough to be a source unit but not far enough to name a module — a syntax error, in
+     * practice — falls back to its file name.
      */
-    private static String moduleNames(List<ParsedSourceUnit> parsedSourceUnits) {
-        return parsedSourceUnits.stream()
-                .map(unit -> unit.compilationUnit().getModule()
-                        .map(module -> module.getNameAsString())
-                        .orElseGet(() -> unit.path().getFileName().toString()))
+    private static String moduleNames(List<FileAnalysis> fileAnalyses) {
+        return fileAnalyses.stream()
+                .filter(FileAnalysis::moduleDescriptor)
+                .map(FileAnalysis::moduleName)
                 .distinct()
                 .collect(java.util.stream.Collectors.joining(", "));
     }
@@ -462,11 +500,37 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
     private static final String FOREIGN_DATA_PROVIDERS_CONTEXT = MetricCode.FDP.name();
 
-    private List<ParsedSourceUnit> parseSourceFiles(List<Path> sourceFiles, List<AnalysisDiagnostic> diagnostics) {
+    /**
+     * The files the request named individually, as opposed to those found by walking a source root.
+     *
+     * <p>They are the one case {@link JavaParserTypeSolverFactory}'s path-based solvers cannot answer
+     * for: a declaration in such a file is not under any source root, so there is no directory that
+     * corresponds to its package. Those files are therefore indexed in memory, and their ASTs stay
+     * resident for the run — the price of the case, paid only by a caller who asks for it.
+     */
+    private static List<Path> explicitSourceUnits(AnalysisRequest request, List<Path> sourceFiles) {
+        Set<Path> requested = request.sourceUnits().stream()
+                .map(SourceUnit::path)
+                .filter(path -> path.toString().endsWith(".java"))
+                .map(JavaParserJavaMetricsAnalyzer::absolute)
+                .collect(Collectors.toSet());
+        return sourceFiles.stream()
+                .filter(sourceFile -> requested.contains(absolute(sourceFile)))
+                .toList();
+    }
+
+    private static Path absolute(Path path) {
+        return path.toAbsolutePath().normalize();
+    }
+
+    private List<ParsedFile> parseExplicitUnits(List<Path> explicitSourceUnits, List<AnalysisDiagnostic> diagnostics) {
+        if (explicitSourceUnits.isEmpty()) {
+            return List.of();
+        }
         ParserConfiguration parserConfig = EnhancedJavaParserContextBuilder.createParserConfiguration();
 
         return runInDedicatedPool(() ->
-                sourceFiles.parallelStream()
+                explicitSourceUnits.parallelStream()
                         .map(sourceFile -> parseSingleFile(sourceFile, parserConfig, diagnostics))
                         .filter(java.util.Optional::isPresent)
                         .map(java.util.Optional::get)
@@ -509,7 +573,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         }
     }
 
-    private java.util.Optional<ParsedSourceUnit> parseSingleFile(Path sourceFile, ParserConfiguration parserConfig, List<AnalysisDiagnostic> diagnostics) {
+    private java.util.Optional<ParsedFile> parseSingleFile(Path sourceFile, ParserConfiguration parserConfig, List<AnalysisDiagnostic> diagnostics) {
         try {
             JavaParser javaParser = new JavaParser(parserConfig);
             ParseResult<CompilationUnit> parseResult = javaParser.parse(sourceFile);
@@ -523,7 +587,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                                 new SourceLocation(sourceFile, 1, 1)));
                     }
                 }
-                return java.util.Optional.of(ParsedSourceUnit.of(sourceFile, parseResult.getResult().orElseThrow()));
+                return java.util.Optional.of(new ParsedFile(sourceFile, parseResult.getResult().orElseThrow()));
             }
             synchronized (diagnostics) {
                 diagnostics.add(new AnalysisDiagnostic(
@@ -545,53 +609,70 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         }
     }
 
-    private Map<String, Path> buildSourcePathIndex(List<ParsedSourceUnit> parsedSourceUnits) {
-        Map<String, Path> sourcePathByQualifiedName = new HashMap<>();
-        for (ParsedSourceUnit parsedSourceUnit : parsedSourceUnits) {
-            parsedSourceUnit.compilationUnit().findAll(ClassOrInterfaceDeclaration.class).forEach(classDeclaration -> {
-                String qualifiedName = classDeclaration.getFullyQualifiedName()
-                        .orElseGet(() -> fallbackQualifiedName(classDeclaration));
-                sourcePathByQualifiedName.putIfAbsent(qualifiedName, parsedSourceUnit.path());
-            });
-        }
-        return sourcePathByQualifiedName;
-    }
-
-    private List<ClassAnalysis> analyzeClasses(
-            EnhancedJavaParserContext enhancedContext,
-            Map<String, Path> sourcePathByQualifiedName,
+    /**
+     * Analyses every class of one parsed file, while that file's unit is resident.
+     *
+     * <p>The symbol resolver is attached here rather than to a whole project's worth of units up
+     * front: it lives in the unit's own node data, so it is released with the unit and can never
+     * outlive it. That is the property the window depends on.
+     */
+    private FileAnalysis analyzeUnit(
+            Path sourceFile,
+            CompilationUnit compilationUnit,
+            TypeSolver typeSolver,
             MetricSelection metricSelection,
             List<AnalysisDiagnostic> diagnostics,
             ResolutionStats resolutionStats,
             int unresolvedSymbolDiagnosticCap) {
-        List<ClassOrInterfaceDeclaration> sortedClassDeclarations = enhancedContext.getAllClassDeclarations().stream()
-                .sorted(Comparator.comparing(this::classSortKey))
-                .toList();
+        compilationUnit.setData(Node.SYMBOL_RESOLVER_KEY, new JavaSymbolSolver(typeSolver));
 
-        return runInDedicatedPool(() ->
-                sortedClassDeclarations.parallelStream()
-                        .map(classDeclaration -> analyzeSingleClass(
-                                classDeclaration,
-                                sourcePathByQualifiedName,
-                                metricSelection,
-                                diagnostics,
-                                resolutionStats,
-                                unresolvedSymbolDiagnosticCap))
-                        .toList()
-        );
+        if (compilationUnit.getModule().isPresent()) {
+            // A module descriptor is a source unit but never a type declaration, so it is parsed — a
+            // syntax error in module-info.java is still worth reporting — and then kept out of the
+            // type pipeline, which has nothing to do with it. See ModuleDescriptorAnalysisTest.
+            return new FileAnalysis(sourceFile, true, moduleNameOf(compilationUnit), List.of());
+        }
+
+        // Sorted within the file so a file's classes are always visited in the same order, whatever
+        // order the window's workers finish their files in. The global order is restored once every
+        // file has been analysed — see analyze().
+        List<ClassAnalysis> classes = compilationUnit.findAll(ClassOrInterfaceDeclaration.class).stream()
+                .sorted(Comparator.comparing(this::classSortKey))
+                .map(classDeclaration -> analyzeSingleClass(
+                        classDeclaration,
+                        sourceFile,
+                        metricSelection,
+                        diagnostics,
+                        resolutionStats,
+                        unresolvedSymbolDiagnosticCap))
+                .toList();
+        return new FileAnalysis(sourceFile, false, null, classes);
     }
 
+    private static String moduleNameOf(CompilationUnit compilationUnit) {
+        return compilationUnit.getModule()
+                .map(module -> module.getNameAsString())
+                .orElseGet(() -> compilationUnit.getStorage()
+                        .map(storage -> storage.getFileName())
+                        .orElse("module-info.java"));
+    }
+
+    /**
+     * Analyses one class.
+     *
+     * @param sourcePath the file the class was declared in. It used to be looked up in a map built
+     *                   from every parsed unit; the window knows the file directly, because the class
+     *                   is analysed while that file's unit is the resident one, so the map — and the
+     *                   retention it implied — is gone.
+     */
     private ClassAnalysis analyzeSingleClass(
             ClassOrInterfaceDeclaration classDeclaration,
-            Map<String, Path> sourcePathByQualifiedName,
+            Path sourcePath,
             MetricSelection metricSelection,
             List<AnalysisDiagnostic> diagnostics,
             ResolutionStats resolutionStats,
             int unresolvedSymbolDiagnosticCap) {
         String qualifiedName = classDeclaration.getFullyQualifiedName().orElseGet(() -> fallbackQualifiedName(classDeclaration));
-        Path sourcePath = sourcePathByQualifiedName.getOrDefault(
-                qualifiedName,
-                sourcePathByQualifiedName.getOrDefault(fallbackQualifiedName(classDeclaration), Path.of(".")));
         SourceLocation sourceLocation = toSourceLocation(classDeclaration, sourcePath);
         Map<MetricCode, Value> classMetrics = new EnumMap<>(MetricCode.class);
 
@@ -1648,15 +1729,23 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
     }
 
     /**
-     * @param moduleDescriptor a {@code module-info.java} — a source unit that declares no types. It is
-     *                        read from the AST rather than the file name, so a descriptor that failed to
-     *                        parse is not mistaken for one.
+     * One parsed file, for the units that are parsed outside the window (the ones named individually
+     * on the command line). Everything else is parsed, analysed and dropped inside
+     * {@link AstMemoryManager#parseInWindows}, so no such record is created for it.
      */
-    private record ParsedSourceUnit(Path path, CompilationUnit compilationUnit, boolean moduleDescriptor) {
+    private record ParsedFile(Path path, CompilationUnit compilationUnit) {
+    }
 
-        static ParsedSourceUnit of(Path path, CompilationUnit compilationUnit) {
-            return new ParsedSourceUnit(path, compilationUnit, compilationUnit.getModule().isPresent());
-        }
+    /**
+     * What one analysed file contributed: its classes, or — for a {@code module-info.java} — the
+     * module it declares and no classes at all.
+     *
+     * <p>This is what the window's task returns, so it is deliberately free of any AST reference: it
+     * holds only snapshots and collectors, which is what lets the unit be released as soon as the
+     * task returns.
+     */
+    private record FileAnalysis(
+            Path path, boolean moduleDescriptor, String moduleName, List<ClassAnalysis> classes) {
     }
 
     /**

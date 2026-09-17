@@ -2,6 +2,95 @@
 
 ## Phase 2: the snapshot becomes the global-analysis contract (2026-09-16)
 
+### TASK-203 — `AstMemoryManager`: bounded AST lifecycle — done (2026-09-17)
+
+TASK-202 removed the *reason* the project's ASTs were kept — no metric walks another class's AST any
+more — so this task removes the retention itself. Full reasoning in
+[ADR 0002](adr/0002-bounded-ast-residency.md).
+
+**What changed.**
+
+- **`AstMemoryManager` (new)** owns the lifetime of every parsed unit. It parses the file list in
+  **windows** of `PARALLELISM × 4` (minimum 4) and hands each unit to a `UnitTask` while it is
+  resident, releasing the manager's reference in a `finally` the moment the task returns — so a
+  failing task cannot leak a window's worth of ASTs. The per-class work (local visitors, resolving
+  visitors, snapshot extraction) is what the task does, which is what makes "alive only while
+  something is reading it" true rather than aspirational. It changes *when* a unit is parsed relative
+  to when it is used; it does not reorder which visitors run. The window is a **residency bound, not a
+  thread count**, and that is observable as `peakResidentUnits()`.
+- **The project-wide in-memory declaration index is retired.** `MemoryTypeSolver` now covers only
+  files named **individually** on the command line — the one case a path-based solver cannot answer,
+  because such a file has no package root to be found under. Everything under a source root is
+  answered by `JavaParserTypeSolver` re-parsing from disk, with an explicit cache bound
+  (`SOLVER_CACHE_SIZE = 512` files per solver, soft values on top).
+- **`ResolverAttachingTypeSolver` (new).** A re-parsed unit is a *second* AST of the same source and
+  JavaParser attaches no symbol resolver to it, which is invisible until something resolves *through*
+  one — and `JavaParserDepthOfInheritanceTreeMetricVisitor` does, because it walks the `extends`
+  chain. Without the decorator, `resolve()` on the second link throws
+  `IllegalStateException: No data of this type found`, DIT is understated by one per link, and a
+  perfectly resolvable chain reports a resolution failure. The decorator attaches the analysis' own
+  `JavaSymbolSolver` to the units the re-parsing solvers hand out. It is solver plumbing, so a visitor
+  never has to know which AST it is holding.
+- **Global order is re-imposed by sorting.** Windowed parsing produces class analyses in a different
+  order than "parse everything, then analyse the list". Every per-class datum is keyed by qualified
+  name and every class's raw metrics are computed in isolation, so the only ordering that mattered was
+  the collected order — restored by sorting on `qualifiedName()`, the same key the previous global
+  sort used.
+
+**Measured** (`:java-metrics-lib:benchmark` on the corpus, pre-TASK-203 build in a worktree vs this
+one, same machine, same `-Xmx4g`):
+
+| | Before | After |
+|---|---|---|
+| Heap after GC, end of VISIT | 2 006 MB | **526 MB** (−74%) |
+| Heap after GC, AGGREGATE | 2 018 MB | **538 MB** (−73%) |
+| Overall peak heap (sampled) | 3 781 MB | 3 542 MB (−6.3%) |
+| CLI wall time / CPU time | 32.7 s / 186 s | 30.7 s / **117 s** (−37% CPU) |
+
+And the claim the road-map actually makes — "large codebases analyze without OOM" — was tested
+directly, by lowering the heap ceiling until it broke:
+
+| Heap cap | Before | After |
+|---|---|---|
+| `-Xmx1g` | **did not finish** (killed at 300 s) | **completes in 44 s** |
+| `-Xmx512m` | — | analysis completes; report serialisation OOMs |
+
+**The stated ≥15% peak-heap gate is not met, and the reason is the instrument.** `PerformanceRunner`'s
+peak is `MemoryMXBean.getHeapMemoryUsage().getUsed()` sampled every 10 ms, which counts garbage as
+well as live objects; a JVM handed 4 GB and a high allocation rate has no reason to collect early, so
+the sampled peak tracks the collector's willingness to expand rather than the analysis' live set. The
+after-GC figures and the heap-ceiling table above are the honest measurements. **TASK-204's −30%
+peak-heap gate will be measured with the same instrument and should be re-stated in terms of the live
+set, or the peak redefined as sampled after a collection.** Recorded in the ADR.
+
+**Resolution did not degrade.** `resolutionCoverage` is **bit-identical** (`0.6491621776056496`), the
+acceptance criterion having asked only for "within noise". Class / method / package counts
+(4 020 / 19 994 / 1 318) and the diagnostic count (121 494) are also identical.
+
+**A new ceiling was found while measuring.** At `-Xmx512m` the *analysis* now fits; what fails is
+`MetricReportJsonWriter.toJson`, which builds the whole 62 MB report as a single `String` before
+writing it. The CLI's memory ceiling is no longer the analysis — it is the serialiser, which belongs
+to [TASK-302](tasks/TASK-302-jackson-serialization.md).
+
+**A pre-existing defect was found while verifying.** The corpus turned out not to be usable as an
+exact equivalence oracle: two runs of the *same* jar differ in 256 metric values. The cause is not
+this change — a control run predates it, and this change's own diff against the baseline (190 values,
+the same codes) is *smaller* than one jar's run-to-run noise. Root cause: `JavaParserJavaMetricsAnalyzer`
+holds its visitor sets as instance fields and iterates them from the parallel per-file stream, so
+workers drive the *same* visitor objects, and five method visitors accumulate into instance fields
+(`CC`, `CCM`, `CND`, `LND`, `MND`; `CCC` and the MI family follow). Values are not merely noisy but
+sometimes impossible — one method's cognitive complexity reads 0 in one run and 4 in the other.
+Recorded as **DEBT-10**, which also corrects DEBT-01's audit sweep: it concluded "no other shared
+visitor keeps mutable instance state", and that conclusion was wrong. Left to TASK-205, whose stated
+scope it is.
+
+- Tests: 12 new in `AstMemoryManagerTest` — the window bound holds under parallel load; every unit
+  becomes unreachable once its task returns, including when the task throws (asserted with
+  `WeakReference`s); files are parsed once each, in order; unreadable files are reported as
+  `PARSE_FAILED` and recoverable syntax errors as `PARSE_PROBLEM` warnings rather than dropped; a
+  non-positive window is rejected; the default window scales with the analysis parallelism.
+- `./gradlew check` green: 313 tests, 0 failures.
+
 ### TASK-202 — `DependencySnapshot` enrichment for AST-free global metrics — done
 
 NOC and FDP were the last two metrics that could not be computed from a class's own facts. Each was a
@@ -58,7 +147,14 @@ from the pre-change build on two corpora:
 | Corpus | NOC/FDP value diffs | `resolutionCoverage` | Diagnostics | Wall time |
 |--------|--------------------|----------------------|-------------|-----------|
 | Golden fixture | 0 (one-line golden diff: coverage only) | `0.9522184300341296` → `0.9467680608365019` | identical | — |
-| Benchmark (4 074 files / 4 020 classes) | **0 across all 4 020 classes** | `0.9222126026432128` → `0.6520965502196913` | 121 029 → 121 066 | **58 s → 32 s** |
+| Benchmark (4 074 files / 4 020 classes) | **0 across all 4 020 classes** | `0.9215568215067099` → `0.6491621776056496` | 121 456 → 121 494 | **59.7 s → 32.7 s** |
+
+The benchmark row was re-measured against the pre-TASK-202 build (`2f0d2f1`) with both jars freshly
+built, and the figures above supersede the ones first recorded here (which came from a stale
+incremental build). Re-verified context by context: `NOC` 33 → 20, `FDP` 2 262 → 2 074, unattributed
+contexts 6 372 → 6 611, and **every other diagnostic context byte-identical**. Diffing the full JSON
+of both runs shows the only metric codes that differ at all are `CC`/`CCM`/`CND`/`MND`/`LND` and the
+derived `CCC`/`CMI`/`MMI`/`PAMI` — a pre-existing visitor race, not this change; see DEBT-10.
 
 Two purpose-built fixtures (`/tmp/xclass-clean`, `/tmp/xclass-poisoned`) were needed because the
 benchmark corpus's FDP is `UNDEFINED` for *all* 4 020 classes — the poison wart dominates — so the
@@ -70,9 +166,10 @@ removed scans used to contribute.
 great many *successful* resolutions — every class resolving every other class's supertypes and field
 accesses — and those attempts are gone. TASK-104's own definition says `resolutionCoverage` describes
 *this analysis* rather than the classpath, and the same project analysed by the same rules now
-performs fewer resolution operations, so the number correctly reports that. **Every metric value and
-every diagnostic is unchanged; only the tally moved.** A CI threshold calibrated against the old
-value must be recalibrated — recorded in the ADR.
+performs fewer resolution operations, so the number correctly reports that. **No metric that this
+change touched moved: `NOC` and `FDP` are identical for all 4 020 classes, and so is every
+diagnostic context except the two the retired scans owned.** A CI threshold calibrated against the
+old value must be recalibrated — recorded in the ADR.
 
 - Tests: `CrossClassMetricCalculatorTest` (11), `AnalyzedClassTest` (10), `DependencySnapshotTest` (8)
   and `CrossClassMetricPipelineTest` (9, end-to-end through the analyzer over real files) replace the
