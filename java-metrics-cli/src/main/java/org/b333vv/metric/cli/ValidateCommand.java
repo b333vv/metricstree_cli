@@ -1,5 +1,6 @@
 package org.b333vv.metric.cli;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.ClasspathEntry;
@@ -18,6 +19,7 @@ import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -156,7 +158,10 @@ final class ValidateCommand implements Callable<Integer> {
                         numericValue,
                         threshold.min(),
                         threshold.max(),
-                        status
+                        status,
+                        status == ValidationStatus.FAILED
+                                ? Severity.forOutOfRange(numericValue, threshold.min(), threshold.max())
+                                : null
                 ));
             }
         }
@@ -183,12 +188,36 @@ final class ValidateCommand implements Callable<Integer> {
                 ? result.getResults().stream().filter(r -> r.status() == ValidationStatus.FAILED).toList()
                 : result.getResults();
 
+        if (format == OutputFormat.HTML) {
+            writeOutput(new HtmlReportWriter().forValidate(
+                    result.getStatus(), resultsToWrite, result.getPassed(), result.getFailed()));
+            return;
+        }
+
         writeOutput(CliObjectMapper.write(new ValidationResultForSerialization(
                 result.getStatus(),
                 resultsToWrite,
                 result.getPassed(),
-                result.getFailed()
-        ), false));
+                result.getFailed(),
+                byFile(result.getResults())
+        ), true));
+    }
+
+    /**
+     * The failed checks grouped by file — the agent's "what do I fix in this file" view. Built from
+     * the full result list regardless of {@code --failed-only}: the flat {@code results} array
+     * answers "did the build pass?", this index answers "where is the work?".
+     */
+    private static List<FileFailures> byFile(List<MetricValidationResult> results) {
+        Map<String, List<MetricValidationResult>> failuresByFile = new LinkedHashMap<>();
+        for (MetricValidationResult r : results) {
+            if (r.status() == ValidationStatus.FAILED) {
+                failuresByFile.computeIfAbsent(r.file(), f -> new ArrayList<>()).add(r);
+            }
+        }
+        return failuresByFile.entrySet().stream()
+                .map(e -> new FileFailures(e.getKey(), List.copyOf(e.getValue())))
+                .toList();
     }
 
     private void writeOutput(String content) throws IOException {
@@ -199,13 +228,20 @@ final class ValidateCommand implements Callable<Integer> {
         Files.writeString(normalizedOutputFile, content);
     }
 
+    /**
+     * One threshold check. {@code severity} is how far a FAILED value overshot its bound — see
+     * {@link Severity#forOutOfRange} — and is absent for passed checks, where "how far from the
+     * edge" is not a signal anyone acts on.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record MetricValidationResult(
             String file,
             String metric,
             double value,
             double expectedMin,
             double expectedMax,
-            ValidationStatus status
+            ValidationStatus status,
+            Severity severity
     ) {}
 
     public enum ValidationStatus {
@@ -228,10 +264,14 @@ final class ValidateCommand implements Callable<Integer> {
         public void incrementFailed() { failed++; }
     }
 
+    /** All failed threshold checks of one file, in metric order of first appearance. */
+    public record FileFailures(String file, List<MetricValidationResult> failures) {}
+
     private record ValidationResultForSerialization(
             String status,
             List<MetricValidationResult> results,
             int passed,
-            int failed
+            int failed,
+            List<FileFailures> byFile
     ) {}
 }

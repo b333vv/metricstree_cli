@@ -12,8 +12,44 @@ import java.util.Map;
 
 final class CombinationDetector {
 
-    record ClassEntityRef(String className, String qualifiedName, String sourcePath) {}
-    record PackageEntityRef(String packageName) {}
+    /**
+     * One condition of a matched rule, with the entity's actual value next to the bounds it crossed.
+     *
+     * <p>Without this a finding says only <em>that</em> a class matched, not <em>why</em>: a fixing
+     * agent (or a human) would have to re-run the analysis to learn that {@code WMC} is 210 against a
+     * {@code min} of 47. {@code min} / {@code max} echo the condition as written, so at least one is
+     * always present.
+     */
+    record Violation(String metric, double value, Double min, Double max) {
+
+        /**
+         * How many times the value overshoots the bound it crossed; {@code >= 1.0} by construction.
+         *
+         * <p>For a {@code min} condition the excess is {@code value / min}; for a {@code max}
+         * condition the value being <em>below</em> the bound is what fires the rule (e.g. TCC of a
+         * God Class), so the excess is {@code max / value}. Degenerate bounds (zero or negative)
+         * cannot form a meaningful ratio, so they count as {@code 1.0} — present, but not extreme.
+         */
+        double excessRatio() {
+            double excess = 1.0;
+            if (min != null && min > 0) {
+                excess = Math.max(excess, value / min);
+            }
+            if (max != null && max > 0 && value > 0) {
+                excess = Math.max(excess, max / value);
+            }
+            return excess;
+        }
+    }
+
+    record ClassEntityRef(
+            String className,
+            String qualifiedName,
+            String sourcePath,
+            List<Violation> violations,
+            Severity severity) {}
+
+    record PackageEntityRef(String packageName, List<Violation> violations, Severity severity) {}
     record ClassMatch(String name, int matchCount, List<ClassEntityRef> matches) {
         ClassMatch {
             if (matchCount != matches.size()) {
@@ -97,11 +133,14 @@ final class CombinationDetector {
         for (CombinationDefinition rule : rules) {
             List<ClassEntityRef> matched = new ArrayList<>();
             for (ClassReport cls : report.classes()) {
-                if (matchesAll(cls.metrics(), rule.conditions())) {
+                List<Violation> violations = satisfiedConditions(cls.metrics(), rule.conditions());
+                if (violations != null) {
                     matched.add(new ClassEntityRef(
                             cls.className(),
                             cls.qualifiedName(),
-                            cls.sourcePath().toString()));
+                            cls.sourcePath().toString(),
+                            violations,
+                            severityOf(violations)));
                 }
             }
             if (!matched.isEmpty()) {
@@ -116,8 +155,10 @@ final class CombinationDetector {
         for (CombinationDefinition rule : rules) {
             List<PackageEntityRef> matched = new ArrayList<>();
             for (PackageReport pkg : report.packages()) {
-                if (matchesAll(pkg.metrics(), rule.conditions())) {
-                    matched.add(new PackageEntityRef(pkg.packageName()));
+                List<Violation> violations = satisfiedConditions(pkg.metrics(), rule.conditions());
+                if (violations != null) {
+                    matched.add(new PackageEntityRef(
+                            pkg.packageName(), violations, severityOf(violations)));
                 }
             }
             if (!matched.isEmpty()) {
@@ -127,26 +168,45 @@ final class CombinationDetector {
         return results;
     }
 
-    private static boolean matchesAll(Map<MetricCode, Value> metrics, List<Condition> conditions) {
+    /**
+     * The severity of a match is the severity of its most excessive violation: a class that barely
+     * crosses two bounds but triples the third is a high-severity finding, not three low ones.
+     */
+    static Severity severityOf(List<Violation> violations) {
+        double worst = 1.0;
+        for (Violation violation : violations) {
+            worst = Math.max(worst, violation.excessRatio());
+        }
+        return Severity.fromExcess(worst);
+    }
+
+    /**
+     * @return one {@link Violation} per condition — every condition satisfied, with the actual
+     *         values — or {@code null} when any condition fails, i.e. the entity does not match
+     */
+    private static List<Violation> satisfiedConditions(
+            Map<MetricCode, Value> metrics, List<Condition> conditions) {
+        List<Violation> violations = new ArrayList<>(conditions.size());
         for (Condition condition : conditions) {
             MetricCode code;
             try {
                 code = MetricCode.valueOf(condition.metric());
             } catch (IllegalArgumentException e) {
-                return false;
+                return null;
             }
             Value value = metrics.get(code);
             if (value == null) {
-                return false;
+                return null;
             }
             double v = value.doubleValue();
             if (condition.min() != null && v < condition.min()) {
-                return false;
+                return null;
             }
             if (condition.max() != null && v > condition.max()) {
-                return false;
+                return null;
             }
+            violations.add(new Violation(condition.metric(), v, condition.min(), condition.max()));
         }
-        return true;
+        return violations;
     }
 }

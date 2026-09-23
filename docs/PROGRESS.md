@@ -1333,6 +1333,49 @@ Documentation-only session (no code changes):
 - `ExclusionConfigTest` (10 tests) — empty config, single/multiple patterns, find() semantics, invalid regex, edge cases
 - `ExclusionConfigLoaderTest` (8 tests) — valid YAML, empty file, empty sections, missing file, invalid YAML, invalid regex, merge behavior
 
+
+## Session: detect report formats (proposal, not implemented)
+- Analyzed `detect` JSON output (`report.json`): grouped by rule, matches carry only className/qualifiedName/sourcePath.
+- Verdict: not optimal for a coding agent — no metric values/violated thresholds, no per-entity view, no severity.
+- Proposed JSON v2 (additive): `violations` per match (metric, value, condition bounds), `byEntity` index, `severity`, relative paths + `baseDir`, pretty print.
+- Proposed `--format html` human report; demo mock at `docs/proposals/detect-report-example.html` (generated from real report.json).
+- Awaiting decision whether to implement.
+
+## Session: agent-friendly JSON v2 + HTML reports (implemented)
+
+All three proposals were accepted and implemented; backward compatibility was not required.
+
+### detect JSON v2
+- `CombinationDetector` now collects one `Violation(metric, value, min, max)` per satisfied
+  condition while matching (values used to be computed and discarded), and every match carries a
+  `severity` (excess ratio: `high` ≥ 2×, `medium` ≥ 1.2×, else `low`; for a `max` condition the
+  excess is `max / value`).
+- `DetectResultWriter` emits `baseDir` + relative `sourcePath`, a `byClass` / `byPackage`
+  entity index (worst severity first), `summary.totalFindings/affectedClasses/affectedPackages`,
+  and pretty-prints by default.
+- Shared `Severity` enum also serves `validate` (`Severity.forOutOfRange`).
+
+### validate JSON
+- `MetricValidationResult` gained `severity` (only on FAILED checks, omitted otherwise).
+- New `byFile` index: failed checks grouped by file, always built from the full result list.
+
+### HTML format
+- `HtmlReportWriter` renders a self-contained page (inlined CSS/JS, live filter, severity badges)
+  for all three commands: `forDetect`, `forValidate`, `forAnalyze`.
+- `OutputFormat.HTML`; `analyze` gained `--format` (JSON default, SARIF rejected explicitly).
+- `docs/proposals/detect-report-example.html` regenerated with the real writer against
+  `java-metrics-lib` (39 findings / 27 classes).
+
+### Tests / goldens
+- New: `DetectResultWriterTest`, `HtmlReportWriterTest`; extended `CombinationDetectorTest`
+  (violations + severity) and `DetectCommandTest` (HTML end-to-end); fixed `SarifReportWriterTest`
+  constructors and the `ConfigLoaderTest` pretty-print assertion.
+- Golden JSONs regenerated (`-Dgoldens.update=true`) and reviewed: detect.json and validate.json.
+- Reverted an unrelated stale working-tree edit to `package-level-rules.json` (two Kotlin rules
+  were deleted, breaking `shouldLoadEveryShippedSampleConfig`).
+- Docs: `docs/RUN.md` — detect/validate JSON samples, `--format html` on all commands, new
+  "HTML output" section.
+
 # what is in progress
 
 (nothing)

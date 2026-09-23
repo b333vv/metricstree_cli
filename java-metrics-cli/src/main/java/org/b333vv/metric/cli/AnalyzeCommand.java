@@ -71,6 +71,12 @@ final class AnalyzeCommand implements Callable<Integer> {
     @CommandLine.Option(names = "--pretty", description = "Pretty-print JSON output.")
     private boolean pretty;
 
+    @CommandLine.Option(names = "--format", paramLabel = "FORMAT", defaultValue = "json",
+            description = "Report format: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}). "
+                    + "SARIF is not available here: analyze produces a metrics catalogue, not "
+                    + "findings, so there is nothing to upload to a code-scanning consumer.")
+    private OutputFormat format;
+
     @Override
     public Integer call() throws IOException {
         if (sourceRoots.isEmpty() && sourceFiles.isEmpty()) {
@@ -78,11 +84,18 @@ final class AnalyzeCommand implements Callable<Integer> {
                     "At least one --source-root or --source-file must be provided.");
         }
 
+        if (format == OutputFormat.SARIF) {
+            throw new CommandLine.ParameterException(spec.commandLine(),
+                    "--format sarif is not supported by analyze; use validate or detect for findings.");
+        }
+
         ExclusionConfig exclusions = loadExclusions();
         AnalysisRequest request = buildRequest(exclusions);
-        String json = jsonWriter.toJson(analyzer.analyze(request), pretty);
+        String output = format == OutputFormat.HTML
+                ? new HtmlReportWriter().forAnalyze(analyzer.analyze(request))
+                : jsonWriter.toJson(analyzer.analyze(request), pretty);
         if (outputFile == null) {
-            stdout.println(json);
+            stdout.println(output);
             stdout.flush();
             return 0;
         }
@@ -91,7 +104,7 @@ final class AnalyzeCommand implements Callable<Integer> {
         if (normalizedOutputFile.getParent() != null) {
             Files.createDirectories(normalizedOutputFile.getParent());
         }
-        Files.writeString(normalizedOutputFile, json);
+        Files.writeString(normalizedOutputFile, output);
         stderr.flush();
         return 0;
     }

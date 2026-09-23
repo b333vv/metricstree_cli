@@ -277,6 +277,82 @@ new CombinationDefinition("LargeClass", null,
         assertEquals(List.of(), detector.validateRules(rules));
     }
 
+    @Test
+    void matchCarriesViolationsWithActualValuesAndBounds() {
+        MetricReport report = createReport(
+                Map.of(MetricCode.WMC, Value.of(50), MetricCode.ATFD, Value.of(12)),
+                Map.of());
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("GodClass", null,
+                        List.of(new Condition("WMC", 47.0, null),
+                                new Condition("ATFD", 10.0, null))));
+
+        List<CombinationDetector.ClassMatch> result = detector.detectClasses(report, rules);
+
+        List<CombinationDetector.Violation> violations = result.get(0).matches().get(0).violations();
+        assertEquals(2, violations.size(), "one violation entry per satisfied condition");
+        assertEquals(new CombinationDetector.Violation("WMC", 50.0, 47.0, null), violations.get(0));
+        assertEquals(new CombinationDetector.Violation("ATFD", 12.0, 10.0, null), violations.get(1));
+    }
+
+    @Test
+    void severityGrowsWithTheExcessPastAMinBound() {
+        assertEquals(Severity.LOW, severityForWmcMin(50.0, 47.0), "1.06x past the bound");
+        assertEquals(Severity.MEDIUM, severityForWmcMin(70.0, 47.0), "1.5x past the bound");
+        assertEquals(Severity.HIGH, severityForWmcMin(200.0, 47.0), "4.3x past the bound");
+    }
+
+    @Test
+    void severityOfAMaxBoundGrowsAsTheValueFallsFurtherBelowIt() {
+        // TCC max 0.33: a value near the bound is a weak signal, a tiny value a strong one
+        assertEquals(Severity.LOW, severityForTccMax(0.3, 0.33));
+        assertEquals(Severity.HIGH, severityForTccMax(0.1, 0.33), "3.3x below the bound");
+    }
+
+    @Test
+    void matchSeverityIsTheWorstOfItsViolations() {
+        MetricReport report = createReport(
+                Map.of(MetricCode.WMC, Value.of(200), MetricCode.ATFD, Value.of(10)),
+                Map.of());
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("GodClass", null,
+                        List.of(new Condition("WMC", 47.0, null),
+                                new Condition("ATFD", 10.0, null))));
+
+        List<CombinationDetector.ClassMatch> result = detector.detectClasses(report, rules);
+
+        assertEquals(Severity.HIGH, result.get(0).matches().get(0).severity(),
+                "WMC 4.3x past its bound dominates the barely-crossed ATFD");
+    }
+
+    @Test
+    void packageMatchesCarryViolationsAndSeverityToo() {
+        MetricReport report = createReport(Map.of(), Map.of(MetricCode.PLOC, Value.of(10000)));
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("LargePackage", null,
+                        List.of(new Condition("PLOC", 5000.0, null))));
+
+        List<CombinationDetector.PackageMatch> result = detector.detectPackages(report, rules);
+
+        assertEquals(Severity.HIGH, result.get(0).matches().get(0).severity());
+        assertEquals(List.of(new CombinationDetector.Violation("PLOC", 10000.0, 5000.0, null)),
+                result.get(0).matches().get(0).violations());
+    }
+
+    private Severity severityForWmcMin(double value, double min) {
+        MetricReport report = createReport(Map.of(MetricCode.WMC, Value.of(value)), Map.of());
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("R", null, List.of(new Condition("WMC", min, null))));
+        return detector.detectClasses(report, rules).get(0).matches().get(0).severity();
+    }
+
+    private Severity severityForTccMax(double value, double max) {
+        MetricReport report = createReport(Map.of(MetricCode.TCC, Value.of(value)), Map.of());
+        List<CombinationDefinition> rules = List.of(
+                new CombinationDefinition("R", null, List.of(new Condition("TCC", null, max))));
+        return detector.detectClasses(report, rules).get(0).matches().get(0).severity();
+    }
+
     private static MetricReport createReport(
             Map<MetricCode, Value> classMetrics,
             Map<MetricCode, Value> packageMetrics) {

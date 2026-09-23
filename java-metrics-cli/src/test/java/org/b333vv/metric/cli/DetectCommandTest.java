@@ -198,6 +198,35 @@ class DetectCommandTest {
         assertEquals(0, summary.get("packageRules").get("problems").size());
     }
 
+    @Test
+    void detectWithHtmlFormatWritesASelfContainedPage(@TempDir Path tempDir) throws Exception {
+        Path rulesFile = tempDir.resolve("rules.json");
+        Files.writeString(rulesFile, """
+                [{"name":"LargeClass","conditions":[{"metric":"WMC","min":10}]}]
+                """);
+        Path outputFile = tempDir.resolve("report.html");
+        Path sourceFile = tempDir.resolve("Demo.java");
+        Files.writeString(sourceFile, "class Demo {}");
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+
+        int exitCode = createApp(request -> createReport()).run(new String[]{
+                "detect",
+                "-s", sourceFile.toString(),
+                "--class-rules", rulesFile.toString(),
+                "--format", "html",
+                "-o", outputFile.toString()
+        }, out, err);
+
+        assertEquals(0, exitCode);
+        String html = Files.readString(outputFile);
+        assertTrue(html.startsWith("<!DOCTYPE html>"));
+        assertTrue(html.contains("LargeClass"), "the fired rule is on the page");
+        assertTrue(html.contains("Demo"), "the matched class is on the page");
+        assertTrue(html.contains("WMC 50 (min 10)"), "the page shows actual values vs bounds");
+    }
+
     private static MetricReport createReport() {
         ClassReport cls = new ClassReport(
                 "Demo", "Demo", Path.of("Demo.java"),

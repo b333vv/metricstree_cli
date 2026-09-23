@@ -328,7 +328,7 @@ class ConfigLoaderTest {
 
         assertEquals(fromJson, fromYaml,
                 "a YAML copy of the thresholds file must produce the same validation report");
-        assertTrue(fromJson.contains("\"failed\":15"),
+        assertTrue(fromJson.contains("\"failed\" : 15"),
                 () -> "the fixture must actually fail something, or this proves nothing: " + fromJson);
     }
 

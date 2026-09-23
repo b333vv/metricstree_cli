@@ -94,11 +94,11 @@ class SarifReportWriterTest {
     void thresholdViolationsProduceSchemaValidSarif() throws Exception {
         SarifLog log = WRITER.forThresholdViolations(List.of(
                 new ValidateCommand.MetricValidationResult(
-                        "src/a/Base.java", "WMC", 55.0, 0.0, 30.0, ValidateCommand.ValidationStatus.FAILED),
+                        "src/a/Base.java", "WMC", 55.0, 0.0, 30.0, ValidateCommand.ValidationStatus.FAILED, Severity.MEDIUM),
                 new ValidateCommand.MetricValidationResult(
-                        "src/a/Base.java", "NOM", 1.0, 10.0, 100.0, ValidateCommand.ValidationStatus.FAILED),
+                        "src/a/Base.java", "NOM", 1.0, 10.0, 100.0, ValidateCommand.ValidationStatus.FAILED, Severity.MEDIUM),
                 new ValidateCommand.MetricValidationResult(
-                        "src/a/Base.java", "DIT", 2.0, 0.0, 5.0, ValidateCommand.ValidationStatus.PASSED)));
+                        "src/a/Base.java", "DIT", 2.0, 0.0, 5.0, ValidateCommand.ValidationStatus.PASSED, null)));
 
         assertNoViolations(WRITER.toSarif(log));
 
@@ -128,9 +128,9 @@ class SarifReportWriterTest {
         SarifLog log = WRITER.forAntipatterns(
                 List.of(new CombinationDetector.ClassMatch("GodClass", 1, List.of(
                         new CombinationDetector.ClassEntityRef(
-                                "Base", "a.Base", "src/a/Base.java")))),
+                                "Base", "a.Base", "src/a/Base.java", List.of(), Severity.HIGH)))),
                 List.of(new CombinationDetector.PackageMatch("LargePackage", 1, List.of(
-                        new CombinationDetector.PackageEntityRef("a")))));
+                        new CombinationDetector.PackageEntityRef("a", List.of(), Severity.LOW)))));
 
         assertNoViolations(WRITER.toSarif(log));
 
@@ -153,7 +153,7 @@ class SarifReportWriterTest {
     void aPackageFindingCarriesNoLocation() throws Exception {
         SarifLog log = WRITER.forAntipatterns(List.of(), List.of(
                 new CombinationDetector.PackageMatch("LargePackage", 1, List.of(
-                        new CombinationDetector.PackageEntityRef("a")))));
+                        new CombinationDetector.PackageEntityRef("a", List.of(), Severity.LOW)))));
 
         assertNoViolations(WRITER.toSarif(log));
 
@@ -175,7 +175,7 @@ class SarifReportWriterTest {
         JsonNode uri = read(WRITER.toSarif(WRITER.forThresholdViolations(List.of(
                 new ValidateCommand.MetricValidationResult(
                         Path.of("").toAbsolutePath().resolve(relative).toString(),
-                        "WMC", 55.0, 0.0, 30.0, ValidateCommand.ValidationStatus.FAILED)))))
+                        "WMC", 55.0, 0.0, 30.0, ValidateCommand.ValidationStatus.FAILED, Severity.MEDIUM)))))
                 .path("runs").get(0).path("results").get(0)
                 .path("locations").get(0).path("physicalLocation").path("artifactLocation").path("uri");
 
@@ -197,7 +197,7 @@ class SarifReportWriterTest {
 
         JsonNode uri = read(WRITER.toSarif(WRITER.forThresholdViolations(List.of(
                 new ValidateCommand.MetricValidationResult(
-                        file.toString(), "WMC", 55.0, 0.0, 30.0, ValidateCommand.ValidationStatus.FAILED)))))
+                        file.toString(), "WMC", 55.0, 0.0, 30.0, ValidateCommand.ValidationStatus.FAILED, Severity.MEDIUM)))))
                 .path("runs").get(0).path("results").get(0)
                 .path("locations").get(0).path("physicalLocation").path("artifactLocation").path("uri");
 
@@ -297,7 +297,7 @@ class SarifReportWriterTest {
     private static JsonNode validLog() throws IOException {
         return read(WRITER.toSarif(WRITER.forThresholdViolations(List.of(
                 new ValidateCommand.MetricValidationResult(
-                        "src/a/Base.java", "WMC", 55.0, 0.0, 30.0, ValidateCommand.ValidationStatus.FAILED)))));
+                        "src/a/Base.java", "WMC", 55.0, 0.0, 30.0, ValidateCommand.ValidationStatus.FAILED, Severity.MEDIUM)))));
     }
 
     /** A valid document with its single result replaced, so each negative control breaks exactly one thing. */

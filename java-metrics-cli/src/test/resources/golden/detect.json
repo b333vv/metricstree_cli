@@ -1,16 +1,31 @@
 {
   "status" : "COMPLETED",
+  "baseDir" : "<GOLDEN_PROJECT>/src",
   "classRules" : [ {
     "name" : "ComplexClass",
     "matchCount" : 2,
     "matches" : [ {
       "className" : "Base",
       "qualifiedName" : "a.Base",
-      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Base.java"
+      "sourcePath" : "a/Base.java",
+      "violations" : [ {
+        "metric" : "WMC",
+        "value" : 4.0,
+        "min" : 4.0,
+        "max" : null
+      } ],
+      "severity" : "low"
     }, {
       "className" : "Derived",
       "qualifiedName" : "a.Derived",
-      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Derived.java"
+      "sourcePath" : "a/Derived.java",
+      "violations" : [ {
+        "metric" : "WMC",
+        "value" : 4.0,
+        "min" : 4.0,
+        "max" : null
+      } ],
+      "severity" : "low"
     } ]
   }, {
     "name" : "LargeAndDense",
@@ -18,11 +33,35 @@
     "matches" : [ {
       "className" : "Base",
       "qualifiedName" : "a.Base",
-      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Base.java"
+      "sourcePath" : "a/Base.java",
+      "violations" : [ {
+        "metric" : "NOM",
+        "value" : 4.0,
+        "min" : 3.0,
+        "max" : null
+      }, {
+        "metric" : "NCSS",
+        "value" : 10.0,
+        "min" : 10.0,
+        "max" : null
+      } ],
+      "severity" : "medium"
     }, {
       "className" : "Derived",
       "qualifiedName" : "a.Derived",
-      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Derived.java"
+      "sourcePath" : "a/Derived.java",
+      "violations" : [ {
+        "metric" : "NOM",
+        "value" : 3.0,
+        "min" : 3.0,
+        "max" : null
+      }, {
+        "metric" : "NCSS",
+        "value" : 10.0,
+        "min" : 10.0,
+        "max" : null
+      } ],
+      "severity" : "low"
     } ]
   }, {
     "name" : "SmallClass",
@@ -30,37 +69,151 @@
     "matches" : [ {
       "className" : "Marker",
       "qualifiedName" : "a.Marker",
-      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Marker.java"
+      "sourcePath" : "a/Marker.java",
+      "violations" : [ {
+        "metric" : "WMC",
+        "value" : 2.0,
+        "min" : null,
+        "max" : 2.0
+      } ],
+      "severity" : "low"
     }, {
       "className" : "Outer",
       "qualifiedName" : "a.Outer",
-      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Outer.java"
+      "sourcePath" : "a/Outer.java",
+      "violations" : [ {
+        "metric" : "WMC",
+        "value" : 2.0,
+        "min" : null,
+        "max" : 2.0
+      } ],
+      "severity" : "low"
     }, {
       "className" : "Inner",
       "qualifiedName" : "a.Outer.Inner",
-      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Outer.java"
+      "sourcePath" : "a/Outer.java",
+      "violations" : [ {
+        "metric" : "WMC",
+        "value" : 1.0,
+        "min" : null,
+        "max" : 2.0
+      } ],
+      "severity" : "high"
     }, {
       "className" : "Nested",
       "qualifiedName" : "a.Outer.Nested",
-      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Outer.java"
+      "sourcePath" : "a/Outer.java",
+      "violations" : [ {
+        "metric" : "WMC",
+        "value" : 2.0,
+        "min" : null,
+        "max" : 2.0
+      } ],
+      "severity" : "low"
     }, {
       "className" : "Unresolvable",
       "qualifiedName" : "a.Unresolvable",
-      "sourcePath" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java"
+      "sourcePath" : "a/Unresolvable.java",
+      "violations" : [ {
+        "metric" : "WMC",
+        "value" : 2.0,
+        "min" : null,
+        "max" : 2.0
+      } ],
+      "severity" : "low"
     }, {
       "className" : "Helper",
       "qualifiedName" : "a.b.Helper",
-      "sourcePath" : "<GOLDEN_PROJECT>/src/a/b/Helper.java"
+      "sourcePath" : "a/b/Helper.java",
+      "violations" : [ {
+        "metric" : "WMC",
+        "value" : 2.0,
+        "min" : null,
+        "max" : 2.0
+      } ],
+      "severity" : "low"
     } ]
   } ],
   "packageRules" : [ {
     "name" : "LargePackage",
     "matchCount" : 2,
     "matches" : [ {
-      "packageName" : "a"
+      "packageName" : "a",
+      "violations" : [ {
+        "metric" : "PLOC",
+        "value" : 37.0,
+        "min" : 1.0,
+        "max" : null
+      } ],
+      "severity" : "high"
     }, {
-      "packageName" : "a.b"
+      "packageName" : "a.b",
+      "violations" : [ {
+        "metric" : "PLOC",
+        "value" : 6.0,
+        "min" : 1.0,
+        "max" : null
+      } ],
+      "severity" : "high"
     } ]
+  } ],
+  "byClass" : [ {
+    "className" : "Inner",
+    "qualifiedName" : "a.Outer.Inner",
+    "sourcePath" : "a/Outer.java",
+    "worstSeverity" : "high",
+    "rules" : [ "SmallClass" ]
+  }, {
+    "className" : "Base",
+    "qualifiedName" : "a.Base",
+    "sourcePath" : "a/Base.java",
+    "worstSeverity" : "medium",
+    "rules" : [ "ComplexClass", "LargeAndDense" ]
+  }, {
+    "className" : "Derived",
+    "qualifiedName" : "a.Derived",
+    "sourcePath" : "a/Derived.java",
+    "worstSeverity" : "low",
+    "rules" : [ "ComplexClass", "LargeAndDense" ]
+  }, {
+    "className" : "Marker",
+    "qualifiedName" : "a.Marker",
+    "sourcePath" : "a/Marker.java",
+    "worstSeverity" : "low",
+    "rules" : [ "SmallClass" ]
+  }, {
+    "className" : "Outer",
+    "qualifiedName" : "a.Outer",
+    "sourcePath" : "a/Outer.java",
+    "worstSeverity" : "low",
+    "rules" : [ "SmallClass" ]
+  }, {
+    "className" : "Nested",
+    "qualifiedName" : "a.Outer.Nested",
+    "sourcePath" : "a/Outer.java",
+    "worstSeverity" : "low",
+    "rules" : [ "SmallClass" ]
+  }, {
+    "className" : "Unresolvable",
+    "qualifiedName" : "a.Unresolvable",
+    "sourcePath" : "a/Unresolvable.java",
+    "worstSeverity" : "low",
+    "rules" : [ "SmallClass" ]
+  }, {
+    "className" : "Helper",
+    "qualifiedName" : "a.b.Helper",
+    "sourcePath" : "a/b/Helper.java",
+    "worstSeverity" : "low",
+    "rules" : [ "SmallClass" ]
+  } ],
+  "byPackage" : [ {
+    "packageName" : "a",
+    "worstSeverity" : "high",
+    "rules" : [ "LargePackage" ]
+  }, {
+    "packageName" : "a.b",
+    "worstSeverity" : "high",
+    "rules" : [ "LargePackage" ]
   } ],
   "summary" : {
     "classRules" : {
@@ -76,6 +229,9 @@
       "total" : 2,
       "matched" : 1,
       "problems" : [ ]
-    }
+    },
+    "totalFindings" : 12,
+    "affectedClasses" : 8,
+    "affectedPackages" : 2
   }
 }

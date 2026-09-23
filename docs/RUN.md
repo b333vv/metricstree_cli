@@ -52,6 +52,7 @@ java-metrics-cli analyze [--exclude-file=<path>] [--project-name=<name>]
 | `--metric=<code>` | Restrict output to specific metric codes (e.g., `LOC`, `NOC`) |
 | `--output-file=<path>` | Write JSON output to the specified file instead of stdout |
 | `--pretty` | Pretty-print JSON output |
+| `--format=<json\|html>` | Report format; default `json`. `html` writes a self-contained page — see [HTML output](#html-output). `sarif` is rejected: analyze produces a metrics catalogue, not findings |
 
 #### `--classpath` entries
 
@@ -312,7 +313,7 @@ java-metrics-cli analyze --source-root src/main/java --exclude-file exclusions.y
 Validate metrics against threshold values for CI/CD pipelines.
 
 ```bash
-java-metrics-cli validate -s <source> -t <thresholds.json> -o <report.json> [--strict] [--failed-only] [--format=<json|sarif>] [--exclude-file=<path>]
+java-metrics-cli validate -s <source> -t <thresholds.json> -o <report.json> [--strict] [--failed-only] [--format=<json|sarif|html>] [--exclude-file=<path>]
 ```
 
 | Option | Description |
@@ -322,7 +323,7 @@ java-metrics-cli validate -s <source> -t <thresholds.json> -o <report.json> [--s
 | `-o, --output=<path>` | Path to output JSON report (required) |
 | `--strict` | Exit with code 1 if any validation fails |
 | `--failed-only` | Write only the failed checks to the report |
-| `--format=<json\|sarif>` | Report format, case-insensitive; default `json`. `sarif` implies `--failed-only` — see [SARIF output](#sarif-output) |
+| `--format=<json\|sarif\|html>` | Report format, case-insensitive; default `json`. `sarif` implies `--failed-only` — see [SARIF output](#sarif-output). `html` writes a self-contained page — see [HTML output](#html-output) |
 | `--exclude-file=<path>` | YAML file with exclusion patterns (also `-e`, `--ignore`) |
 | `--generate-baseline=<path>` | Generate a baseline snapshot of current violations instead of normal validation |
 | `--baseline=<path>` | Check against an existing baseline (only alert on new or worsened violations) |
@@ -349,13 +350,27 @@ java-metrics-cli validate -s <source> -t <thresholds.json> -o <report.json> [--s
       "value": 150.0,
       "expectedMin": 0.0,
       "expectedMax": 100.0,
-      "status": "FAILED"
+      "status": "FAILED",
+      "severity": "medium"
     }
   ],
   "passed": 8,
-  "failed": 2
+  "failed": 2,
+  "byFile": [
+    {
+      "file": "src/Main.java",
+      "failures": [
+        { "file": "src/Main.java", "metric": "LOC", "value": 150.0,
+          "expectedMin": 0.0, "expectedMax": 100.0, "status": "FAILED", "severity": "medium" }
+      ]
+    }
+  ]
 }
 ```
+
+`severity` is present only on FAILED checks and says how far the value overshot its bound (`high`
+≥ 2×, `medium` ≥ 1.2×, otherwise `low`). `byFile` groups the failed checks by file — the "where is
+the work?" view — regardless of `--failed-only`, which filters only the flat `results` array.
 
 #### Baseline workflow
 
@@ -428,7 +443,7 @@ echo $?  # 1 if new or degraded violations found
 Detect metric rule matches (antipatterns / fitness functions) — find classes or packages whose metric values satisfy all given constraints.
 
 ```bash
-java-metrics-cli detect -s <source> --class-rules=<path> [--package-rules=<path>] -o <output> [--format=<json|sarif>] [--exclude-file=<path>]
+java-metrics-cli detect -s <source> --class-rules=<path> [--package-rules=<path>] -o <output> [--format=<json|sarif|html>] [--exclude-file=<path>]
 ```
 
 | Option | Description |
@@ -437,7 +452,7 @@ java-metrics-cli detect -s <source> --class-rules=<path> [--package-rules=<path>
 | `--class-rules=<path>` | JSON file with class-level rule definitions |
 | `--package-rules=<path>` | JSON file with package-level rule definitions |
 | `-o, --output=<path>` | Path to write the report to, in the format selected by `--format` (required) |
-| `--format=<json\|sarif>` | Report format, case-insensitive; default `json` — see [SARIF output](#sarif-output) |
+| `--format=<json\|sarif\|html>` | Report format, case-insensitive; default `json` — see [SARIF output](#sarif-output) and [HTML output](#html-output) |
 | `--exclude-file, -e, --ignore=<path>` | YAML file with exclusion patterns (see [Exclusions](#exclusions)) |
 
 At least one of `--class-rules` or `--package-rules` must be provided.
@@ -475,23 +490,59 @@ A condition that cannot be evaluated is reported rather than silently ignored �
 ```json
 {
   "status": "COMPLETED",
+  "baseDir": "/work/src/main/java",
   "classRules": [
     {
       "name": "GodClass",
       "matchCount": 2,
       "matches": [
-        {"className": "AppService", "qualifiedName": "com.example.AppService", "sourcePath": "src/main/java/AppService.java"},
-        {"className": "ReportBuilder", "qualifiedName": "com.example.ReportBuilder", "sourcePath": "src/main/java/ReportBuilder.java"}
+        {
+          "className": "AppService",
+          "qualifiedName": "com.example.AppService",
+          "sourcePath": "com/example/AppService.java",
+          "violations": [
+            { "metric": "WMC", "value": 210.0, "min": 47.0, "max": null },
+            { "metric": "ATFD", "value": 12.0, "min": 10.0, "max": null }
+          ],
+          "severity": "high"
+        }
       ]
     }
   ],
   "packageRules": [],
+  "byClass": [
+    {
+      "className": "AppService",
+      "qualifiedName": "com.example.AppService",
+      "sourcePath": "com/example/AppService.java",
+      "worstSeverity": "high",
+      "rules": ["GodClass"]
+    }
+  ],
+  "byPackage": [],
   "summary": {
     "classRules": {"total": 2, "matched": 1, "problems": []},
-    "packageRules": {"total": 0, "matched": 0, "problems": []}
+    "packageRules": {"total": 0, "matched": 0, "problems": []},
+    "totalFindings": 2,
+    "affectedClasses": 1,
+    "affectedPackages": 0
   }
 }
 ```
+
+Reading guide:
+
+- **`violations`** — every condition of the rule with the entity's *actual* metric value next to the
+  bound it crossed. This is the "why" of a finding; a fixing agent no longer has to re-run the
+  analysis to learn that `WMC` is 210 against a `min` of 47.
+- **`severity`** — how far past the bound the value went: `high` at ≥ 2×, `medium` at ≥ 1.2×,
+  otherwise `low`. For a `max` condition the value being *below* the bound is what fires the rule,
+  so the excess is `max / value`.
+- **`byClass` / `byPackage`** — the same findings grouped by entity instead of by rule, sorted
+  worst-severity first. This is the "what is wrong with this file?" view; an agent that fixes code
+  class by class can read only this section.
+- **`baseDir` + relative paths** — `sourcePath` values are relative to `baseDir` (the analysed
+  source root), so the report is stable across machines and checkouts.
 
 `problems` is always present, even when empty, so a consumer can distinguish "this run had no rule
 problems" from "this producer does not report rule problems at all". It is an additive key:
@@ -542,6 +593,31 @@ Detect with both class and package rules, plus exclusions:
 ```bash
 java-metrics-cli detect -s src/main/java --class-rules rules.json --package-rules pkg-rules.json -o report.json --exclude-file exclusions.yml
 ```
+
+## HTML output
+
+All three commands can render their report as a single self-contained HTML page — no external
+assets, no build step — so the file can be opened straight from a CI artifact, mailed, or archived:
+
+```bash
+java-metrics-cli analyze  --source-root src/main/java --format html --output-file report.html
+java-metrics-cli validate -s src/main/java -t thresholds.json -o report.html --format html
+java-metrics-cli detect   -s src/main/java --class-rules rules.json -o report.html --format html
+```
+
+Every page has the same shell: a summary-card dashboard at the top, a live filter box that matches
+class, package, rule and metric names, and collapsible sections underneath:
+
+- **detect** — findings by class (worst severity first), findings by package, then one section per
+  fired rule showing the actual metric values against the conditions (`WMC 210 (min 47)`) and a
+  severity badge per match.
+- **validate** — one table of threshold checks with PASS/FAIL marks, the expected range next to the
+  actual value, and a severity badge on each failure.
+- **analyze** — the full metrics catalogue: project metrics, then per-package sections with class
+  and method metric tables. `analyze --format sarif` is rejected: a metrics catalogue is not a list
+  of findings.
+
+A generated example lives at [docs/proposals/detect-report-example.html](proposals/detect-report-example.html).
 
 ## SARIF output
 

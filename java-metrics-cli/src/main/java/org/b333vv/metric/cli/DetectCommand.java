@@ -135,7 +135,7 @@ final class DetectCommand implements Callable<Integer> {
     /**
      * The report in the requested format.
      *
-     * <p>The two formats are produced from the same matches, so they cannot disagree about what was
+     * <p>All formats are produced from the same matches, so they cannot disagree about what was
      * detected; only the rendering differs.
      */
     private String toReport(
@@ -147,8 +147,21 @@ final class DetectCommand implements Callable<Integer> {
             SarifReportWriter sarifWriter = new SarifReportWriter();
             return sarifWriter.toSarif(sarifWriter.forAntipatterns(classMatches, packageMatches));
         }
+        if (format == OutputFormat.HTML) {
+            return new HtmlReportWriter().forDetect(
+                    baseDir(), classMatches, classRulesSummary, packageMatches, packageRulesSummary);
+        }
         return new DetectResultWriter().toJson(
-                classMatches, classRulesSummary, packageMatches, packageRulesSummary);
+                baseDir(), classMatches, classRulesSummary, packageMatches, packageRulesSummary);
+    }
+
+    /**
+     * The directory source paths in the report are relativized against: the source root itself, or
+     * the parent directory when a single file was analysed.
+     */
+    private Path baseDir() {
+        Path absolute = source.toAbsolutePath().normalize();
+        return Files.isDirectory(absolute) ? absolute : absolute.getParent();
     }
 
     private static DetectResultWriter.RulesSummary emptyRulesSummary() {

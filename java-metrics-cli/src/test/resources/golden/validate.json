@@ -20,14 +20,16 @@
     "value" : 3.0,
     "expectedMin" : 4.9E-324,
     "expectedMax" : 0.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "low"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
     "metric" : "NOM",
     "value" : 4.0,
     "expectedMin" : 0.0,
     "expectedMax" : 1.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "high"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
     "metric" : "NCSS",
@@ -55,14 +57,16 @@
     "value" : 4.0,
     "expectedMin" : 4.9E-324,
     "expectedMax" : 0.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "low"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
     "metric" : "NOM",
     "value" : 3.0,
     "expectedMin" : 0.0,
     "expectedMax" : 1.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "high"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
     "metric" : "NCSS",
@@ -90,14 +94,16 @@
     "value" : 1.0,
     "expectedMin" : 4.9E-324,
     "expectedMax" : 0.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "low"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
     "metric" : "NOM",
     "value" : 2.0,
     "expectedMin" : 0.0,
     "expectedMax" : 1.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "high"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
     "metric" : "NCSS",
@@ -125,14 +131,16 @@
     "value" : 3.0,
     "expectedMin" : 4.9E-324,
     "expectedMax" : 0.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "low"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
     "metric" : "NOM",
     "value" : 2.0,
     "expectedMin" : 0.0,
     "expectedMax" : 1.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "high"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
     "metric" : "NCSS",
@@ -160,7 +168,8 @@
     "value" : 0.0,
     "expectedMin" : 4.9E-324,
     "expectedMax" : 0.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "low"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
     "metric" : "NOM",
@@ -195,14 +204,16 @@
     "value" : 1.0,
     "expectedMin" : 4.9E-324,
     "expectedMax" : 0.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "low"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
     "metric" : "NOM",
     "value" : 2.0,
     "expectedMin" : 0.0,
     "expectedMax" : 1.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "high"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
     "metric" : "NCSS",
@@ -230,14 +241,16 @@
     "value" : 2.0,
     "expectedMin" : 4.9E-324,
     "expectedMax" : 0.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "low"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
     "metric" : "NOM",
     "value" : 2.0,
     "expectedMin" : 0.0,
     "expectedMax" : 1.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "high"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
     "metric" : "NCSS",
@@ -265,14 +278,16 @@
     "value" : 4.0,
     "expectedMin" : 4.9E-324,
     "expectedMax" : 0.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "low"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
     "metric" : "NOM",
     "value" : 2.0,
     "expectedMin" : 0.0,
     "expectedMax" : 1.0,
-    "status" : "FAILED"
+    "status" : "FAILED",
+    "severity" : "high"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
     "metric" : "NCSS",
@@ -282,5 +297,144 @@
     "status" : "PASSED"
   } ],
   "passed" : 25,
-  "failed" : 15
+  "failed" : 15,
+  "byFile" : [ {
+    "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
+    "failures" : [ {
+      "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
+      "metric" : "CBO",
+      "value" : 3.0,
+      "expectedMin" : 4.9E-324,
+      "expectedMax" : 0.0,
+      "status" : "FAILED",
+      "severity" : "low"
+    }, {
+      "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
+      "metric" : "NOM",
+      "value" : 4.0,
+      "expectedMin" : 0.0,
+      "expectedMax" : 1.0,
+      "status" : "FAILED",
+      "severity" : "high"
+    } ]
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
+    "failures" : [ {
+      "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
+      "metric" : "CBO",
+      "value" : 4.0,
+      "expectedMin" : 4.9E-324,
+      "expectedMax" : 0.0,
+      "status" : "FAILED",
+      "severity" : "low"
+    }, {
+      "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
+      "metric" : "NOM",
+      "value" : 3.0,
+      "expectedMin" : 0.0,
+      "expectedMax" : 1.0,
+      "status" : "FAILED",
+      "severity" : "high"
+    } ]
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
+    "failures" : [ {
+      "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
+      "metric" : "CBO",
+      "value" : 1.0,
+      "expectedMin" : 4.9E-324,
+      "expectedMax" : 0.0,
+      "status" : "FAILED",
+      "severity" : "low"
+    }, {
+      "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
+      "metric" : "NOM",
+      "value" : 2.0,
+      "expectedMin" : 0.0,
+      "expectedMax" : 1.0,
+      "status" : "FAILED",
+      "severity" : "high"
+    } ]
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+    "failures" : [ {
+      "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+      "metric" : "CBO",
+      "value" : 3.0,
+      "expectedMin" : 4.9E-324,
+      "expectedMax" : 0.0,
+      "status" : "FAILED",
+      "severity" : "low"
+    }, {
+      "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+      "metric" : "NOM",
+      "value" : 2.0,
+      "expectedMin" : 0.0,
+      "expectedMax" : 1.0,
+      "status" : "FAILED",
+      "severity" : "high"
+    }, {
+      "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+      "metric" : "CBO",
+      "value" : 0.0,
+      "expectedMin" : 4.9E-324,
+      "expectedMax" : 0.0,
+      "status" : "FAILED",
+      "severity" : "low"
+    }, {
+      "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+      "metric" : "CBO",
+      "value" : 1.0,
+      "expectedMin" : 4.9E-324,
+      "expectedMax" : 0.0,
+      "status" : "FAILED",
+      "severity" : "low"
+    }, {
+      "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
+      "metric" : "NOM",
+      "value" : 2.0,
+      "expectedMin" : 0.0,
+      "expectedMax" : 1.0,
+      "status" : "FAILED",
+      "severity" : "high"
+    } ]
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+    "failures" : [ {
+      "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+      "metric" : "CBO",
+      "value" : 2.0,
+      "expectedMin" : 4.9E-324,
+      "expectedMax" : 0.0,
+      "status" : "FAILED",
+      "severity" : "low"
+    }, {
+      "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
+      "metric" : "NOM",
+      "value" : 2.0,
+      "expectedMin" : 0.0,
+      "expectedMax" : 1.0,
+      "status" : "FAILED",
+      "severity" : "high"
+    } ]
+  }, {
+    "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
+    "failures" : [ {
+      "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
+      "metric" : "CBO",
+      "value" : 4.0,
+      "expectedMin" : 4.9E-324,
+      "expectedMax" : 0.0,
+      "status" : "FAILED",
+      "severity" : "low"
+    }, {
+      "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
+      "metric" : "NOM",
+      "value" : 2.0,
+      "expectedMin" : 0.0,
+      "expectedMax" : 1.0,
+      "status" : "FAILED",
+      "severity" : "high"
+    } ]
+  } ]
 }
