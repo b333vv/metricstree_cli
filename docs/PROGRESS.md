@@ -1384,14 +1384,52 @@ All three proposals were accepted and implemented; backward compatibility was no
 - DEBT-08 also closed in the same session: the two never-firing Kotlin sample rules were removed
   from `package-level-rules.json` (previous session), test assertion updated.
 
+## Session: TASK-401+402 — unified `.metrics-gate.yml` + threshold profiles
+
+- Single project config, discovered by walking up from the working directory (stops at the
+  `.git` boundary; repo root still checked), or pinned with `--config`, or disabled with
+  `--no-config`. File: `.metrics-gate.yml` / `.yaml` / `.json`; extension routes to the strict
+  JSON or the YAML parser, same rule as every other config type.
+- One precedence rule, implemented once in `ProjectConfigs`: explicit flag > config file >
+  profile > built-in default. Flags *replace*, never merge. Bad values in the config (e.g. an
+  unknown `format:`) are usage errors (exit 2) naming the file; unknown top-level keys are a
+  stderr `WARNING` naming key + file.
+- Three built-in profiles (`relaxed` / `standard` / `strict`) shipped as jar resources under
+  `src/main/resources/profiles/`, generated from the repo's `thresholds.json`: standard =
+  published-study values unchanged; relaxed = integer caps x1.5, ratio intervals widened toward
+  [0,1]; strict = caps x0.75, ratios narrowed 25%.
+- `ProjectConfig` (record with nullable sections, `EMPTY`, `effectiveThresholds()` key-by-key
+  merge over the profile), `ProjectConfigLoader` (sections + file-ref resolution relative to
+  the config's directory + unknown-key collection), `Profiles` (resource loading, unknown-name
+  error lists valid profiles + origin).
+- `ConfigLoader` gained node-based overloads (`thresholds(JsonNode)`,
+  `exclusions(JsonNode, origin)`, `rulesFromNode(JsonNode)`), `projectConfigTree(Path)` (CONFIG
+  source, errors name `--config`) and `yamlTree(InputStream)` — the last one so `Profiles`
+  parses through the one YAML mapper that `CliObjectMapperContractTest` allows (the contract
+  test caught the violation and the facade absorbed it).
+- Commands: `validate -t` is no longer required (config profile/thresholds suffice);
+  `strict` / `failed-only` / `format` fall back to the config; `detect` takes class/package
+  rules inline or via `classRulesFile:` / `packageRulesFile:`; `analyze` takes format and
+  exclusions from the config. All three resolve exclusions config > empty.
+- Tests: `ProjectConfigLoaderTest` (10: discovery walk-up, `.git` stop, config next to `.git`,
+  missing `--config`, unknown keys, ref resolution, inline merge, `--no-config`, stderr
+  warning), `ProfilesTest` (key parity across profiles, strictness ordering, unknown-name
+  error), `ProjectConfigCommandTest` (8 end-to-end: profile-only validate, strict-from-config
+  exit 1, flag beats config, `--no-config` invisibility, format-from-config, bad format exit 2,
+  inline detect rules, no-rules error preserved).
+- Docs: new "Project configuration" section in `docs/RUN.md` (discovery, precedence, example,
+  profiles, unknown-key policy); validate `-t` marked optional; PRD open questions resolved and
+  acceptance criteria checked off.
+- `./gradlew check` green: 132 tests.
+
 # what is in progress
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.
-  2. Unified `.metrics-gate.yml` + profiles — PRD drafted (`docs/prd/unified-config-and-profiles.md`),
-     awaiting answers to 5 open questions.
-  3. Diff-aware `gate` command — PRD drafted (`docs/prd/diff-aware-gate.md`),
-     awaiting answers to 4 open questions.
+  2. Unified `.metrics-gate.yml` + profiles — DONE (this session, see above).
+  3. Diff-aware `gate` command — next up. PRD: `docs/prd/diff-aware-gate.md`. Direction agreed:
+     separate `gate` command (not a validate flag), default growth budget, binary verdict,
+     JSON output.
   4. GitHub Action / CI templates.
   5. `--format agent-md` agent-consumable report.
   Repo hygiene side-quest done: stopped tracking `build/` outputs and `.gradle/` caches

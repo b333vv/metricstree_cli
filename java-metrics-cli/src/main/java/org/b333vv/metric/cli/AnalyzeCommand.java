@@ -71,27 +71,31 @@ final class AnalyzeCommand implements Callable<Integer> {
     @CommandLine.Option(names = "--pretty", description = "Pretty-print JSON output.")
     private boolean pretty;
 
-    @CommandLine.Option(names = "--format", paramLabel = "FORMAT", defaultValue = "json",
-            description = "Report format: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}). "
+    @CommandLine.Option(names = "--format", paramLabel = "FORMAT",
+            description = "Report format: ${COMPLETION-CANDIDATES} (default: json, or the format set in the project config). "
                     + "SARIF is not available here: analyze produces a metrics catalogue, not "
                     + "findings, so there is nothing to upload to a code-scanning consumer.")
     private OutputFormat format;
 
     @Override
     public Integer call() throws IOException {
+        ProjectConfig config = ProjectConfigs.resolve(
+                parentCommand, currentWorkingDirectorySupplier, stderr);
+        OutputFormat effectiveFormat = ProjectConfigs.format(format, config.analyzeFormat(), config, spec);
+
         if (sourceRoots.isEmpty() && sourceFiles.isEmpty()) {
             throw new CommandLine.ParameterException(spec.commandLine(),
                     "At least one --source-root or --source-file must be provided.");
         }
 
-        if (format == OutputFormat.SARIF) {
+        if (effectiveFormat == OutputFormat.SARIF) {
             throw new CommandLine.ParameterException(spec.commandLine(),
                     "--format sarif is not supported by analyze; use validate or detect for findings.");
         }
 
-        ExclusionConfig exclusions = loadExclusions();
+        ExclusionConfig exclusions = loadExclusions(config);
         AnalysisRequest request = buildRequest(exclusions);
-        String output = format == OutputFormat.HTML
+        String output = effectiveFormat == OutputFormat.HTML
                 ? new HtmlReportWriter().forAnalyze(analyzer.analyze(request))
                 : jsonWriter.toJson(analyzer.analyze(request), pretty);
         if (outputFile == null) {
@@ -109,12 +113,12 @@ final class AnalyzeCommand implements Callable<Integer> {
         return 0;
     }
 
-    private ExclusionConfig loadExclusions() {
+    private ExclusionConfig loadExclusions(ProjectConfig config) {
         Path excludeFilePath = parentCommand != null ? parentCommand.getExcludeFilePath() : null;
-        if (excludeFilePath == null) {
-            return ExclusionConfig.empty();
+        if (excludeFilePath != null) {
+            return ConfigLoader.exclusions(excludeFilePath);
         }
-        return ConfigLoader.exclusions(excludeFilePath);
+        return config.exclusions() != null ? config.exclusions() : ExclusionConfig.empty();
     }
 
     AnalysisRequest buildRequest(ExclusionConfig exclusions) {

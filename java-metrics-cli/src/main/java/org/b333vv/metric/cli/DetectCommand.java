@@ -60,24 +60,65 @@ final class DetectCommand implements Callable<Integer> {
             description = "Path to write the report to, in the format selected by --format.")
     private Path outputFile;
 
-    @CommandLine.Option(names = {"--format"}, paramLabel = "FORMAT", defaultValue = "json",
-            description = "Report format: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}). "
+    @CommandLine.Option(names = {"--format"}, paramLabel = "FORMAT",
+            description = "Report format: ${COMPLETION-CANDIDATES} (default: json, or the format "
+                    + "set in the project config). "
                     + "SARIF 2.1.0 is for upload to GitHub Code Scanning and similar consumers.")
     private OutputFormat format;
 
-    private ExclusionConfig loadExclusions() {
+    private OutputFormat effectiveFormat;
+
+    private ExclusionConfig loadExclusions(ProjectConfig config) {
         Path excludeFilePath = parentCommand != null ? parentCommand.getExcludeFilePath() : null;
-        if (excludeFilePath == null) {
-            return ExclusionConfig.empty();
+        if (excludeFilePath != null) {
+            return ConfigLoader.exclusions(excludeFilePath);
         }
-        return ConfigLoader.exclusions(excludeFilePath);
+        return config.exclusions() != null ? config.exclusions() : ExclusionConfig.empty();
+    }
+
+    /**
+     * The class-level rules to run, honouring flag &gt; inline config &gt; config file reference.
+     * {@code null} means "no class rules configured anywhere", which is legal as long as package
+     * rules came from somewhere.
+     */
+    private List<CombinationDefinition> resolveClassRules(ProjectConfig config) {
+        if (classRulesFile != null) {
+            return ConfigLoader.classRules(classRulesFile);
+        }
+        if (config.classRules() != null) {
+            return config.classRules();
+        }
+        if (config.classRulesFile() != null) {
+            return ConfigLoader.classRules(config.classRulesFile());
+        }
+        return null;
+    }
+
+    private List<CombinationDefinition> resolvePackageRules(ProjectConfig config) {
+        if (packageRulesFile != null) {
+            return ConfigLoader.packageRules(packageRulesFile);
+        }
+        if (config.packageRules() != null) {
+            return config.packageRules();
+        }
+        if (config.packageRulesFile() != null) {
+            return ConfigLoader.packageRules(config.packageRulesFile());
+        }
+        return null;
     }
 
     @Override
     public Integer call() throws IOException {
-        if (classRulesFile == null && packageRulesFile == null) {
+        ProjectConfig config = ProjectConfigs.resolve(
+                parentCommand, currentWorkingDirectorySupplier, stderr);
+        effectiveFormat = ProjectConfigs.format(format, config.detectFormat(), config, spec);
+
+        List<CombinationDefinition> classRules = resolveClassRules(config);
+        List<CombinationDefinition> packageRules = resolvePackageRules(config);
+        if (classRules == null && packageRules == null) {
             throw new CommandLine.ExecutionException(spec.commandLine(),
-                    "At least one of --class-rules or --package-rules must be provided.");
+                    "At least one of --class-rules or --package-rules must be provided, "
+                            + "or classRules / packageRules set in a project config.");
         }
 
         List<SourceRoot> sourceRoots = new ArrayList<>();
@@ -91,7 +132,7 @@ final class DetectCommand implements Callable<Integer> {
                     "Source must be a .java file or directory containing .java files.");
         }
 
-        ExclusionConfig exclusions = loadExclusions();
+        ExclusionConfig exclusions = loadExclusions(config);
         AnalysisOptions options = exclusions.isEmpty()
                 ? AnalysisOptions.defaults()
                 : AnalysisOptions.defaults().withExclusions(exclusions);
@@ -106,8 +147,7 @@ final class DetectCommand implements Callable<Integer> {
 
         List<CombinationDetector.ClassMatch> classMatches = List.of();
         DetectResultWriter.RulesSummary classRulesSummary = emptyRulesSummary();
-        if (classRulesFile != null) {
-            List<CombinationDefinition> classRules = ConfigLoader.classRules(classRulesFile);
+        if (classRules != null) {
             classMatches = detector.detectClasses(report, classRules);
             classRulesSummary = new DetectResultWriter.RulesSummary(
                     classRules.size(), classMatches.size(), detector.validateRules(classRules));
@@ -115,8 +155,7 @@ final class DetectCommand implements Callable<Integer> {
 
         List<CombinationDetector.PackageMatch> packageMatches = List.of();
         DetectResultWriter.RulesSummary packageRulesSummary = emptyRulesSummary();
-        if (packageRulesFile != null) {
-            List<CombinationDefinition> packageRules = ConfigLoader.packageRules(packageRulesFile);
+        if (packageRules != null) {
             packageMatches = detector.detectPackages(report, packageRules);
             packageRulesSummary = new DetectResultWriter.RulesSummary(
                     packageRules.size(), packageMatches.size(), detector.validateRules(packageRules));
@@ -143,11 +182,11 @@ final class DetectCommand implements Callable<Integer> {
             DetectResultWriter.RulesSummary classRulesSummary,
             List<CombinationDetector.PackageMatch> packageMatches,
             DetectResultWriter.RulesSummary packageRulesSummary) throws IOException {
-        if (format == OutputFormat.SARIF) {
+        if (effectiveFormat == OutputFormat.SARIF) {
             SarifReportWriter sarifWriter = new SarifReportWriter();
             return sarifWriter.toSarif(sarifWriter.forAntipatterns(classMatches, packageMatches));
         }
-        if (format == OutputFormat.HTML) {
+        if (effectiveFormat == OutputFormat.HTML) {
             return new HtmlReportWriter().forDetect(
                     baseDir(), classMatches, classRulesSummary, packageMatches, packageRulesSummary);
         }

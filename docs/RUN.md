@@ -31,6 +31,8 @@ java-metrics-cli --help
 | `-h, --help` | Show help message |
 | `-V, --version` | Show version |
 | `--exclude-file, -e, --ignore=<path>` | Path to a JSON or YAML file with exclusion patterns (packages, classes to skip). Available on all subcommands. |
+| `--config=<path>` | Use this project config file instead of auto-discovering `.metrics-gate.yml`. Available on all subcommands. |
+| `--no-config` | Ignore any `.metrics-gate` file: every setting comes from explicit flags. Available on all subcommands. |
 
 Every configuration file — thresholds, rules and exclusions — accepts JSON or YAML. See
 [Configuration files](#configuration-files) for the rule that decides which parser reads a file.
@@ -205,6 +207,67 @@ exclusions:
 
 Patterns from `packages` and `classes` are merged into one list and tested against the fully qualified class name (e.g., `com.myapp.api.UserController`). If any pattern matches (via `find()` semantics), the file is excluded.
 
+## Project configuration (`.metrics-gate.yml`)
+
+A single YAML or JSON file at the repository root can hold thresholds, rules, exclusions and
+per-command defaults, so a CI pipeline does not have to repeat a dozen flags on every run.
+
+**Discovery.** Starting at the working directory, the CLI walks up looking for
+`.metrics-gate.yml`, `.metrics-gate.yaml` or `.metrics-gate.json`. The walk stops at the first
+directory containing a `.git` entry (the repository root is still checked) — a config above the
+repo, for example a stray file in your home directory, never leaks into a CI build. `--config`
+points at a specific file and skips discovery; `--no-config` skips configuration entirely.
+
+**Precedence:** explicit flag > config file > profile > built-in default. An explicit
+`--thresholds` / `--class-rules` / `--package-rules` / `--exclude-file` flag *replaces* the
+corresponding config section; it is not merged. Scalars like `strict` or `format` fall back to
+the config value only when the flag is absent.
+
+```yaml
+# .metrics-gate.yml — a complete example
+profile: standard          # relaxed | standard | strict — built-in threshold tables
+
+thresholds:                # merged over the profile, key by key
+  CC: { max: 10 }
+  WMC: { max: 40 }
+
+classRules:                # inline rules (same schema as the rules files)...
+  - name: LargeClass
+    conditions:
+      - { metric: WMC, min: 20 }
+packageRulesFile: rules/packages.json   # ...or a reference, resolved relative to THIS file
+
+exclusions:
+  packages: ['com\.example\.generated']
+  classes: ['.*\.dto\..*']
+
+validate:                  # per-command defaults; flags still win
+  strict: true
+  failedOnly: true
+  format: json             # json | sarif | html
+detect:
+  format: sarif
+analyze:
+  format: json
+```
+
+**Profiles.** `relaxed`, `standard` and `strict` are threshold tables shipped inside the jar.
+`standard` carries the published-study values from the repository's `thresholds.json`;
+`relaxed` widens integer caps x1.5 (brownfield adoption); `strict` narrows them x0.75 (new or
+agent-written code). Ratio metrics (TCC, LCOM variants, AIF...) have their [0,1] intervals
+widened or narrowed accordingly. An unknown profile name is an error listing the valid ones.
+
+**Unknown keys are reported, not ignored.** A misspelled top-level key (`profiel: strict`)
+produces a `WARNING` on stderr naming the key and the file — a gate that is weaker than its
+author believes must say so. The same applies to an unknown `format` value, which is a usage
+error (exit code 2) naming the file.
+
+With a config in place, the minimal CI invocation shrinks to:
+
+```bash
+java-metrics-cli validate -s src/main/java -o metrics-report.json
+```
+
 ## Configuration files
 
 Three files configure this tool, and **all three accept JSON or YAML**:
@@ -212,6 +275,7 @@ Three files configure this tool, and **all three accept JSON or YAML**:
 | Config | Options that take it | Schema documented at |
 |---|---|---|
 | Thresholds | `validate -t, --thresholds` | [thresholds.json format](#thresholdsjson-format) |
+| Project config | auto-discovered, or `--config` on every command | [Project configuration](#project-configuration-metrics-gateyml) |
 | Class rules | `detect --class-rules` | [Rules file format](#rules-file-format) |
 | Package rules | `detect --package-rules` | [Rules file format](#rules-file-format) |
 | Exclusions | `--exclude-file` (`-e`, `--ignore`), on every command | [Exclusions](#exclusions) |
@@ -313,13 +377,15 @@ java-metrics-cli analyze --source-root src/main/java --exclude-file exclusions.y
 Validate metrics against threshold values for CI/CD pipelines.
 
 ```bash
-java-metrics-cli validate -s <source> -t <thresholds.json> -o <report.json> [--strict] [--failed-only] [--format=<json|sarif|html>] [--exclude-file=<path>]
+java-metrics-cli validate -s <source> [-t <thresholds.json>] -o <report.json> [--strict] [--failed-only] [--format=<json|sarif|html>] [--exclude-file=<path>]
+
+`-t` is optional when a [project config](#project-configuration-metrics-gateyml) supplies a profile or inline thresholds.
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-s, --source=<path>` | Path to Java file or directory (required) |
-| `-t, --thresholds=<path>` | Path to JSON file with thresholds (required) |
+| `-t, --thresholds=<path>` | Path to JSON or YAML file with thresholds. Optional when the project config supplies a profile or inline `thresholds:` |
 | `-o, --output=<path>` | Path to output JSON report (required) |
 | `--strict` | Exit with code 1 if any validation fails |
 | `--failed-only` | Write only the failed checks to the report |

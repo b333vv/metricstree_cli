@@ -1,0 +1,140 @@
+# Built-in threshold profile: relaxed
+# Derived from the thresholds table at the repository root (values from published
+# object-oriented metric threshold studies). Brownfield adoption: integer caps widened x1.5, ratio intervals widened towards [0,1].
+# Individual keys can be overridden in .metrics-gate.yml under `thresholds:`.
+
+WMC:
+  min: 0
+  max: 18
+DIT:
+  min: 0
+  max: 5
+CBO:
+  min: 0
+  max: 21
+RFC:
+  min: 0
+  max: 68
+NOC:
+  min: 0
+  max: 3
+NOA:
+  min: 0
+  max: 6
+NOOM:
+  min: 0
+  max: 5
+NOM:
+  min: 0
+  max: 11
+Ce:
+  min: 0
+  max: 11
+Ca:
+  min: 0
+  max: 12
+LOC:
+  min: 0
+  max: 17
+CC:
+  min: 0
+  max: 5
+CND:
+  min: 0
+  max: 3
+LND:
+  min: 0
+  max: 3
+NOPM:
+  min: 0
+  max: 5
+FDP:
+  min: 0
+  max: 5
+NOAV:
+  min: 0
+  max: 5
+MND:
+  min: 0
+  max: 5
+CINT:
+  min: 0
+  max: 11
+CCM:
+  min: 0
+  max: 12
+ATFD:
+  min: 0
+  max: 9
+NOPA:
+  min: 0
+  max: 5
+NOAC:
+  min: 0
+  max: 6
+CCC:
+  min: 0
+  max: 48
+NCSS:
+  min: 0
+  max: 1500
+LCOM:
+  min: 0
+  max: 77
+NOAM:
+  min: 0
+  max: 5
+NOO:
+  min: 0
+  max: 45
+SIZE2:
+  min: 0
+  max: 197
+MPC:
+  min: 0
+  max: 17
+DAC:
+  min: 0
+  max: 24
+NOL:
+  min: 0
+  max: 8
+LAA:
+  min: 0.25
+  max: 1
+CDISP:
+  min: 0
+  max: 0.62
+TCC:
+  min: 0.25
+  max: 1
+WOC:
+  min: 0.38
+  max: 1
+I:
+  min: 0
+  max: 1
+A:
+  min: 0
+  max: 1
+D:
+  min: 0
+  max: 0.62
+MHF:
+  min: 0.07
+  max: 0.53
+AHF:
+  min: 0.51
+  max: 1
+MIF:
+  min: 0.46
+  max: 0.88
+AIF:
+  min: 0.28
+  max: 0.82
+CF:
+  min: 0
+  max: 0.43
+PF:
+  min: 0.01
+  max: 0.36

@@ -56,8 +56,9 @@ final class ValidateCommand implements Callable<Integer> {
             description = "Source root scanned recursively for .java files or explicit Java source file.")
     private Path source;
 
-    @CommandLine.Option(names = {"-t", "--thresholds"}, required = true, paramLabel = "PATH",
-            description = "Path to JSON file with threshold values.")
+    @CommandLine.Option(names = {"-t", "--thresholds"}, paramLabel = "PATH",
+            description = "Path to JSON or YAML file with threshold values. Optional when a project "
+                    + "config (.metrics-gate.yml) supplies a profile or inline thresholds.")
     private Path thresholdsFile;
 
     @CommandLine.Option(names = {"-o", "--output"}, required = true, paramLabel = "PATH",
@@ -70,15 +71,26 @@ final class ValidateCommand implements Callable<Integer> {
     @CommandLine.Option(names = {"--failed-only"}, description = "Include only FAILED metric results in output.")
     private boolean failedOnly;
 
-    @CommandLine.Option(names = {"--format"}, paramLabel = "FORMAT", defaultValue = "json",
-            description = "Report format: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE}). "
+    @CommandLine.Option(names = {"--format"}, paramLabel = "FORMAT",
+            description = "Report format: ${COMPLETION-CANDIDATES} (default: json, or the format "
+                    + "set in the project config). "
                     + "SARIF 2.1.0 is for upload to GitHub Code Scanning and similar consumers, and "
                     + "always contains only the failed checks, so it implies --failed-only.")
     private OutputFormat format;
 
+    private OutputFormat effectiveFormat;
+    private boolean effectiveStrict;
+    private boolean effectiveFailedOnly;
+
     @Override
     public Integer call() throws IOException {
-        Map<String, Threshold> thresholds = ConfigLoader.thresholds(thresholdsFile);
+        ProjectConfig config = ProjectConfigs.resolve(
+                parentCommand, currentWorkingDirectorySupplier, stderr);
+        effectiveFormat = ProjectConfigs.format(format, config.validateFormat(), config, spec);
+        effectiveStrict = strict || Boolean.TRUE.equals(config.validateStrict());
+        effectiveFailedOnly = failedOnly || Boolean.TRUE.equals(config.validateFailedOnly());
+
+        Map<String, Threshold> thresholds = resolveThresholds(config);
 
         List<SourceRoot> sourceRoots = new ArrayList<>();
         List<SourceUnit> sourceUnits = new ArrayList<>();
@@ -92,7 +104,7 @@ final class ValidateCommand implements Callable<Integer> {
                     "Source must be a .java file or directory containing .java files.");
         }
 
-        ExclusionConfig exclusions = loadExclusions();
+        ExclusionConfig exclusions = loadExclusions(config);
         AnalysisOptions options = exclusions.isEmpty()
                 ? AnalysisOptions.defaults()
                 : AnalysisOptions.defaults().withExclusions(exclusions);
@@ -111,7 +123,7 @@ final class ValidateCommand implements Callable<Integer> {
         writeReport(result);
 
         if (result.getFailed() > 0) {
-            if (strict) {
+            if (effectiveStrict) {
                 return 1;
             }
             return 0;
@@ -119,12 +131,31 @@ final class ValidateCommand implements Callable<Integer> {
         return 0;
     }
 
-    private ExclusionConfig loadExclusions() {
-        Path excludeFilePath = parentCommand != null ? parentCommand.getExcludeFilePath() : null;
-        if (excludeFilePath == null) {
-            return ExclusionConfig.empty();
+    /**
+     * Where the thresholds come from: the explicit {@code --thresholds} file when given (it
+     * replaces everything config-derived, matching the global precedence rule), otherwise the
+     * config's profile with its inline overrides. Neither is a usage error — the command cannot
+     * validate against nothing.
+     */
+    private Map<String, Threshold> resolveThresholds(ProjectConfig config) {
+        if (thresholdsFile != null) {
+            return ConfigLoader.thresholds(thresholdsFile);
         }
-        return ConfigLoader.exclusions(excludeFilePath);
+        Map<String, Threshold> thresholds = config.effectiveThresholds();
+        if (thresholds == null || thresholds.isEmpty()) {
+            throw new CommandLine.ParameterException(spec.commandLine(),
+                    "--thresholds is required unless a project config (.metrics-gate.yml) "
+                            + "sets a profile or inline thresholds.");
+        }
+        return thresholds;
+    }
+
+    private ExclusionConfig loadExclusions(ProjectConfig config) {
+        Path excludeFilePath = parentCommand != null ? parentCommand.getExcludeFilePath() : null;
+        if (excludeFilePath != null) {
+            return ConfigLoader.exclusions(excludeFilePath);
+        }
+        return config.exclusions() != null ? config.exclusions() : ExclusionConfig.empty();
     }
 
     private ValidationResult validateReport(MetricReport report, Map<String, Threshold> thresholds) {
@@ -167,7 +198,7 @@ final class ValidateCommand implements Callable<Integer> {
         }
 
         if (result.getFailed() > 0) {
-            result.setStatus(strict ? "FAILED" : "WARNING");
+            result.setStatus(effectiveStrict ? "FAILED" : "WARNING");
         } else {
             result.setStatus("PASSED");
         }
@@ -176,7 +207,7 @@ final class ValidateCommand implements Callable<Integer> {
     }
 
     private void writeReport(ValidationResult result) throws IOException {
-        if (format == OutputFormat.SARIF) {
+        if (effectiveFormat == OutputFormat.SARIF) {
             // SARIF reports findings, so the passing checks are dropped by the writer rather than
             // here; --failed-only asks for the same thing and has nothing left to do on this path.
             SarifReportWriter sarifWriter = new SarifReportWriter();
@@ -184,11 +215,11 @@ final class ValidateCommand implements Callable<Integer> {
             return;
         }
 
-        List<MetricValidationResult> resultsToWrite = failedOnly
+        List<MetricValidationResult> resultsToWrite = effectiveFailedOnly
                 ? result.getResults().stream().filter(r -> r.status() == ValidationStatus.FAILED).toList()
                 : result.getResults();
 
-        if (format == OutputFormat.HTML) {
+        if (effectiveFormat == OutputFormat.HTML) {
             writeOutput(new HtmlReportWriter().forValidate(
                     result.getStatus(), resultsToWrite, result.getPassed(), result.getFailed()));
             return;

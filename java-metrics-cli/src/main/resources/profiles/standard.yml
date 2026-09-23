@@ -1,0 +1,140 @@
+# Built-in threshold profile: standard
+# Derived from the thresholds table at the repository root (values from published
+# object-oriented metric threshold studies). The baseline: the published values, unchanged.
+# Individual keys can be overridden in .metrics-gate.yml under `thresholds:`.
+
+WMC:
+  min: 0
+  max: 12
+DIT:
+  min: 0
+  max: 3
+CBO:
+  min: 0
+  max: 14
+RFC:
+  min: 0
+  max: 45
+NOC:
+  min: 0
+  max: 2
+NOA:
+  min: 0
+  max: 4
+NOOM:
+  min: 0
+  max: 3
+NOM:
+  min: 0
+  max: 7
+Ce:
+  min: 0
+  max: 7
+Ca:
+  min: 0
+  max: 8
+LOC:
+  min: 0
+  max: 11
+CC:
+  min: 0
+  max: 3
+CND:
+  min: 0
+  max: 2
+LND:
+  min: 0
+  max: 2
+NOPM:
+  min: 0
+  max: 3
+FDP:
+  min: 0
+  max: 3
+NOAV:
+  min: 0
+  max: 3
+MND:
+  min: 0
+  max: 3
+CINT:
+  min: 0
+  max: 7
+CCM:
+  min: 0
+  max: 8
+ATFD:
+  min: 0
+  max: 6
+NOPA:
+  min: 0
+  max: 3
+NOAC:
+  min: 0
+  max: 4
+CCC:
+  min: 0
+  max: 32
+NCSS:
+  min: 0
+  max: 1000
+LCOM:
+  min: 0
+  max: 51
+NOAM:
+  min: 0
+  max: 3
+NOO:
+  min: 0
+  max: 30
+SIZE2:
+  min: 0
+  max: 131
+MPC:
+  min: 0
+  max: 11
+DAC:
+  min: 0
+  max: 16
+NOL:
+  min: 0
+  max: 5
+LAA:
+  min: 0.33
+  max: 1
+CDISP:
+  min: 0
+  max: 0.5
+TCC:
+  min: 0.33
+  max: 1
+WOC:
+  min: 0.5
+  max: 1
+I:
+  min: 0
+  max: 1
+A:
+  min: 0
+  max: 1
+D:
+  min: 0
+  max: 0.5
+MHF:
+  min: 0.1
+  max: 0.37
+AHF:
+  min: 0.68
+  max: 1
+MIF:
+  min: 0.61
+  max: 0.84
+AIF:
+  min: 0.37
+  max: 0.76
+CF:
+  min: 0
+  max: 0.24
+PF:
+  min: 0.02
+  max: 0.15

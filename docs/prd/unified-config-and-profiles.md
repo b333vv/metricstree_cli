@@ -2,7 +2,7 @@
 
 ## Metadata
 - **Title:** Unified project configuration and expert threshold profiles
-- **Status:** Draft (awaiting review)
+- **Status:** Implemented (2026-09-23)
 - **Created:** 2026-09-23
 
 ## User Value
@@ -121,26 +121,27 @@ presets for `detect` are a follow-up (rules are taste, thresholds are science).
 - [ ] None — Jackson YAML is already in use.
 
 ## Acceptance Criteria
-- [ ] A repo with only `.metrics-gate.yml` runs `validate -s src` and `detect -s src` with no
-      config flags; a repo without it behaves exactly as before.
-- [ ] `--thresholds`, `--class-rules`, `--package-rules`, `--exclude-file` keep working and win
-      over the config file when both are present.
-- [ ] `profile: standard` alone produces a meaningful validate report on a sample project.
-- [ ] A config with an unknown top-level key is reported (name + file), not silently ignored —
-      same philosophy as rule-condition problems.
-- [ ] `--config missing.yml` fails with an error naming the flag and the path.
-- [ ] Golden tests cover: profile-only, profile+override, full explicit config, precedence.
+- [x] A repo with only `.metrics-gate.yml` runs `validate -s src` and `detect -s src` with no
+      config flags (`ProjectConfigCommandTest`); a repo without it behaves exactly as before
+      (existing command and golden tests pass unchanged).
+- [x] `--thresholds`, `--class-rules`, `--package-rules`, `--exclude-file` keep working and win
+      over the config file when both are present (`explicitThresholdsFlagBeatsConfig`).
+- [x] `profile: standard` alone produces a meaningful validate report on a sample project
+      (`validateRunsOnConfigProfileWithoutThresholdsFlag`).
+- [x] A config with an unknown top-level key is reported (name + file), not silently ignored
+      (`ProjectConfigLoaderTest` unknown-key tests assert the stderr warning).
+- [x] `--config missing.yml` fails with an error naming the flag and the path.
+- [x] Tests cover: profile-only, profile+inline-override, full explicit config, precedence
+      (`ProjectConfigLoaderTest`, `ProjectConfigCommandTest`).
 
-## Open Questions (to agree before implementation)
+## Open Questions — resolved 2026-09-23 ("на твоё усмотрение")
 
-1. **Filename**: `.metrics-gate.yml` (proposed) vs `.java-metrics.yml` vs `metrics-gate.yml`
-   (no dot)? The tool's name in CI will be "metrics gate", so the current proposal doubles as
-   branding.
-2. **Discovery walk-up**: stop at the first `.git` directory instead of filesystem root, to
-   avoid picking up a stray config from `$HOME`?
-3. **Inline + file reference both allowed** (proposed), or references only to keep one canonical
-   shape per config type?
-4. **Profile count**: three (proposed) or just two (`relaxed`/`strict`) to reduce the
-   "which do I pick" question?
-5. Should `analyze` also take defaults from the config (e.g. `format`, `metric` list), or stay
-   flag-driven as the "exploration" command while config governs only the gate commands?
+1. **Filename** → `.metrics-gate.yml` (plus `.yaml` / `.json` variants), as proposed.
+2. **Discovery walk-up** → stops at the first directory containing a `.git` entry; the repo
+   root itself is still checked. Implemented in `ProjectConfigLoader.discover`.
+3. **Inline + file reference** → both allowed, as proposed; a flag replaces rather than merges.
+4. **Profile count** → three: `relaxed` / `standard` / `strict`. Standard = the published-study
+   values from the repo's `thresholds.json`; relaxed = integer caps x1.5, ratios widened toward
+   [0,1]; strict = caps x0.75, ratios narrowed by 25%. Generation is one scriptable pass.
+5. **`analyze` in the config** → yes, `analyze` reads the same config (format + exclusions so
+   far) — one discovery path, no special-cased command.

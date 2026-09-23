@@ -33,6 +33,25 @@ final class JavaMetricsCliCommand implements Callable<Integer> {
         return excludeFilePath;
     }
 
+    @CommandLine.Option(names = {"--config"},
+            scope = CommandLine.ScopeType.INHERIT,
+            paramLabel = "PATH",
+            description = "Path to a project config (.metrics-gate.yml); bypasses auto-discovery.")
+    private Path configPath;
+
+    @CommandLine.Option(names = {"--no-config"},
+            scope = CommandLine.ScopeType.INHERIT,
+            description = "Ignore any .metrics-gate file: every setting comes from explicit flags.")
+    private boolean noConfig;
+
+    Path getConfigPath() {
+        return configPath;
+    }
+
+    boolean isNoConfig() {
+        return noConfig;
+    }
+
     @Override
     public Integer call() {
         spec.commandLine().usage(stdout);

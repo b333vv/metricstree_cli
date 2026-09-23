@@ -7,6 +7,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import org.b333vv.metric.library.core.ExclusionConfig;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -92,6 +93,11 @@ final class ConfigLoader {
             "exclusions",
             "Run without --exclude-file or provide a valid path.");
 
+    private static final ConfigSource CONFIG = new ConfigSource(
+            "--config",
+            "project config",
+            "Provide a JSON or YAML .metrics-gate file.");
+
     private ConfigLoader() {
     }
 
@@ -103,8 +109,15 @@ final class ConfigLoader {
      * {@link Threshold} for what that means and for the defect it hides.
      */
     static Map<String, Threshold> thresholds(Path file) {
-        JsonNode root = readTree(file, THRESHOLDS);
+        return thresholds(readTree(file, THRESHOLDS));
+    }
 
+    /**
+     * The same thresholds shape read from an already-parsed tree — used by {@code Profiles} for
+     * the built-in profile resources and by {@code ProjectConfigLoader} for the inline
+     * {@code thresholds:} section of a project config.
+     */
+    static Map<String, Threshold> thresholds(JsonNode root) {
         Map<String, Threshold> thresholds = new HashMap<>();
         Iterator<Map.Entry<String, JsonNode>> fields = root.fields();
         while (fields.hasNext()) {
@@ -148,7 +161,15 @@ final class ConfigLoader {
             return ExclusionConfig.empty();
         }
 
-        JsonNode exclusionsNode = root.get("exclusions");
+        return exclusions(root.get("exclusions"), file);
+    }
+
+    /**
+     * Builds exclusions from an {@code exclusions} node (object with {@code packages} /
+     * {@code classes} arrays), wherever it came from — a standalone exclusions file or the
+     * inline section of a project config. {@code origin} is only used in error messages.
+     */
+    static ExclusionConfig exclusions(JsonNode exclusionsNode, Path origin) {
         if (exclusionsNode == null || exclusionsNode.isEmpty()) {
             return ExclusionConfig.empty();
         }
@@ -165,8 +186,40 @@ final class ConfigLoader {
             return ExclusionConfig.of(patterns);
         } catch (PatternSyntaxException exception) {
             throw new IllegalArgumentException(
-                    "Error parsing regex in " + file.toAbsolutePath().normalize()
+                    "Error parsing regex in " + origin.toAbsolutePath().normalize()
                             + ": \"" + exception.getPattern() + "\" - " + exception.getDescription(),
+                    exception);
+        }
+    }
+
+    /**
+     * Reads a YAML tree from a stream — used by {@code Profiles} for the built-in profile
+     * resources bundled in the jar, which are not {@link Path}s. Keeping the mapper here
+     * preserves {@code CliObjectMapperContractTest}'s single-owner rule for input parsing.
+     */
+    static JsonNode yamlTree(InputStream stream) throws IOException {
+        return YAML.readTree(stream);
+    }
+
+    /**
+     * Reads a project config file ({@code .metrics-gate.yml} and friends) into a tree for
+     * {@code ProjectConfigLoader}. Same parser routing as every other config type.
+     */
+    static JsonNode projectConfigTree(Path file) {
+        return readTree(file, CONFIG);
+    }
+
+    /**
+     * Converts an inline rules node ({@code classRules:} / {@code packageRules:} of a project
+     * config) into definitions. Conversion goes through the YAML mapper's tree binding: the node
+     * may have been produced by either parser, and both mappers agree on this shape.
+     */
+    static List<CombinationDefinition> rulesFromNode(JsonNode node) {
+        try {
+            return YAML.readerFor(RULE_LIST).readValue(node);
+        } catch (IOException exception) {
+            throw new IllegalArgumentException(
+                    "Error: Failed to parse inline rules in a project config: " + exception.getMessage(),
                     exception);
         }
     }
