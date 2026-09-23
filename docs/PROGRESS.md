@@ -1371,8 +1371,8 @@ All three proposals were accepted and implemented; backward compatibility was no
   (violations + severity) and `DetectCommandTest` (HTML end-to-end); fixed `SarifReportWriterTest`
   constructors and the `ConfigLoaderTest` pretty-print assertion.
 - Golden JSONs regenerated (`-Dgoldens.update=true`) and reviewed: detect.json and validate.json.
-- Reverted an unrelated stale working-tree edit to `package-level-rules.json` (two Kotlin rules
-  were deleted, breaking `shouldLoadEveryShippedSampleConfig`).
+- Shipped `package-level-rules.json` sample: dropped the two Kotlin-only rules (`PNOKDC`,
+  `PNOKCO` — always 0 in the Java-only engine, so they could never fire); test assertion 12 → 10.
 - Docs: `docs/RUN.md` — detect/validate JSON samples, `--format html` on all commands, new
   "HTML output" section.
 
