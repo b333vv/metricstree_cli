@@ -1386,7 +1386,16 @@ All three proposals were accepted and implemented; backward compatibility was no
 
 # what is in progress
 
-- PRD for the unified `.metrics-gate.yml` config + profiles (next roadmap item).
+- Roadmap agreed with the user (2026-09-23), execution order:
+  1. DEBT-07 — done this session.
+  2. Unified `.metrics-gate.yml` + profiles — PRD drafted (`docs/prd/unified-config-and-profiles.md`),
+     awaiting answers to 5 open questions.
+  3. Diff-aware `gate` command — PRD drafted (`docs/prd/diff-aware-gate.md`),
+     awaiting answers to 4 open questions.
+  4. GitHub Action / CI templates.
+  5. `--format agent-md` agent-consumable report.
+  Repo hygiene side-quest done: stopped tracking `build/` outputs and `.gradle/` caches
+  (they were committed before the `.gitignore` rules existed).
 
 # what is on hold
 
