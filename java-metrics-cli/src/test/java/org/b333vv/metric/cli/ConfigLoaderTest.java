@@ -294,7 +294,7 @@ class ConfigLoaderTest {
 
         List<CombinationDefinition> packageRules =
                 ConfigLoader.packageRules(repositoryRoot().resolve("package-level-rules.json"));
-        assertEquals(12, packageRules.size());
+        assertEquals(10, packageRules.size());
 
         Path goldenConfig = cliProjectDir().resolve("src/test/resources/golden-config");
         assertEquals(5, ConfigLoader.thresholds(goldenConfig.resolve("thresholds.json")).size());

@@ -83,21 +83,5 @@
       { "metric": "Ce", "min": 25 },
       { "metric": "Ca", "max": 5 }
     ]
-  },
-  {
-    "name": "Kotlin Data Class Anemia",
-    "description": "The package is overloaded with Kotlin data classes without complex business logic (a sign of Anemic Domain Model).",
-    "conditions": [
-      { "metric": "PNOKDC", "min": 15 },
-      { "metric": "PAMI", "max": 80 }
-    ]
-  },
-  {
-    "name": "Kotlin Companion Object Bloat",
-    "description": "Overuse of companion objects, which may indicate a return to static methods and reduced testability.",
-    "conditions": [
-      { "metric": "PNOKCO", "min": 10 },
-      { "metric": "PLOC", "min": 500 }
-    ]
   }
 ]
