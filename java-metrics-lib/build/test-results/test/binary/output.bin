@@ -1,14 +1,0 @@
-;:=== Performance Benchmark ===
-;:-Source: /Users/vadim/code/core/src/main/java
-;:Files: 4074
-;:Lines: 289665
-;:Classes: 4020
-;:Methods: 19994
-;:Packages: 1318
-;:
-;:Total Time: 40576 ms
-;:Files/sec: 100,40
-;:Lines/sec: 7138,83
-;:Classes/sec: 99,07
-;:Methods/sec: 492,75
-;:Memory (delta): 1928 MB

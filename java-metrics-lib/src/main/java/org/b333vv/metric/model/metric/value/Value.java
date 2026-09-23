@@ -19,7 +19,9 @@ package org.b333vv.metric.model.metric.value;
 import org.jetbrains.annotations.NotNull;
 
 import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.text.NumberFormat;
+import java.util.Locale;
 import java.util.Objects;
 
 public class Value extends Number implements Comparable<Value> {
@@ -61,7 +63,8 @@ public class Value extends Number implements Comparable<Value> {
         }
     };
 
-    private static final DecimalFormat METRIC_VALUE_FORMAT = new DecimalFormat("0.0###");
+    private static final DecimalFormat METRIC_VALUE_FORMAT =
+            new DecimalFormat("0.0###", DecimalFormatSymbols.getInstance(Locale.ROOT));
 
     private Value(@NotNull Long value) {
         this.value = value;

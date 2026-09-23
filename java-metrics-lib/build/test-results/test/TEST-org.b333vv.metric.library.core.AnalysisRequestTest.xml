@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="org.b333vv.metric.library.core.AnalysisRequestTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-07-06T18:06:31" hostname="MacBook-Air.local" time="0.011">
+<testsuite name="org.b333vv.metric.library.core.AnalysisRequestTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-23T19:20:17" hostname="MacBook-Air.local" time="0.018">
   <properties/>
-  <testcase name="constructorShouldRejectNullEntriesInsideInputCollections()" classname="org.b333vv.metric.library.core.AnalysisRequestTest" time="0.002"/>
+  <testcase name="constructorShouldRejectNullEntriesInsideInputCollections()" classname="org.b333vv.metric.library.core.AnalysisRequestTest" time="0.008"/>
   <testcase name="ofSourceUnitsShouldBuildDefaultSourceUnitRequest()" classname="org.b333vv.metric.library.core.AnalysisRequestTest" time="0.006"/>
-  <testcase name="withClasspathEntriesShouldReturnUpdatedCopy()" classname="org.b333vv.metric.library.core.AnalysisRequestTest" time="0.001"/>
+  <testcase name="withClasspathEntriesShouldReturnUpdatedCopy()" classname="org.b333vv.metric.library.core.AnalysisRequestTest" time="0.0"/>
   <testcase name="constructorShouldSortAndDeduplicateInputsDeterministically()" classname="org.b333vv.metric.library.core.AnalysisRequestTest" time="0.0"/>
   <testcase name="withClasspathEntryShouldReplaceClasspathWithSingleNormalizedEntry()" classname="org.b333vv.metric.library.core.AnalysisRequestTest" time="0.001"/>
-  <testcase name="withOptionsShouldReturnUpdatedCopy()" classname="org.b333vv.metric.library.core.AnalysisRequestTest" time="0.0"/>
+  <testcase name="withOptionsShouldReturnUpdatedCopy()" classname="org.b333vv.metric.library.core.AnalysisRequestTest" time="0.001"/>
   <testcase name="singlePathFactoriesShouldBuildNormalizedRequests()" classname="org.b333vv.metric.library.core.AnalysisRequestTest" time="0.001"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>

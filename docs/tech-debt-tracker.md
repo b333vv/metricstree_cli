@@ -30,7 +30,12 @@
   20) and `*_BULK` aggregation for the suppressed remainder.
   *Follow-up:* the per-class cap does not bound the array for a whole project — tracked separately as
   DEBT-09.
-- **DEBT-07 — Locale-dependent metric values in the JSON contract.**
+- **DEBT-07 — Locale-dependent metric values in the JSON contract.** *Resolved (2026-09-23):*
+  `METRIC_VALUE_FORMAT` now uses `DecimalFormatSymbols.getInstance(Locale.ROOT)`, so doubles always
+  render with a dot on any machine. Goldens untouched (they are generated under en_US, where
+  `Locale.ROOT` is identical); verified by `ValueTest.doubleValuesFormatRegardlessOfDefaultLocale`
+  under an explicit ru_RU default locale. The JSON contract is now machine-independent.
+  *Original record:*
   Found while building the TASK-001 goldens (2026-09-16). `Value.toString()` formats doubles with a
   `static final DecimalFormat("0.0###")` created from the JVM default locale, and the JSON writers
   emit metric values through it. On a Russian locale `analyze` prints `"PRHVL": "312,7522"`; on an
@@ -60,7 +65,11 @@
   it needs its own reviewed decision rather than a ride-along in a refactor whose promise was "nothing
   changes". The alternative (emit JSON numbers instead of pre-formatted strings) is a schema change and
   a separate discussion.
-- **DEBT-08 — Two shipped Kotlin package rules can never fire.**
+- **DEBT-08 — Two shipped Kotlin package rules can never fire.** *Resolved (2026-09-23):*
+  Both rules removed from the shipped `package-level-rules.json` sample (10 rules remain); the
+  `shouldLoadEveryShippedSampleConfig` assertion updated 12 → 10. The Kotlin metrics themselves
+  stay in `MetricCode` for the IntelliJ plugin, which computes them via its own engine.
+  *Original record:*
   Found while writing the TASK-007 characterization test for the sample rules files (2026-09-16).
   `package-level-rules.json` ships `Kotlin Data Class Anemia` (`PNOKDC >= 15`) and
   `Kotlin Companion Object Bloat` (`PNOKCO >= 10`), but the analyzer hardcodes all four Kotlin

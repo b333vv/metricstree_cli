@@ -1376,9 +1376,19 @@ All three proposals were accepted and implemented; backward compatibility was no
 - Docs: `docs/RUN.md` — detect/validate JSON samples, `--format html` on all commands, new
   "HTML output" section.
 
+## Session: DEBT-07 resolved (locale-independent JSON values)
+- `Value.METRIC_VALUE_FORMAT` now formats with `Locale.ROOT` symbols — doubles always render with
+  a dot (`"312.7522"` on every machine, ru_RU included). The JSON contract is machine-independent.
+- New `ValueTest` pins the behaviour under an explicit ru_RU default locale; goldens untouched
+  (generated under en_US, where ROOT is identical). `./gradlew check` green.
+- DEBT-08 also closed in the same session: the two never-firing Kotlin sample rules were removed
+  from `package-level-rules.json` (previous session), test assertion updated.
+
 # what is in progress
 
-(nothing)
+- PRD for the unified `.metrics-gate.yml` config + profiles (next roadmap item).
+
+# what is on hold
 
 # what has been put on hold
 
