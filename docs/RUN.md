@@ -743,6 +743,45 @@ With a report artifact for the agent to consume:
 java-metrics-cli gate --base origin/main -o gate-report.json --format json
 ```
 
+#### GitHub Actions Integration
+
+Use the composite action in `.github/workflows/metrics-gate.yml`:
+
+```yaml
+name: Java Metrics Quality Gate
+
+on:
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  metrics-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full git history required for base ref diff
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Run Java Metrics Gate Action
+        uses: b333vv/metricstree_cli@master # or path ./
+        with:
+          base: origin/${{ github.base_ref }}
+          report-format: json
+          report-path: metrics-gate-report.json
+
+      - name: Upload Gate Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-gate-report
+          path: metrics-gate-report.json
+```
+
 ## HTML output
 
 Every command can render its report as a single self-contained HTML page — no external

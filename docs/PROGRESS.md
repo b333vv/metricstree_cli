@@ -1455,14 +1455,29 @@ All three proposals were accepted and implemented; backward compatibility was no
   acceptance checked, open questions resolved, scope reductions recorded (package rules on
   affected packages deferred — no verdict condition uses them).
 
+## Session: GitHub Action & CI templates (roadmap item 4)
+
+- Created root composite GitHub Action (`action.yml`):
+  - Inferred base ref (defaults to `origin/${{ github.base_ref }}` or `origin/main`).
+  - Fetches base git history if shallow clone.
+  - Builds `java-metrics-cli` distribution via Gradle on demand.
+  - Runs `gate` with specified config/profile/thresholds/exclude-file options.
+  - Emits outputs (`status`, `violations-count`, `report-path`) and writes summary to `$GITHUB_STEP_SUMMARY`.
+- Added PR workflow template (`.github/workflows/metrics-gate.yml`):
+  - Runs on PRs to master/main affecting `.java` sources or metric configuration.
+  - Checks out with full depth (`fetch-depth: 0`), sets up JDK 21 and Gradle.
+  - Uses the composite action and uploads the JSON report as an artifact.
+- Documentation updated: `docs/RUN.md` with GitHub Actions workflow example; `docs/prd/diff-aware-gate.md` checkbox completed.
+- `./gradlew check` clean.
+
 # what is in progress
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.
   2. Unified `.metrics-gate.yml` + profiles — DONE.
   3. Diff-aware `gate` command — DONE (this session, see above).
-  4. GitHub Action / CI templates — next up.
-  5. `--format agent-md` agent-consumable report.
+  4. GitHub Action / CI templates — DONE.
+  5. `--format agent-md` agent-consumable report — next up.
   Repo hygiene side-quest done: stopped tracking `build/` outputs and `.gradle/` caches
   (they were committed before the `.gitignore` rules existed).
 

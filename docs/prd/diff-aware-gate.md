@@ -44,7 +44,7 @@ FAILED: 2 worsened, 1 new violation — worst: WMC 61→210 (min 47) in app/AppS
 - [x] Tests: fixture git repos (`GateCommandTest`, 13 tests), verdict correctness
       (`GateEvaluatorTest`, 11 tests), exit codes 0/1/2
 - [x] Documentation: `docs/RUN.md` "gate" section (options, verdict table, config, examples)
-- [ ] GitHub Actions example (deferred with deliverable "GitHub Action / CI templates", roadmap 4)
+- [x] GitHub Actions example (`action.yml` + `.github/workflows/metrics-gate.yml`)
 
 ## Technical Design
 

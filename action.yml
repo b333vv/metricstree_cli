@@ -1,0 +1,153 @@
+name: 'Java Metrics Gate'
+description: 'Diff-aware Java code metrics quality gate. Fails only on what this pull request made worse.'
+author: 'b333vv'
+
+inputs:
+  base:
+    description: 'Base git reference to compare against (defaults to origin/${{ github.base_ref }} or origin/main)'
+    required: false
+    default: ''
+  config:
+    description: 'Path to .metrics-gate.yml project configuration file'
+    required: false
+    default: ''
+  profile:
+    description: 'Threshold profile name to use (e.g. strict, standard, relaxed)'
+    required: false
+    default: ''
+  thresholds:
+    description: 'Path to explicit thresholds JSON/YAML file'
+    required: false
+    default: ''
+  exclude-file:
+    description: 'Path to exclusion rules file'
+    required: false
+    default: ''
+  report-format:
+    description: 'Report format: json or html'
+    required: false
+    default: 'json'
+  report-path:
+    description: 'Path where the gate report file should be saved'
+    required: false
+    default: 'metrics-gate-report.json'
+
+outputs:
+  status:
+    description: 'Gate status: PASSED or FAILED'
+    value: ${{ steps.run-gate.outputs.status }}
+  violations-count:
+    description: 'Number of violations detected by the gate'
+    value: ${{ steps.run-gate.outputs.violations-count }}
+  report-path:
+    description: 'Path to the generated gate report'
+    value: ${{ steps.run-gate.outputs.report-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Determine base ref
+      id: determine-base
+      shell: bash
+      run: |
+        BASE="${{ inputs.base }}"
+        if [ -z "$BASE" ]; then
+          if [ -n "$GITHUB_BASE_REF" ]; then
+            BASE="origin/$GITHUB_BASE_REF"
+          else
+            BASE="origin/main"
+          fi
+        fi
+        echo "base_ref=$BASE" >> $GITHUB_OUTPUT
+        echo "Using base ref: $BASE"
+
+    - name: Ensure base ref is fetched
+      shell: bash
+      run: |
+        BASE="${{ steps.determine-base.outputs.base_ref }}"
+        # Strip origin/ prefix for git fetch if present
+        FETCH_REF="${BASE#origin/}"
+        if ! git rev-parse --verify --quiet "$BASE" > /dev/null 2>&1; then
+          echo "Base ref $BASE not found locally, fetching..."
+          git fetch origin "$FETCH_REF" --depth=100 || git fetch --unshallow || git fetch origin
+        fi
+
+    - name: Build java-metrics-cli distribution
+      id: build-cli
+      shell: bash
+      run: |
+        CLI_BIN="${{ github.action_path }}/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli"
+        if [ ! -x "$CLI_BIN" ]; then
+          # Check if current repo root has gradlew
+          if [ -f "${{ github.action_path }}/gradlew" ]; then
+            (cd "${{ github.action_path }}" && ./gradlew :java-metrics-cli:installDist -q)
+          elif [ -f "./gradlew" ]; then
+            ./gradlew :java-metrics-cli:installDist -q
+          fi
+        fi
+        if [ -x "$CLI_BIN" ]; then
+          echo "cli_path=$CLI_BIN" >> $GITHUB_OUTPUT
+        elif [ -x "./java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli" ]; then
+          echo "cli_path=$(pwd)/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli" >> $GITHUB_OUTPUT
+        else
+          echo "Error: java-metrics-cli executable could not be prepared." >&2
+          exit 2
+        fi
+
+    - name: Run diff-aware gate
+      id: run-gate
+      shell: bash
+      run: |
+        CLI="${{ steps.build-cli.outputs.cli_path }}"
+        BASE="${{ steps.determine-base.outputs.base_ref }}"
+        REPORT="${{ inputs.report-path }}"
+        FORMAT="${{ inputs.report-format }}"
+
+        ARGS=("gate" "--base=$BASE" "-o" "$REPORT" "--format=$FORMAT")
+
+        if [ -n "${{ inputs.config }}" ]; then
+          ARGS+=("--config=${{ inputs.config }}")
+        fi
+        if [ -n "${{ inputs.profile }}" ]; then
+          ARGS+=("-p" "${{ inputs.profile }}")
+        fi
+        if [ -n "${{ inputs.thresholds }}" ]; then
+          ARGS+=("-t" "${{ inputs.thresholds }}")
+        fi
+        if [ -n "${{ inputs.exclude-file }}" ]; then
+          ARGS+=("-e" "${{ inputs.exclude-file }}")
+        fi
+
+        set +e
+        "$CLI" "${ARGS[@]}"
+        GATE_EXIT=$?
+        set -e
+
+        STATUS="FAILED"
+        if [ $GATE_EXIT -eq 0 ]; then
+          STATUS="PASSED"
+        fi
+
+        VIOLATIONS=0
+        if [ -f "$REPORT" ] && [ "$FORMAT" = "json" ]; then
+          # Extract violations count if jq or python is available
+          if command -v jq >/dev/null 2>&1; then
+            VIOLATIONS=$(jq '.violations | length' "$REPORT" 2>/dev/null || echo 0)
+          elif command -v python3 >/dev/null 2>&1; then
+            VIOLATIONS=$(python3 -c "import json; d=json.load(open('$REPORT')); print(len(d.get('violations', [])))" 2>/dev/null || echo 0)
+          fi
+        fi
+
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+        echo "violations-count=$VIOLATIONS" >> $GITHUB_OUTPUT
+        echo "report-path=$REPORT" >> $GITHUB_OUTPUT
+
+        # Output GitHub Step Summary
+        if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+          echo "### Java Metrics Gate: $STATUS" >> $GITHUB_STEP_SUMMARY
+          echo "- **Base Ref:** \`$BASE\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Violations:** $VIOLATIONS" >> $GITHUB_STEP_SUMMARY
+          echo "- **Report:** \`$REPORT\`" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        exit $GATE_EXIT

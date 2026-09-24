@@ -1,0 +1,47 @@
+name: Java Metrics Quality Gate
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+    paths:
+      - '**.java'
+      - '.metrics-gate.yml'
+      - 'thresholds.json'
+
+jobs:
+  metrics-gate:
+    name: Diff-Aware Quality Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to accurately compare against base ref
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Run Java Metrics Gate Action
+        id: gate
+        uses: ./ # uses action.yml from repo root
+        with:
+          base: origin/${{ github.base_ref }}
+          report-format: json
+          report-path: metrics-gate-report.json
+
+      - name: Upload Gate Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-gate-report
+          path: metrics-gate-report.json
+          retention-days: 7
