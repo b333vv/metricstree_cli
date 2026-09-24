@@ -71,7 +71,7 @@ final class AnalyzeCommand implements Callable<Integer> {
     @CommandLine.Option(names = "--pretty", description = "Pretty-print JSON output.")
     private boolean pretty;
 
-    @CommandLine.Option(names = "--format", paramLabel = "FORMAT",
+    @CommandLine.Option(names = "--format", converter = OutputFormatConverter.class, paramLabel = "FORMAT",
             description = "Report format: ${COMPLETION-CANDIDATES} (default: json, or the format set in the project config). "
                     + "SARIF is not available here: analyze produces a metrics catalogue, not "
                     + "findings, so there is nothing to upload to a code-scanning consumer.")

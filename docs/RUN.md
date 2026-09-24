@@ -244,7 +244,7 @@ exclusions:
 validate:                  # per-command defaults; flags still win
   strict: true
   failedOnly: true
-  format: json             # json | sarif | html
+  format: json             # json | sarif | html | agent-md
 detect:
   format: sarif
 analyze:

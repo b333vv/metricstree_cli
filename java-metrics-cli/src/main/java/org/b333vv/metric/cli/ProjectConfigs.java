@@ -61,14 +61,15 @@ final class ProjectConfigs {
             return OutputFormat.JSON;
         }
         try {
-            return OutputFormat.valueOf(fromConfig.toUpperCase(Locale.ROOT));
+            String normalized = fromConfig.toLowerCase(Locale.ROOT).replace('-', '_');
+            return OutputFormat.valueOf(normalized.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
             throw new CommandLine.ParameterException(spec.commandLine(),
                     "Unknown format '" + fromConfig + "' in project config "
                             + (config.file() != null
                                     ? config.file().toAbsolutePath().normalize().toString()
                                     : "")
-                            + ". Accepted values: json, sarif (validate/detect only), html.");
+                            + ". Accepted values: json, sarif (validate/detect only), html, agent-md.");
         }
     }
 }

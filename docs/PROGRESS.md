@@ -1477,7 +1477,7 @@ All three proposals were accepted and implemented; backward compatibility was no
   2. Unified `.metrics-gate.yml` + profiles — DONE.
   3. Diff-aware `gate` command — DONE (this session, see above).
   4. GitHub Action / CI templates — DONE.
-  5. `--format agent-md` agent-consumable report — next up.
+  5. `--format agent-md` agent-consumable report — DONE this session. Added compact Markdown rendering for `gate`, `validate`, and `detect`; JSON/HTML/SARIF contracts remain unchanged.
   Repo hygiene side-quest done: stopped tracking `build/` outputs and `.gradle/` caches
   (they were committed before the `.gitignore` rules existed).
 

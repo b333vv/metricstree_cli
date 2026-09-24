@@ -60,7 +60,7 @@ final class DetectCommand implements Callable<Integer> {
             description = "Path to write the report to, in the format selected by --format.")
     private Path outputFile;
 
-    @CommandLine.Option(names = {"--format"}, paramLabel = "FORMAT",
+    @CommandLine.Option(names = {"--format"}, converter = OutputFormatConverter.class, paramLabel = "FORMAT",
             description = "Report format: ${COMPLETION-CANDIDATES} (default: json, or the format "
                     + "set in the project config). "
                     + "SARIF 2.1.0 is for upload to GitHub Code Scanning and similar consumers.")
@@ -188,6 +188,10 @@ final class DetectCommand implements Callable<Integer> {
         }
         if (effectiveFormat == OutputFormat.HTML) {
             return new HtmlReportWriter().forDetect(
+                    baseDir(), classMatches, classRulesSummary, packageMatches, packageRulesSummary);
+        }
+        if (effectiveFormat == OutputFormat.AGENT_MD) {
+            return new AgentMarkdownReportWriter().forDetect(
                     baseDir(), classMatches, classRulesSummary, packageMatches, packageRulesSummary);
         }
         return new DetectResultWriter().toJson(

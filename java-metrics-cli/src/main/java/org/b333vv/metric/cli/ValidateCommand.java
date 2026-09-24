@@ -71,7 +71,7 @@ final class ValidateCommand implements Callable<Integer> {
     @CommandLine.Option(names = {"--failed-only"}, description = "Include only FAILED metric results in output.")
     private boolean failedOnly;
 
-    @CommandLine.Option(names = {"--format"}, paramLabel = "FORMAT",
+    @CommandLine.Option(names = {"--format"}, converter = OutputFormatConverter.class, paramLabel = "FORMAT",
             description = "Report format: ${COMPLETION-CANDIDATES} (default: json, or the format "
                     + "set in the project config). "
                     + "SARIF 2.1.0 is for upload to GitHub Code Scanning and similar consumers, and "
@@ -221,6 +221,11 @@ final class ValidateCommand implements Callable<Integer> {
 
         if (effectiveFormat == OutputFormat.HTML) {
             writeOutput(new HtmlReportWriter().forValidate(
+                    result.getStatus(), resultsToWrite, result.getPassed(), result.getFailed()));
+            return;
+        }
+        if (effectiveFormat == OutputFormat.AGENT_MD) {
+            writeOutput(new AgentMarkdownReportWriter().forValidate(
                     result.getStatus(), resultsToWrite, result.getPassed(), result.getFailed()));
             return;
         }

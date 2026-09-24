@@ -22,5 +22,12 @@ enum OutputFormat {
      * per-rule and per-entity tables, live filtering. No external assets, so the file can be
      * archived or mailed as-is.
      */
-    HTML
+    HTML,
+
+    /**
+     * Compact Markdown intended for a coding agent: status, summary, and actionable
+     * findings grouped by file/entity. It is a rendering of the same in-memory report
+     * as JSON/HTML, never a second analysis.
+     */
+    AGENT_MD
 }

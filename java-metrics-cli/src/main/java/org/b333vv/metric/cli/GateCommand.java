@@ -85,9 +85,9 @@ final class GateCommand implements Callable<Integer> {
             description = "Path to write the full report to. Without it only the verdict line is printed.")
     private Path outputFile;
 
-    @CommandLine.Option(names = {"--format"}, paramLabel = "FORMAT",
+    @CommandLine.Option(names = {"--format"}, converter = OutputFormatConverter.class, paramLabel = "FORMAT",
             description = "Report format: json (default) or html. SARIF is rejected: the gate's "
-                    + "output is a verdict over a diff, not a findings list.")
+                    + "output is a verdict over a diff, not a findings list. agent-md is available for compact agent output.")
     private OutputFormat format;
 
     @Override
@@ -417,6 +417,8 @@ final class GateCommand implements Callable<Integer> {
         String content;
         if (format == OutputFormat.HTML) {
             content = new HtmlReportWriter().forGate(view);
+        } else if (format == OutputFormat.AGENT_MD) {
+            content = new AgentMarkdownReportWriter().forGate(view);
         } else {
             content = CliObjectMapper.write(view, true);
         }
