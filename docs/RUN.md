@@ -660,9 +660,92 @@ Detect with both class and package rules, plus exclusions:
 java-metrics-cli detect -s src/main/java --class-rules rules.json --package-rules pkg-rules.json -o report.json --exclude-file exclusions.yml
 ```
 
+### `gate` Command
+
+Diff-aware quality gate: fails only on what this branch made worse, not on the project's
+pre-existing state. This is the CI command for agent-generated (and human) pull requests.
+
+```bash
+java-metrics-cli gate --base origin/main [-t <thresholds.json>] [-o <report.json>]
+    [--format=<json|html>] [--exclude-file=<path>]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--base=<ref>` | **Required.** Base ref to diff against. Three-dot diff (`base...HEAD`) — only what this branch introduced |
+| `-t, --thresholds=<path>` | JSON/YAML thresholds. Optional: without it the gate still enforces growth budgets (defaults: CC +5, WMC +20) |
+| `-o, --output=<path>` | Write the full report here. Without it only the verdict line is printed |
+| `--format=<json\|html>` | Report format for `--output`; default `json`. `sarif` is rejected — the gate's output is a verdict over a diff, not a findings list |
+
+**Exit codes:** `0` pass · `1` gate failed · `2` usage or environment error (not a git
+repository, unknown `--base` ref).
+
+**What it does:**
+
+1. Resolves the changed file set with `git diff --name-only <base>...HEAD` (run from the repo
+   root, so running from a subdirectory changes nothing), keeps `.java` files that still exist —
+   deleted files are ignored by design.
+2. Analyzes the working tree's versions and the base revision's versions of those same files
+   (base content read via `git show` into a temp directory — no checkout, no worktree, no
+   mutation of your repository).
+3. Compares class and method metrics between the two passes and applies the verdict rules:
+
+| Condition | Result |
+|---|---|
+| New class/method violates absolute thresholds | **FAILED** (`new-violation`) |
+| Existing entity passed a threshold at base, fails it now | **FAILED** (`threshold-crossing`) |
+| Existing entity grew beyond the growth budget (e.g. CC +5) | **FAILED** (`growth-budget`) |
+| Worse than base but within every bound | PASSED, reported as a warning (`worsened`) |
+| Improved or unchanged | PASSED |
+| Changed file does not parse | **FAILED** (`parse-error`) — unconditionally; uncompilable code cannot sneak past |
+
+**The fairness rule:** a class already violating at the base revision is *not* failed again for
+the same failing metric — only worsening beyond the growth budget fails it. That is what makes
+the gate tolerable on a legacy codebase: your one-line fix inherits no decade of violations.
+
+**Verdict line** — the first stderr line, so the CI log needs no drill-down:
+
+```
+FAILED: 1 growth budget breach — worst: CC grew 2→9 (+7), budget is 5 in app/Demo.java
+```
+
+The full JSON report (`--output`) carries `status`, `base`, `violations` (with `severity`),
+`warnings`, and a `byFile` index — the agent's "where is the work" view.
+
+**Configuration** comes from `.metrics-gate.yml` (see [Project configuration](#project-configuration-metrics-gateyml)):
+
+```yaml
+profile: strict            # thresholds for new-violation / threshold-crossing checks
+gate:
+  growth:                  # per-metric allowed growth; replaces the built-in defaults
+    CC: 5
+    WMC: 20
+  failOn: [new-violation, threshold-crossing, growth-budget]   # any subset
+```
+
+An unknown `failOn` value is a usage error naming the config file. `parse-error` and `worsened`
+are not selectable: the first always fails, the second never does.
+
+**Unparseable files:** a changed file that fails to parse fails the gate (a parser problem is
+reported as a finding with its reason). If the *base* version of a file did not parse, its
+current entities are skipped rather than judged as new — the gate never fails what it cannot
+compare.
+
+#### Examples
+
+Zero-setup CI gate on a pull request:
+```bash
+java-metrics-cli gate --base origin/main
+```
+
+With a report artifact for the agent to consume:
+```bash
+java-metrics-cli gate --base origin/main -o gate-report.json --format json
+```
+
 ## HTML output
 
-All three commands can render their report as a single self-contained HTML page — no external
+Every command can render its report as a single self-contained HTML page — no external
 assets, no build step — so the file can be opened straight from a CI artifact, mailed, or archived:
 
 ```bash

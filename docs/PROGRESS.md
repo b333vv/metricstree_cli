@@ -1422,15 +1422,46 @@ All three proposals were accepted and implemented; backward compatibility was no
   acceptance criteria checked off.
 - `./gradlew check` green: 132 tests.
 
+## Session: diff-aware `gate` command (roadmap item 3)
+
+- New `gate` subcommand: `git diff <base>...HEAD` → changed `.java` files → two analysis passes
+  (working tree vs base content read via `git show` into a temp dir — no checkout/worktree) →
+  per-entity metric delta → binary verdict. Exit 0/1/2 (pass / gate failed / usage+env error).
+- New files: `GitOps.java` (exec git: repoRoot, verifyRef, changedFiles, fileAt — all commands
+  run from the repo root so a subdirectory invocation cannot path-limit the diff),
+  `GateFinding.java` (kebab-case types shared with `gate.failOn` spelling), `GateEvaluator.java`
+  (pure verdict logic), `GateCommand.java` (orchestration + report views).
+- Verdict rules (PRD table): new-violation / threshold-crossing / growth-budget fail (subset via
+  `gate.failOn`); worsened-within-bounds → warning; improved → pass; unparseable current file →
+  fail unconditionally (parse-error, not selectable in failOn); unparseable *base* content skips
+  the file's entities (fairness: never fail what you cannot compare). Findings sorted
+  worst-first by severity then overshoot — the verdict line's "worst:" is the head.
+- Growth budgets: defaults CC +5 / WMC +20 (zero-setup `gate --base origin/main` works even
+  without thresholds); `gate.growth` in `.metrics-gate.yml` **replaces** the defaults;
+  `gate.failOn` validates its values as a usage error naming the config file.
+- Config plumbing: `ProjectConfig` + `ProjectConfigLoader` grew `gateGrowth`/`gateFailOn` (with
+  `gate` added to KNOWN_KEYS); config warnings during gate run are buffered so the verdict line
+  stays the first stderr line.
+- Report: `GateReportView` (status, base, changedFiles, violations, warnings, byFile) as JSON via
+  `CliObjectMapper`, or HTML via new `HtmlReportWriter.forGate`.
+- Tests: `GateEvaluatorTest` (11 — verdict table incl. fairness, floor-metric direction, failOn
+  subset, unparseable-base skip, worst-first ordering), `GateCommandTest` (13 — real fixture git
+  repos: growth fail, improve pass, no-Java fast path, verdict-first-line + JSON shape,
+  subdirectory, fairness with `-t`, exit 2 not-a-repo / unknown ref, config growth, failOn
+  subset, unknown failOn value, parse-error, HTML report).
+- Live smoke on a hand-built repo: verdict `FAILED: 1 growth budget breach — worst: CC grew 2→9
+  (+7), budget is 5 in app/Demo.java`, exit 1, JSON report complete.
+- `./gradlew check` green. Docs: `docs/RUN.md` new "gate" section; PRD status Implemented,
+  acceptance checked, open questions resolved, scope reductions recorded (package rules on
+  affected packages deferred — no verdict condition uses them).
+
 # what is in progress
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.
-  2. Unified `.metrics-gate.yml` + profiles — DONE (this session, see above).
-  3. Diff-aware `gate` command — next up. PRD: `docs/prd/diff-aware-gate.md`. Direction agreed:
-     separate `gate` command (not a validate flag), default growth budget, binary verdict,
-     JSON output.
-  4. GitHub Action / CI templates.
+  2. Unified `.metrics-gate.yml` + profiles — DONE.
+  3. Diff-aware `gate` command — DONE (this session, see above).
+  4. GitHub Action / CI templates — next up.
   5. `--format agent-md` agent-consumable report.
   Repo hygiene side-quest done: stopped tracking `build/` outputs and `.gradle/` caches
   (they were committed before the `.gitignore` rules existed).

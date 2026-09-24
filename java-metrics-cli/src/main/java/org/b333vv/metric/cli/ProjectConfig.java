@@ -29,6 +29,11 @@ import java.util.Map;
  *                         it so a bad value is reported as a usage error, not a config error)
  * @param detectFormat     default for detect {@code --format}
  * @param analyzeFormat    default for analyze {@code --format}
+ * @param gateGrowth       per-metric growth budget for {@code gate} (metric → allowed growth
+ *                         between revisions); {@code null} means "use the built-in default"
+ * @param gateFailOn       finding types that fail the {@code gate} (subset of
+ *                         {@code new-violation}, {@code threshold-crossing}, {@code growth-budget});
+ *                         {@code null} means "all of them"
  * @param unknownKeys      top-level keys the loader did not recognise — always reported to the
  *                         user, never silently ignored (same philosophy as rule-condition
  *                         problems: a config that is weaker than its author believes must say so)
@@ -47,11 +52,13 @@ record ProjectConfig(
         String validateFormat,
         String detectFormat,
         String analyzeFormat,
+        Map<String, Double> gateGrowth,
+        List<String> gateFailOn,
         List<String> unknownKeys) {
 
     static final ProjectConfig EMPTY = new ProjectConfig(
             null, null, null, null, null, null, null, null,
-            null, null, null, null, null, List.of());
+            null, null, null, null, null, null, null, List.of());
 
     boolean isEmpty() {
         return file == null;

@@ -127,6 +127,64 @@ final class HtmlReportWriter {
                 .replace("\"", "&quot;");
     }
 
+    // ----------------------------------------------------------------------- gate
+
+    /**
+     * The gate report: a verdict card row, then the violations (worst-first, as the evaluator
+     * sorted them) and the warnings in their own section. The entity column carries the class or
+     * method the finding belongs to, so the page answers "where is the work" without a second view.
+     */
+    String forGate(GateCommand.GateReportView view) {
+        StringBuilder cards = new StringBuilder();
+        card(cards, view.status(), "Status");
+        card(cards, view.changedFiles(), "Changed files");
+        card(cards, view.violations().size(), "Violations");
+        card(cards, view.warnings().size(), "Warnings");
+
+        StringBuilder body = new StringBuilder();
+        gateSection(body, "Violations", view.violations());
+        gateSection(body, "Warnings", view.warnings());
+        return page("Metrics gate report", "base " + view.base(), cards, body);
+    }
+
+    private static void gateSection(StringBuilder body, String title, List<GateFinding> findings) {
+        body.append("<details class=\"section\" open><summary><span>").append(esc(title))
+                .append("</span><span class=\"count\">").append(findings.size())
+                .append("</span></summary>");
+        if (findings.isEmpty()) {
+            body.append("<table><tr><td>none</td></tr></table>");
+        } else {
+            body.append("<table><tr><th>File</th><th>Entity</th><th>Metric</th>"
+                    + "<th>Change</th><th>Severity</th><th>Message</th></tr>");
+            for (GateFinding finding : findings) {
+                body.append("<tr data-search=\"")
+                        .append(esc((finding.file() + " " + finding.entity() + " " + finding.metric())
+                                .toLowerCase(java.util.Locale.ROOT)))
+                        .append("\"><td class=\"path\">").append(esc(finding.file()))
+                        .append("</td><td class=\"mono\">").append(esc(finding.entity()))
+                        .append("</td><td class=\"mono\">").append(esc(finding.metric()))
+                        .append("</td><td class=\"mono\">").append(gateChange(finding))
+                        .append("</td><td>")
+                        .append(finding.severity() != null ? severityBadge(finding.severity()) : "")
+                        .append("</td><td>").append(esc(finding.message()))
+                        .append("</td></tr>");
+            }
+            body.append("</table>");
+        }
+        body.append("</details>");
+    }
+
+    /** {@code 61→210} for crossings, {@code 4} for new entities, {@code +7} for budget breaches. */
+    private static String gateChange(GateFinding finding) {
+        if (finding.baseValue() != null && finding.value() != null) {
+            return formatNumber(finding.baseValue()) + "→" + formatNumber(finding.value());
+        }
+        if (finding.value() != null) {
+            return formatNumber(finding.value()) + " (new)";
+        }
+        return "";
+    }
+
     // ----------------------------------------------------------------------- detect
 
     String forDetect(

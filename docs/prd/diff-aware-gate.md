@@ -2,7 +2,7 @@
 
 ## Metadata
 - **Title:** Diff-aware quality gate — validate only what a change touches
-- **Status:** Draft (awaiting review)
+- **Status:** Implemented (2026-09-24)
 - **Created:** 2026-09-23
 - **Depends on:** unified config + profiles (`.metrics-gate.yml`) — the gate reads policy from it
 
@@ -36,11 +36,15 @@ FAILED: 2 worsened, 1 new violation — worst: WMC 61→210 (min 47) in app/AppS
 ```
 
 ## Deliverables
-- [ ] Code: `gate` subcommand — git diff → changed files → metric delta → verdict
-- [ ] Code: growth thresholds ("no method's CC may grow by more than N") in addition to absolute
-- [ ] Code: one-line verdict to stderr + full JSON/HTML report to file
-- [ ] Tests: fixture git repos (init → commit → change → gate), verdict correctness, exit codes
-- [ ] Documentation: `docs/RUN.md` section; CI recipe (GitHub Actions example)
+- [x] Code: `gate` subcommand (`GateCommand` + `GitOps` + `GateEvaluator`) — git diff → changed
+      files → two analysis passes → metric delta → verdict
+- [x] Code: growth thresholds (`gate.growth` in config; defaults CC +5, WMC +20) in addition to
+      absolute thresholds; `gate.failOn` selects a subset of failure types
+- [x] Code: one-line verdict to stderr (first line) + full JSON/HTML report to `--output`
+- [x] Tests: fixture git repos (`GateCommandTest`, 13 tests), verdict correctness
+      (`GateEvaluatorTest`, 11 tests), exit codes 0/1/2
+- [x] Documentation: `docs/RUN.md` "gate" section (options, verdict table, config, examples)
+- [ ] GitHub Actions example (deferred with deliverable "GitHub Action / CI templates", roadmap 4)
 
 ## Technical Design
 
@@ -92,26 +96,42 @@ gate:
 - Package-private metric baselines for untouched files.
 
 ### New Dependencies
-- [ ] None — shell out to `git` (guaranteed present: the feature is meaningless without it).
+- [x] None — shell out to `git` (guaranteed present: the feature is meaningless without it).
       JGit deliberately avoided: 5+ MB for `diff`/`show` we can exec in two lines.
 
 ## Acceptance Criteria
-- [ ] On a fixture repo, a commit that doubles a method's CC beyond the budget fails the gate;
+- [x] On a fixture repo, a commit that doubles a method's CC beyond the budget fails the gate;
       a commit improving metrics passes; a commit touching no `.java` files passes in < 1 s.
-- [ ] Verdict line is the first stderr line; `--output` still receives the full JSON report in
+- [x] Verdict line is the first stderr line; `--output` still receives the full JSON report in
       the v2 shape (violations, severity, byFile) so agents can consume it.
-- [ ] Works when run from a subdirectory of the repo (discovers repo root).
-- [ ] Fairness rule verified: a file violating at base passes unless it got *worse*.
-- [ ] Exit codes: 0 pass, 1 gate failed, 2 usage/environment error.
+- [x] Works when run from a subdirectory of the repo (discovers repo root).
+- [x] Fairness rule verified: a file violating at base passes unless it got *worse*.
+- [x] Exit codes: 0 pass, 1 gate failed, 2 usage/environment error.
 
-## Open Questions (to agree before implementation)
+## Open Questions — resolved 2026-09-24 ("на твоё усмотрение")
 
-1. **Command shape**: new `gate` subcommand (proposed) vs. flags on `validate`
-   (`--diff-against <ref>`)? A new command admits gate-specific options (growth budgets) without
-   overloading `validate`, at the cost of a fourth command.
-2. **Growth budget defaults**: ship a default budget (CC +5, WMC +20) or require explicit config?
-   A default makes the gate useful with zero setup; an empty default makes it stricter.
-3. **Severity integration**: should a *worsening* inherit the detect-style severity ratio
-   (2×/1.2×) for prioritising the verdict line, or is binary pass/fail enough at v1?
-4. **Symlink to agents**: worth emitting, on failure, a ready-made prompt block
-   (`gate --format agent-md` later) or keep machine output strictly JSON for now?
+1. **Command shape** → new `gate` subcommand, as proposed. Gate-specific options (`--base`,
+   growth budgets) do not overload `validate`.
+2. **Growth budget defaults** → shipped: CC +5, WMC +20 out of the box; `gate.growth` in the
+   config replaces them. The gate is useful with zero setup.
+3. **Severity integration** → findings carry detect-style severity (same 2×/1.2× excess buckets)
+   and the verdict line leads with the worst-severity finding, but the *verdict* stays binary:
+   0/1. Severity prioritises, it does not decide.
+4. **Symlink to agents** → machine output stays JSON for v1; `--format agent-md` is roadmap item 5
+   (a report format for all commands, not a gate-only flag).
+
+### Decisions taken during implementation
+
+- **Thresholds are optional for `gate`** (unlike `validate`): with no profile anywhere the gate
+  still enforces the default growth budgets, so `gate --base origin/main` works on a bare repo.
+  New-violation/crossing checks simply need thresholds to exist before they can fire.
+- **`gate.growth` replaces the defaults** (not merged): an explicit budget map is the whole
+  policy; a merge would let a forgotten default silently widen what the author meant to tighten.
+- **Unparseable *base* content skips the file's current entities** instead of judging them new —
+  the fairness rule extends to "never fail what you cannot compare". Unparseable *current*
+  content fails unconditionally.
+- **Renamed file** = delete + add (no `git diff -M`), per out-of-scope list.
+- **Package-level rules on affected packages** (design §1) deferred: the verdict table has no
+  rule-match condition, and package metrics over a file subset are not knowable — running them
+  would produce findings the verdict cannot use. `detect` remains the rule engine; the gate is a
+  delta gate. Recorded here as a scope reduction.

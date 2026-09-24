@@ -5,7 +5,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -31,7 +33,7 @@ final class ProjectConfigLoader {
     private static final Set<String> KNOWN_KEYS = Set.of(
             "profile", "thresholds",
             "classRules", "classRulesFile", "packageRules", "packageRulesFile",
-            "exclusions", "validate", "detect", "analyze");
+            "exclusions", "validate", "detect", "analyze", "gate");
 
     private ProjectConfigLoader() {
     }
@@ -77,6 +79,7 @@ final class ProjectConfigLoader {
         JsonNode validate = root.get("validate");
         JsonNode detect = root.get("detect");
         JsonNode analyze = root.get("analyze");
+        JsonNode gate = root.get("gate");
 
         return new ProjectConfig(
                 file,
@@ -92,7 +95,49 @@ final class ProjectConfigLoader {
                 validate != null ? textOrNull(validate.get("format")) : null,
                 detect != null ? textOrNull(detect.get("format")) : null,
                 analyze != null ? textOrNull(analyze.get("format")) : null,
+                gate != null ? growthMap(gate.get("growth"), file) : null,
+                gate != null ? stringList(gate.get("failOn")) : null,
                 List.copyOf(unknownKeys));
+    }
+
+    /** {@code growth: {CC: 5}} → metric → budget. Non-numeric budgets are a config error. */
+    private static Map<String, Double> growthMap(JsonNode growth, Path file) {
+        if (growth == null || growth.isNull()) {
+            return null;
+        }
+        if (!growth.isObject()) {
+            throw new IllegalArgumentException(
+                    "Error: gate.growth in project config " + file.toAbsolutePath().normalize()
+                            + " must be a mapping of metric name to allowed growth.");
+        }
+        Map<String, Double> budgets = new LinkedHashMap<>();
+        growth.fieldNames().forEachRemaining(name -> {
+            JsonNode budget = growth.get(name);
+            if (!budget.isNumber() || budget.doubleValue() < 0) {
+                throw new IllegalArgumentException(
+                        "Error: gate.growth." + name + " in project config "
+                                + file.toAbsolutePath().normalize()
+                                + " must be a non-negative number, got: " + budget + ".");
+            }
+            budgets.put(name, budget.doubleValue());
+        });
+        return budgets;
+    }
+
+    private static List<String> stringList(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (!node.isArray()) {
+            return null;
+        }
+        List<String> values = new ArrayList<>();
+        node.forEach(element -> {
+            if (element.isTextual()) {
+                values.add(element.asText());
+            }
+        });
+        return List.copyOf(values);
     }
 
     /** A file reference inside the config, resolved against the config's own directory. */

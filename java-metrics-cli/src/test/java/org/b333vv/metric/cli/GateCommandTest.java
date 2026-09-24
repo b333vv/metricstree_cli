@@ -1,0 +1,336 @@
+package org.b333vv.metric.cli;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.b333vv.metric.library.javaparser.JavaParserJavaMetricsAnalyzer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * End-to-end gate behaviour on fixture git repositories (init → commit → change → gate), per the
+ * PRD's acceptance criteria: verdict correctness, exit codes 0/1/2, subdirectory invocation,
+ * the fairness rule, and the report contract.
+ */
+class GateCommandTest {
+
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    @TempDir
+    Path repo;
+
+    // ------------------------------------------------------------------ fixture plumbing
+
+    private void git(String... args) throws Exception {
+        List<String> command = new ArrayList<>(List.of(
+                "git", "-c", "user.email=gate@test", "-c", "user.name=gate"));
+        command.addAll(List.of(args));
+        ProcessBuilder builder = new ProcessBuilder(command)
+                .directory(repo.toFile());
+        builder.redirectErrorStream(true);
+        Process process = builder.start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(process.waitFor(30, TimeUnit.SECONDS), "git timed out");
+        assertEquals(0, process.exitValue(), () -> "git " + String.join(" ", args) + " failed: " + output);
+    }
+
+    private void write(String relativePath, String content) throws Exception {
+        Path file = repo.resolve(relativePath);
+        Files.createDirectories(file.getParent() == null ? repo : file.getParent());
+        Files.writeString(file, content);
+    }
+
+    private void initRepo() throws Exception {
+        git("init", "-q");
+    }
+
+    private void commitAll(String message) throws Exception {
+        git("add", "-A");
+        git("commit", "-q", "-m", message);
+    }
+
+    /** A class whose {@code f} has {@code ifs} branches — WMC ≈ CC ≈ {@code ifs + 1}. */
+    private static String classWithIfs(String name, int ifs) {
+        StringBuilder body = new StringBuilder();
+        for (int i = 1; i <= ifs; i++) {
+            body.append("        if (x == ").append(i).append(") return ").append(i).append(";\n");
+        }
+        return "package app;\npublic class " + name + " {\n"
+                + "    public int f(int x) {\n" + body
+                + "        return 0;\n    }\n}\n";
+    }
+
+    private int runGate(String... extraArgs) throws Exception {
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        String[] args = new String[extraArgs.length + 1];
+        args[0] = "gate";
+        System.arraycopy(extraArgs, 0, args, 1, args.length - 1);
+        return runGateIn(repo, err, args);
+    }
+
+    private int runGateIn(Path cwd, ByteArrayOutputStream err, String... args) throws Exception {
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                new JavaParserJavaMetricsAnalyzer(), new MetricReportJsonWriter(), () -> cwd);
+        return app.run(args, new ByteArrayOutputStream(), err);
+    }
+
+    private static String firstStderrLine(ByteArrayOutputStream err) {
+        return err.toString(StandardCharsets.UTF_8).lines().findFirst().orElse("");
+    }
+
+    // ------------------------------------------------------------------ acceptance tests
+
+    @Test
+    void growthBeyondDefaultBudgetFailsTheGate() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 8));
+        commitAll("double the branches");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1");
+
+        assertEquals(1, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        String verdict = firstStderrLine(err);
+        assertTrue(verdict.startsWith("FAILED:"), verdict);
+        assertTrue(verdict.contains("growth budget"), verdict);
+        assertTrue(verdict.contains("worst:"), verdict);
+    }
+
+    @Test
+    void improvingCommitPasses() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 8));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("simplify");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1");
+
+        assertEquals(0, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        assertTrue(firstStderrLine(err).startsWith("PASSED:"), firstStderrLine(err));
+    }
+
+    @Test
+    void commitWithoutJavaFilesPassesQuickly() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("README.md", "# changed only docs");
+        commitAll("docs");
+
+        long start = System.nanoTime();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1");
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+        assertEquals(0, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        assertEquals("PASSED: no changed Java files", firstStderrLine(err));
+        assertTrue(elapsedMillis < 3000, "no-Java gate must be near-instant, took " + elapsedMillis + "ms");
+    }
+
+    @Test
+    void verdictIsFirstStderrLineAndJsonReportIsFull() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 8));
+        commitAll("worse");
+        Path report = repo.resolve("gate-report.json");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1",
+                "-o", report.toString());
+
+        assertEquals(1, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        assertTrue(firstStderrLine(err).startsWith("FAILED:"), firstStderrLine(err));
+
+        JsonNode json = mapper.readTree(Files.readString(report));
+        assertEquals("FAILED", json.get("status").asText());
+        assertEquals("HEAD~1", json.get("base").asText());
+        assertEquals(1, json.get("changedFiles").asInt());
+        JsonNode violations = json.get("violations");
+        assertTrue(violations.size() > 0);
+        // The v2 shape the PRD promises: violations, severity, byFile.
+        JsonNode worst = violations.get(0);
+        assertEquals("growth-budget", worst.get("type").asText());
+        assertTrue(worst.has("severity"), "each violation carries severity");
+        assertTrue(worst.has("baseValue") && worst.has("value"));
+        assertEquals(1, json.get("byFile").size());
+        assertEquals("app/Demo.java", json.get("byFile").get(0).get("file").asText());
+    }
+
+    @Test
+    void worksFromASubdirectoryOfTheRepo() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 8));
+        commitAll("worse");
+        Path subdir = repo.resolve("some/nested/dir");
+        Files.createDirectories(subdir);
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(subdir, err, "gate", "--base", "HEAD~1");
+
+        assertEquals(1, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        assertTrue(firstStderrLine(err).startsWith("FAILED:"), firstStderrLine(err));
+    }
+
+    @Test
+    void fairnessRuleFileViolatingAtBasePassesUnlessMuchWorse() throws Exception {
+        initRepo();
+        write("thresholds.json", "{\"WMC\": {\"max\": 4}}");
+        write("app/Demo.java", classWithIfs("Demo", 7)); // WMC 8, already violating
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 8)); // WMC 9, +1 within budget 20
+        commitAll("slightly worse");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1",
+                "-t", repo.resolve("thresholds.json").toString());
+
+        assertEquals(0, exitCode,
+                "a file already violating at base must pass unless it got much worse: "
+                        + err.toString(StandardCharsets.UTF_8));
+        assertTrue(firstStderrLine(err).startsWith("PASSED:"), firstStderrLine(err));
+    }
+
+    @Test
+    void notARepositoryIsUsageErrorExit2() throws Exception {
+        Path plainDir = repo.resolve("not-a-repo");
+        Files.createDirectories(plainDir);
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(plainDir, err, "gate", "--base", "HEAD");
+
+        assertEquals(2, exitCode);
+        assertTrue(err.toString(StandardCharsets.UTF_8).contains("not a git repository"),
+                err.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void unknownBaseRefIsUsageErrorExit2() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "no-such-ref");
+
+        assertEquals(2, exitCode);
+        assertTrue(err.toString(StandardCharsets.UTF_8).contains("unknown base ref"),
+                err.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void configGrowthBudgetTightensTheGate() throws Exception {
+        initRepo();
+        write(".metrics-gate.yml", """
+                profile: standard
+                gate:
+                  growth:
+                    WMC: 2
+                """);
+        write("app/Demo.java", classWithIfs("Demo", 2)); // WMC 3
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 5)); // WMC 6, +3 > budget 2
+        commitAll("worse");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1");
+
+        assertEquals(1, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        assertTrue(firstStderrLine(err).contains("growth budget"), firstStderrLine(err));
+    }
+
+    @Test
+    void failOnSubsetDowngradesUnselectedTypes() throws Exception {
+        initRepo();
+        write(".metrics-gate.yml", """
+                profile: standard
+                gate:
+                  failOn: [new-violation]
+                """);
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 8)); // growth breach only
+        commitAll("worse");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1");
+
+        assertEquals(0, exitCode,
+                "growth-budget not in failOn must not fail: " + err.toString(StandardCharsets.UTF_8));
+        assertTrue(firstStderrLine(err).contains("warning"), firstStderrLine(err));
+    }
+
+    @Test
+    void unknownFailOnValueIsAUsageErrorNamingTheFile() throws Exception {
+        initRepo();
+        write(".metrics-gate.yml", """
+                gate:
+                  failOn: [everything]
+                """);
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 2));
+        commitAll("change");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1");
+
+        assertEquals(2, exitCode);
+        String message = err.toString(StandardCharsets.UTF_8);
+        assertTrue(message.contains("everything"), message);
+        assertTrue(message.contains(".metrics-gate.yml"), message);
+    }
+
+    @Test
+    void unparseableChangedFileFailsUnconditionally() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("app/Broken.java", "package app; public class Broken { void m( }");
+        commitAll("sneak uncompilable code");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1");
+
+        assertEquals(1, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        String verdict = firstStderrLine(err);
+        assertTrue(verdict.startsWith("FAILED:"), verdict);
+        assertTrue(verdict.contains("parse error"), verdict);
+    }
+
+    @Test
+    void htmlReportIsWrittenWhenRequested() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 8));
+        commitAll("worse");
+        Path report = repo.resolve("gate-report.html");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1",
+                "--format", "html", "-o", report.toString());
+
+        assertEquals(1, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        String html = Files.readString(report);
+        assertTrue(html.startsWith("<!DOCTYPE html>"));
+        assertTrue(html.contains("Violations"));
+        assertTrue(html.contains("app/Demo.java"));
+    }
+}

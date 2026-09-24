@@ -36,11 +36,13 @@ final class JavaMetricsCliApplication {
         AnalyzeCommand analyzeCommand = new AnalyzeCommand(analyzer, jsonWriter, currentWorkingDirectorySupplier, stdout, stderr);
         ValidateCommand validateCommand = new ValidateCommand(analyzer, currentWorkingDirectorySupplier, stdout, stderr);
         DetectCommand detectCommand = new DetectCommand(analyzer, currentWorkingDirectorySupplier, stdout, stderr);
+        GateCommand gateCommand = new GateCommand(analyzer, currentWorkingDirectorySupplier, stdout, stderr);
         JavaMetricsCliCommand rootCommand = new JavaMetricsCliCommand(stdout);
         CommandLine commandLine = new CommandLine(rootCommand)
                 .addSubcommand("analyze", analyzeCommand)
                 .addSubcommand("validate", validateCommand)
-                .addSubcommand("detect", detectCommand);
+                .addSubcommand("detect", detectCommand)
+                .addSubcommand("gate", gateCommand);
         // --format is documented as taking a lower-case value ("sarif") while an enum constant is
         // upper case, and picocli matches enum values case-sensitively by default. The setting lives
         // on each CommandSpec rather than on the root command, so it is applied to the subcommands
