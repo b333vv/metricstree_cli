@@ -1478,7 +1478,7 @@ All three proposals were accepted and implemented; backward compatibility was no
   3. Diff-aware `gate` command — DONE (this session, see above).
   4. GitHub Action / CI templates — DONE.
   5. `--format agent-md` agent-consumable report — DONE this session. Added compact Markdown rendering for `gate`, `validate`, and `detect`; JSON/HTML/SARIF contracts remain unchanged.
-  6. Report adapters — in progress. Added the internal `ReportType` / `ReportContext` / `ReportAdapter` SPI and `ReportAdapterRegistry`, with contract tests; migrated `analyze` JSON and HTML rendering through the registry while preserving its output contracts.
+  6. Report adapters — DONE. Added the internal `ReportType` / `ReportContext` / `ReportAdapter` SPI and `ReportAdapterRegistry`; migrated `analyze`, `validate`, `detect`, and `gate` JSON/HTML/SARIF/agent-md rendering through it without changing output contracts.
   Repo hygiene side-quest done: stopped tracking `build/` outputs and `.gradle/` caches
   (they were committed before the `.gitignore` rules existed).
 

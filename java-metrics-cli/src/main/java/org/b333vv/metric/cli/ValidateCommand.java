@@ -44,6 +44,9 @@ final class ValidateCommand implements Callable<Integer> {
         this.currentWorkingDirectorySupplier = currentWorkingDirectorySupplier;
         this.stdout = stdout;
         this.stderr = stderr;
+        this.reportAdapters = new ReportAdapterRegistry(List.of(
+                new ValidationJsonReportAdapter(), new ValidationSarifReportAdapter(),
+                new ValidationHtmlReportAdapter(), new ValidationAgentMarkdownAdapter()));
     }
 
     @CommandLine.Spec
@@ -79,6 +82,8 @@ final class ValidateCommand implements Callable<Integer> {
     private OutputFormat format;
 
     private OutputFormat effectiveFormat;
+    private final ReportAdapterRegistry reportAdapters;
+
     private boolean effectiveStrict;
     private boolean effectiveFailedOnly;
 
@@ -207,36 +212,13 @@ final class ValidateCommand implements Callable<Integer> {
     }
 
     private void writeReport(ValidationResult result) throws IOException {
-        if (effectiveFormat == OutputFormat.SARIF) {
-            // SARIF reports findings, so the passing checks are dropped by the writer rather than
-            // here; --failed-only asks for the same thing and has nothing left to do on this path.
-            SarifReportWriter sarifWriter = new SarifReportWriter();
-            writeOutput(sarifWriter.toSarif(sarifWriter.forThresholdViolations(result.getResults())));
-            return;
-        }
-
         List<MetricValidationResult> resultsToWrite = effectiveFailedOnly
                 ? result.getResults().stream().filter(r -> r.status() == ValidationStatus.FAILED).toList()
                 : result.getResults();
-
-        if (effectiveFormat == OutputFormat.HTML) {
-            writeOutput(new HtmlReportWriter().forValidate(
-                    result.getStatus(), resultsToWrite, result.getPassed(), result.getFailed()));
-            return;
-        }
-        if (effectiveFormat == OutputFormat.AGENT_MD) {
-            writeOutput(new AgentMarkdownReportWriter().forValidate(
-                    result.getStatus(), resultsToWrite, result.getPassed(), result.getFailed()));
-            return;
-        }
-
-        writeOutput(CliObjectMapper.write(new ValidationResultForSerialization(
-                result.getStatus(),
-                resultsToWrite,
-                result.getPassed(),
-                result.getFailed(),
-                byFile(result.getResults())
-        ), true));
+        ValidationReportContext context = new ValidationReportContext(
+                result.getStatus(), resultsToWrite, result.getPassed(), result.getFailed(),
+                byFile(result.getResults()));
+        writeOutput(reportAdapters.render(ReportType.VALIDATION, effectiveFormat, context));
     }
 
     /**
@@ -303,7 +285,7 @@ final class ValidateCommand implements Callable<Integer> {
     /** All failed threshold checks of one file, in metric order of first appearance. */
     public record FileFailures(String file, List<MetricValidationResult> failures) {}
 
-    private record ValidationResultForSerialization(
+    record ValidationResultForSerialization(
             String status,
             List<MetricValidationResult> results,
             int passed,

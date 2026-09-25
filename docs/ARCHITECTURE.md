@@ -443,9 +443,7 @@ Now `CliObjectMapper` is the single definition:
 `ReportAdapter` is the internal boundary between a command result and its rendering. A `ReportContext`
 describes the result family (`ReportType`); adapters declare the formats and report types they support;
 `ReportAdapterRegistry` selects one adapter and fails explicitly for unsupported combinations. The SPI is
-package-private on purpose: this is a CLI implementation seam, not a public plugin API. Existing writers
-remain the source of truth until each command is migrated, so JSON, SARIF, HTML, and agent-md contracts stay
-unchanged.
+package-private on purpose: this is a CLI implementation seam, not a public plugin API. All four commands now select adapters through the registry; the existing writers remain the source of truth for their wire formats, so JSON, SARIF, HTML, and agent-md contracts are unchanged.
 
 
 `validate` and `detect` can write SARIF 2.1.0 instead of their own JSON (`--format sarif`), so their

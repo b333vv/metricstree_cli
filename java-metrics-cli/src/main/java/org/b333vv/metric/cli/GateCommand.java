@@ -53,6 +53,7 @@ final class GateCommand implements Callable<Integer> {
     private final Supplier<Path> currentWorkingDirectorySupplier;
     private final PrintWriter stdout;
     private final PrintWriter stderr;
+    private final ReportAdapterRegistry reportAdapters;
 
     GateCommand(
             JavaMetricsAnalyzer analyzer,
@@ -63,6 +64,8 @@ final class GateCommand implements Callable<Integer> {
         this.currentWorkingDirectorySupplier = currentWorkingDirectorySupplier;
         this.stdout = stdout;
         this.stderr = stderr;
+        this.reportAdapters = new ReportAdapterRegistry(List.of(
+                new GateJsonReportAdapter(), new GateHtmlReportAdapter(), new GateAgentMarkdownAdapter()));
     }
 
     @CommandLine.Spec
@@ -414,14 +417,7 @@ final class GateCommand implements Callable<Integer> {
 
     private void writeReport(OutputFormat format, String status, GateReportView view)
             throws IOException {
-        String content;
-        if (format == OutputFormat.HTML) {
-            content = new HtmlReportWriter().forGate(view);
-        } else if (format == OutputFormat.AGENT_MD) {
-            content = new AgentMarkdownReportWriter().forGate(view);
-        } else {
-            content = CliObjectMapper.write(view, true);
-        }
+        String content = reportAdapters.render(ReportType.GATE, format, new GateReportContext(view));
         Path normalizedOutputFile = outputFile.toAbsolutePath().normalize();
         if (normalizedOutputFile.getParent() != null) {
             Files.createDirectories(normalizedOutputFile.getParent());

@@ -36,6 +36,9 @@ final class DetectCommand implements Callable<Integer> {
         this.currentWorkingDirectorySupplier = currentWorkingDirectorySupplier;
         this.stdout = stdout;
         this.stderr = stderr;
+        this.reportAdapters = new ReportAdapterRegistry(List.of(
+                new DetectionJsonReportAdapter(), new DetectionSarifReportAdapter(),
+                new DetectionHtmlReportAdapter(), new DetectionAgentMarkdownAdapter()));
     }
 
     @CommandLine.Spec
@@ -65,6 +68,8 @@ final class DetectCommand implements Callable<Integer> {
                     + "set in the project config). "
                     + "SARIF 2.1.0 is for upload to GitHub Code Scanning and similar consumers.")
     private OutputFormat format;
+
+    private final ReportAdapterRegistry reportAdapters;
 
     private OutputFormat effectiveFormat;
 
@@ -182,20 +187,9 @@ final class DetectCommand implements Callable<Integer> {
             DetectResultWriter.RulesSummary classRulesSummary,
             List<CombinationDetector.PackageMatch> packageMatches,
             DetectResultWriter.RulesSummary packageRulesSummary) throws IOException {
-        if (effectiveFormat == OutputFormat.SARIF) {
-            SarifReportWriter sarifWriter = new SarifReportWriter();
-            return sarifWriter.toSarif(sarifWriter.forAntipatterns(classMatches, packageMatches));
-        }
-        if (effectiveFormat == OutputFormat.HTML) {
-            return new HtmlReportWriter().forDetect(
-                    baseDir(), classMatches, classRulesSummary, packageMatches, packageRulesSummary);
-        }
-        if (effectiveFormat == OutputFormat.AGENT_MD) {
-            return new AgentMarkdownReportWriter().forDetect(
-                    baseDir(), classMatches, classRulesSummary, packageMatches, packageRulesSummary);
-        }
-        return new DetectResultWriter().toJson(
-                baseDir(), classMatches, classRulesSummary, packageMatches, packageRulesSummary);
+        return reportAdapters.render(ReportType.DETECTION, effectiveFormat,
+                new DetectionReportContext(baseDir(), classMatches, classRulesSummary,
+                        packageMatches, packageRulesSummary));
     }
 
     /**
