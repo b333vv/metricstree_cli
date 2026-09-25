@@ -5,6 +5,7 @@ import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.ClasspathEntry;
 import org.b333vv.metric.library.core.ExclusionConfig;
 import org.b333vv.metric.library.core.MetricCode;
+import org.b333vv.metric.library.core.MetricReport;
 import org.b333vv.metric.library.core.MetricSelection;
 import org.b333vv.metric.library.core.SourceRoot;
 import org.b333vv.metric.library.core.SourceUnit;
@@ -27,6 +28,7 @@ final class AnalyzeCommand implements Callable<Integer> {
 
     private final JavaMetricsAnalyzer analyzer;
     private final MetricReportJsonWriter jsonWriter;
+    private final ReportAdapterRegistry reportAdapters;
     private final Supplier<Path> currentWorkingDirectorySupplier;
     private final PrintWriter stdout;
     private final PrintWriter stderr;
@@ -39,6 +41,9 @@ final class AnalyzeCommand implements Callable<Integer> {
             PrintWriter stderr) {
         this.analyzer = analyzer;
         this.jsonWriter = jsonWriter;
+        this.reportAdapters = new ReportAdapterRegistry(List.of(
+                new AnalysisJsonReportAdapter(jsonWriter),
+                new AnalysisHtmlReportAdapter()));
         this.currentWorkingDirectorySupplier = currentWorkingDirectorySupplier;
         this.stdout = stdout;
         this.stderr = stderr;
@@ -95,9 +100,11 @@ final class AnalyzeCommand implements Callable<Integer> {
 
         ExclusionConfig exclusions = loadExclusions(config);
         AnalysisRequest request = buildRequest(exclusions);
-        String output = effectiveFormat == OutputFormat.HTML
-                ? new HtmlReportWriter().forAnalyze(analyzer.analyze(request))
-                : jsonWriter.toJson(analyzer.analyze(request), pretty);
+        MetricReport report = analyzer.analyze(request);
+        String output = reportAdapters.render(
+                ReportType.ANALYSIS,
+                effectiveFormat,
+                new AnalysisReportContext(report, pretty));
         if (outputFile == null) {
             stdout.println(output);
             stdout.flush();
