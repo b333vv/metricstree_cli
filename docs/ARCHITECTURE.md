@@ -391,9 +391,10 @@ with differently named methods and asserts which one the resolved declaration ca
 ### java-metrics-cli
 
 **CLI Commands**
-- `analyze` — Analyze Java sources and emit JSON report
+- `analyze` — Analyze Java sources and emit a report
 - `validate` — Validate metrics against thresholds (for CI/CD)
 - `detect` — Detect class- and package-level antipattern rule matches
+- `gate` — Compare a branch against a base revision and fail on regression
 
 ### Serialization: one mapper, and mixins instead of view records
 
@@ -437,7 +438,15 @@ Now `CliObjectMapper` is the single definition:
   `JavaMetricsCliDistributionSmokeTest` runs all three commands through the jar, and `check` now depends
   on `integrationTest` so that proof is not optional. No `keep` rules were needed.
 
-### SARIF: a second format, and why it is not a second mapper
+### Report adapters: the new output boundary
+
+`ReportAdapter` is the internal boundary between a command result and its rendering. A `ReportContext`
+describes the result family (`ReportType`); adapters declare the formats and report types they support;
+`ReportAdapterRegistry` selects one adapter and fails explicitly for unsupported combinations. The SPI is
+package-private on purpose: this is a CLI implementation seam, not a public plugin API. Existing writers
+remain the source of truth until each command is migrated, so JSON, SARIF, HTML, and agent-md contracts stay
+unchanged.
+
 
 `validate` and `detect` can write SARIF 2.1.0 instead of their own JSON (`--format sarif`), so their
 findings reach GitHub Code Scanning, GitLab and SonarQube as alerts. `analyze` does not: its output is a
