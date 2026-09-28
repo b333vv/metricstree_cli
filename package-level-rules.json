@@ -1,7 +1,7 @@
 [
   {
     "name": "Zone of Pain (Rigid Core)",
-    "description": "The package contains a lot of concrete code and is stable (many dependencies), but it is difficult to change without cascading breakage (Martin's Zone of Pain).",
+    "description": "Instability (A) and abstractness (I) are both at or below 0.3 and the package holds at least 500 lines: the measured shape Martin calls the Zone of Pain. Interpreted as many concrete, stable classes that other packages depend on. Stability here is the measured afferent/efferent ratio, not observed change history.",
     "conditions": [
       { "metric": "A", "max": 0.3 },
       { "metric": "I", "max": 0.3 },
@@ -10,7 +10,7 @@
   },
   {
     "name": "Zone of Uselessness",
-    "description": "The package contains many abstractions, but they are unstable and not used as a reliable foundation (Zone of Uselessness).",
+    "description": "Instability (A) and abstractness (I) are both at or above 0.7 with at least 3 abstract classes: the measured shape of the Zone of Uselessness. Interpreted as many abstract types that depend on things outside the package.",
     "conditions": [
       { "metric": "A", "min": 0.7 },
       { "metric": "I", "min": 0.7 },
@@ -19,7 +19,7 @@
   },
   {
     "name": "God Package (Blob)",
-    "description": "An overly large, complex package with a low maintainability index. Hard to refactor and understand.",
+    "description": "At least 2000 lines, a maintainability index at or below 65, and Halstead volume at or above 100000.",
     "conditions": [
       { "metric": "PLOC", "min": 2000 },
       { "metric": "PAMI", "max": 65 },
@@ -28,7 +28,7 @@
   },
   {
     "name": "Coupling Hub",
-    "description": "The package has critically many incoming and outgoing dependencies, creating an architectural bottleneck.",
+    "description": "Both efferent type (Ce) and afferent type (Ca) at or above 20. Interpreted as a package coupled in both directions at once.",
     "conditions": [
       { "metric": "Ce", "min": 20 },
       { "metric": "Ca", "min": 20 }
@@ -36,7 +36,7 @@
   },
   {
     "name": "Unstable Utility",
-    "description": "The package consists mostly of static utilities, but is unstable and changes frequently, causing ripple effects.",
+    "description": "At least 5 static utility classes and instability (I) at or above 0.7. Interpreted as a package whose types are called from elsewhere. The tool does not measure how often the package actually changes.",
     "conditions": [
       { "metric": "PNOSC", "min": 5 },
       { "metric": "I", "min": 0.7 }
@@ -44,7 +44,7 @@
   },
   {
     "name": "Overly Complex Implementation",
-    "description": "High algorithmic complexity (Effort) and difficulty (Difficulty) of the code inside the package.",
+    "description": "Halstead effort (PACHEF) at or above 50000 and difficulty (PAHD) at or above 30.",
     "conditions": [
       { "metric": "PACHEF", "min": 50000 },
       { "metric": "PAHD", "min": 30 }
@@ -52,7 +52,7 @@
   },
   {
     "name": "Error-Prone Package",
-    "description": "High number of potential errors (Halstead Errors) and a large vocabulary indicate convoluted logic.",
+    "description": "Halstead errors (PACHER) at or above 5, Halstead vocabulary (PACHVC) at or above 120 and at least 500 non-comment statements. Halstead’s potential-errors measure is a formula over operator and operand counts, not a count of defects found.",
     "conditions": [
       { "metric": "PACHER", "min": 5 },
       { "metric": "PACHVC", "min": 120 },
@@ -61,7 +61,7 @@
   },
   {
     "name": "Interface Bloat",
-    "description": "Excessive number of interfaces with few concrete implementations (possible API over-engineering).",
+    "description": "At least 10 interfaces and at most 3 concrete classes. The ratio is a measurement; the word over-engineering is an interpretation of it.",
     "conditions": [
       { "metric": "PNOI", "min": 10 },
       { "metric": "PNOCC", "max": 3 }
@@ -69,7 +69,7 @@
   },
   {
     "name": "Hidden Technical Debt",
-    "description": "A moderate maintainability index masks high complexity and outgoing coupling. Debt accumulates covertly.",
+    "description": "Efferent type (Ce) at or above 15, Halstead difficulty (PAHD) at or above 25, and a maintainability index between 65 and 85. Interpreted as a middling index that does not by itself reveal the coupling behind it.",
     "conditions": [
       { "metric": "Ce", "min": 15 },
       { "metric": "PAHD", "min": 25 },
@@ -78,7 +78,7 @@
   },
   {
     "name": "High Efferent Dependency",
-    "description": "The package depends on too many other packages, making it brittle when changes occur in the system.",
+    "description": "Efferent type (Ce) at or above 25 with afferent type (Ca) at or below 5. Interpreted as a package that depends on many others and is depended on by few.",
     "conditions": [
       { "metric": "Ce", "min": 25 },
       { "metric": "Ca", "max": 5 }

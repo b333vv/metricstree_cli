@@ -669,6 +669,50 @@ Four kinds of problem are reported:
 A rule with problems is still evaluated using whatever conditions *are* valid, so a partially broken
 rule degrades instead of disappearing.
 
+The agent-Markdown report (`--format agent-md`) states the same problems in prose, and it renders
+**package matches in full** — rule name, package, and the crossed condition. Package findings are
+counted separately from class findings, because one "findings" number cannot be checked against the
+document it labels. From a real run of both shipped rule files:
+
+```markdown
+# Detection report
+
+- **Class findings:** 41
+- **Package findings:** 4
+- **Affected classes:** 27
+- **Affected packages:** 1
+
+## Findings by entity
+
+### Rule: `God Class (type 1)`
+
+- `.../cli/ConfigLoader.java` **org.b333vv.metric.cli.ConfigLoader:** matched `God Class (type 1)`
+  - WMC = 58 (min 47)
+  - ATFD = 7 (min 6)
+  - TCC = 0 (max 0.33)
+```
+
+and an unevaluable rule:
+
+```markdown
+## Class rules that could not be evaluated
+
+The following rules were not applied. Their absence from the findings below is not a result.
+
+- rule `God Class (type 1)`, metric `WMC`: min 47 is greater than max 20
+```
+
+A run with zero matches *and* an unevaluable rule is the easiest result to misread as good news, so it
+is stated explicitly. Paths, rule names and package names are Markdown-escaped: a name containing a
+backtick, an asterisk or a newline must not be able to change the document's structure.
+
+**The shipped `package-level-rules.json` descriptions state the conditions they fire on** and label
+their interpretation as interpretation. Two previously claimed things the tool does not measure:
+"Unstable Utility" said a package "changes frequently" (nothing here observes change history — a
+detection run reads one revision), and "Error-Prone Package" implied a count of defects rather than
+Halstead's potential-errors formula, which is computed from operator and operand counts. Rule **names
+and conditions are unchanged**, so existing configurations and the JSON contract are unaffected.
+
 Unknown keys do **not** reject the rules file: a file with a stray key still loads, and the key is
 reported. (Jackson's default is the opposite — it refuses the whole file on the first unknown key.)
 

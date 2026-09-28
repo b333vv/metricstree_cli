@@ -1,5 +1,61 @@
 # what has been done
 
+## Session: ML-009 — the agent report stopped omitting what it found (2026-09-28)
+
+**A package-level antipattern was detected, counted, and then not written down.** The agent-Markdown
+detect report's body looped over class matches only. A run whose entire finding was a package rule
+produced a header reading "Class findings: 4" and a body reading "No matches." — and the body is the
+part an agent acts on, so the finding was invisible while the tool reported having found it. That is
+worse than a bug: the tool was right and the report was not, and nothing in the output distinguished
+the two.
+
+Three more omissions, each a lie of a different kind:
+
+- **"Class findings" was the sum of class *and* package findings.** A number labelled one thing and
+  counting another is not a formatting slip; it is a report you cannot check against its own contents.
+  There are now two counts, and `mixedCountsAreAccurate` asserts the sum that *isn't* there.
+- **Rows did not name their rule.** "WMC = 210 (min 47)" is not actionable on its own; the rule name is
+  the identifier shared with the rules file and with the JSON, and it is what a reader looks up.
+- **Rule evaluation problems were dropped entirely.** DEBT-04 had already made the JSON report them, so
+  the data existed — the agent format simply discarded it. A rules file with one broken condition
+  produced a confident "No matches", which is precisely the one case where a reader most needs telling.
+  The section now says so in as many words: *"Their absence from the findings below is not a result."*
+
+Markdown escaping came with it, because a path containing a backtick, an asterisk or a newline would
+otherwise break the code span or split a list row — a report whose layout depends on a file name is a
+report that misleads on exactly the unusual inputs a reviewer most needs to read carefully.
+
+**The shipped rule descriptions claimed things the tool does not measure.** "Unstable Utility" said a
+package "changes frequently" — nothing in a detection run observes change history; the tool reads one
+revision, and `detect` has no access to the previous one. "Error-Prone Package" implied a count of
+defects where the metric is Halstead's potential-errors *formula*, computed from operator and operand
+counts. Every description now states the conditions it fires on and marks the reading as interpretation
+("Interpreted as a package whose types are called from elsewhere"). **Rule names and conditions are
+untouched**, so existing configs, the JSON contract and `ShippedRulesFilesTest` all pass unchanged.
+
+Verified against the installed distribution on this repository, running both shipped rule files:
+
+```
+- **Class findings:** 41
+- **Package findings:** 4
+- **Affected classes:** 27
+- **Affected packages:** 1
+
+### Rule: `God Class (type 1)`
+
+- `…/cli/GateCommand.java` **org.b333vv.metric.cli.GateCommand:** matched `God Class (type 1)`
+  - WMC = 102 (min 47)
+  - ATFD = 9 (min 6)
+  - TCC = 0.083 (max 0.33)
+```
+
+The 4 package findings were previously computed, serialised into the JSON, and absent from the agent
+format. Nothing was removed from the old body: every field it had is still there, and the counts are now
+two numbers that each mean what they say.
+
+**Next ready task: ML-010**, ordered analysis and bounded reproducibility checks.
+
+
 ## Session: ML-008 — a `PASSED` you cannot support is no longer a `PASSED` (2026-09-28)
 
 **"Nothing was found" and "nothing could be established" printed the same thing.** That is the entire
