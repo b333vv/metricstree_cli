@@ -7,6 +7,7 @@ import org.b333vv.metric.library.core.MetricReport;
 import org.b333vv.metric.model.metric.value.Value;
 
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -54,29 +55,43 @@ final class GateEvaluator {
     /**
      * Compares the two passes over the same changed file set.
      *
-     * @param base       analysis of the base revision's content (may lack entities the base could
-     *                   not parse — those files' current entities are skipped, see below)
-     * @param current    analysis of the working tree
-     * @param repoRoot   for relativizing source paths in findings
-     * @param thresholds absolute thresholds (profile + inline); empty → growth-only gate
-     * @param growth     per-metric allowed growth between revisions
-     * @param failOn     finding types that fail the gate; non-selected types downgrade to warnings
-     * @param unparseableBaseFiles repo-relative paths whose base content did not parse — their
-     *                   current entities have no trustworthy base and are skipped entirely
-     *                   rather than misreported as new (fairness: never fail what you cannot
-     *                   compare)
+     * <h2>Both sides are indexed through their snapshot, never through a directory</h2>
+     * <p>The entity index needs a repository-relative file for every class and method, and an analyzer
+     * report only knows the real path it read. Passing a snapshot in means that translation is
+     * {@link SourceSnapshot#logicalPath}, which is the one mapping that knows the file is inside a
+     * capture root at all. Passing a directory in — as this evaluator used to, with a placeholder
+     * {@code /nonexistent-base} for the base side — meant the base entities carried their temporary
+     * paths into the report, and a report that names {@code /tmp/metrics-gate-base4123/A.java} is
+     * both unreadable and unreproducible.
+     *
+     * @param base          analysis of the base snapshot's content
+     * @param current       analysis of the after snapshot's content
+     * @param baseSnapshot  the before capture; supplies the base files' logical paths
+     * @param currentSnapshot the after capture; supplies the current files' logical paths
+     * @param subjectPaths  the changed paths this comparison is about. Entities from any other captured
+     *                      file are context, not the subject, and are not judged — a snapshot holds the
+     *                      whole tree precisely so metrics can resolve against it, not so the gate can
+     *                      report on it.
+     * @param thresholds    absolute thresholds (profile + inline); empty means growth-only
+     * @param growth        per-metric allowed growth between revisions
+     * @param failOn        finding types that fail the gate; non-selected types downgrade to warnings
+     * @param unparseableBaseFiles logical paths whose base content did not parse — their current
+     *                      entities have no trustworthy base and are skipped rather than misreported
+     *                      as new (fairness: never fail what you cannot compare)
      */
     static Result evaluate(
             MetricReport base,
             MetricReport current,
-            Path repoRoot,
+            SourceSnapshot baseSnapshot,
+            SourceSnapshot currentSnapshot,
+            Set<String> subjectPaths,
             Map<String, Threshold> thresholds,
             Map<String, Double> growth,
             Set<GateFinding.Type> failOn,
             Set<String> unparseableBaseFiles) {
 
-        Map<String, Entity> baseEntities = index(base, Path.of("/nonexistent-base"));
-        Map<String, Entity> currentEntities = index(current, repoRoot);
+        Map<String, Entity> baseEntities = index(base, baseSnapshot, subjectPaths);
+        Map<String, Entity> currentEntities = index(current, currentSnapshot, subjectPaths);
 
         List<Scored> candidates = new ArrayList<>();
         List<GateFinding> warnings = new ArrayList<>();
@@ -295,22 +310,42 @@ final class GateEvaluator {
     private record Entity(String kind, String display, String file, Map<MetricCode, Double> metrics) {
     }
 
-    /** One index over both classes and methods; methods key on class + signature. */
-    private static Map<String, Entity> index(MetricReport report, Path baseDir) {
+    /**
+     * One index over both classes and methods; methods key on class + signature.
+     *
+     * <h2>Why a path move is not a new entity, and a signature change is</h2>
+     * <p>The key is the qualified name plus the method signature, never the file path. A class moved
+     * from {@code util/} to {@code core/} keeps its qualified name, so it is still compared against its
+     * own past instead of being judged as brand new — a move that fails the gate for pre-existing debt
+     * punishes the developer for reorganizing directories. A method whose signature changed produces a
+     * different key, and is genuinely a different entity: the old signature's metrics say nothing about
+     * the new one, so treating it as unchanged would silently launder a rewritten method through the
+     * fairness rule.
+     *
+     * <p>A class that is not in either snapshot's path is skipped rather than reported under a
+     * synthesized path. That happens for a report whose {@code sourcePath} lies outside the capture
+     * root, and inventing a file name for it would attribute a finding to a file that does not exist.
+     */
+    private static Map<String, Entity> index(
+            MetricReport report, SourceSnapshot snapshot, Set<String> subjectPaths) {
         Map<String, Entity> entities = new LinkedHashMap<>();
         for (ClassReport classReport : report.classes()) {
-            String file = relativize(baseDir, classReport.sourcePath());
+            Optional<String> file = snapshot.logicalPath(classReport.sourcePath());
+            if (file.isEmpty() || !subjectPaths.contains(file.get())) {
+                continue;
+            }
+            String logical = file.get();
             entities.put(classReport.qualifiedName(), new Entity(
                     "class",
                     classReport.qualifiedName(),
-                    file,
+                    logical,
                     doubles(classReport.metrics())));
             for (MethodReport method : classReport.methods()) {
                 String key = classReport.qualifiedName() + "#" + method.signature();
                 entities.put(key, new Entity(
                         "method",
                         classReport.qualifiedName() + "." + method.signature(),
-                        file,
+                        logical,
                         doubles(method.metrics())));
             }
         }
@@ -321,15 +356,6 @@ final class GateEvaluator {
         Map<MetricCode, Double> result = new LinkedHashMap<>();
         metrics.forEach((code, value) -> result.put(code, value.doubleValue()));
         return result;
-    }
-
-    private static String relativize(Path baseDir, Path path) {
-        Path absolute = path.toAbsolutePath().normalize();
-        Path root = baseDir.toAbsolutePath().normalize();
-        if (absolute.startsWith(root)) {
-            return root.relativize(absolute).toString().replace('\\', '/');
-        }
-        return absolute.toString().replace('\\', '/');
     }
 
     private static String format(double value) {

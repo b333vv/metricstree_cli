@@ -1,0 +1,331 @@
+package org.b333vv.metric.cli;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.b333vv.metric.library.javaparser.JavaParserJavaMetricsAnalyzer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * ML-006: the gate reads two captured snapshots instead of the live repository and a temp directory.
+ *
+ * <p>Each scenario is a way the old gate judged something other than what the user asked about. Reading
+ * the working tree while the base content sat in a temp directory that was deleted before anyone could
+ * look at it; reviewing HEAD when the user meant their unsaved edit; treating a moved file as a new one;
+ * and printing a verdict with no record of which two revisions produced it.
+ */
+class GateSnapshotModesTest {
+
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    @TempDir
+    Path repo;
+
+    private GitFixture fixture() {
+        return new GitFixture(repo);
+    }
+
+    private int runGate(ByteArrayOutputStream err, String... args) throws Exception {
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                new JavaParserJavaMetricsAnalyzer(), new MetricReportJsonWriter(), () -> repo);
+        String[] full = new String[args.length + 1];
+        full[0] = "gate";
+        System.arraycopy(args, 0, full, 1, args.length);
+        return app.run(full, new ByteArrayOutputStream(), err);
+    }
+
+    private static String firstLine(ByteArrayOutputStream err) {
+        return err.toString(StandardCharsets.UTF_8).lines().findFirst().orElse("");
+    }
+
+    private static String classWithIfs(String name, int ifs) {
+        return GitFixture.classWithIfs(name, ifs);
+    }
+
+    // ---------------------------------------------------------------- the original blind spot
+
+    /**
+     * The scenario the whole plan exists for: complexity grows before the commit, and the gate said
+     * nothing because it only ever looked at what HEAD contained.
+     */
+    @Test
+    void uncommittedComplexityGrowthFailsBeforeCommit() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 1));
+        fixture().commitAll("base");
+        // Deliberately NOT committed. HEAD still holds the one-branch version.
+        fixture().write("app/Demo.java", classWithIfs("Demo", 11));
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD");
+
+        assertEquals(1, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        String verdict = firstLine(err);
+        assertTrue(verdict.startsWith("FAILED:"), verdict);
+        assertTrue(verdict.contains("growth budget"), verdict);
+        assertTrue(verdict.contains("in app/Demo.java"),
+                "the verdict must name the file it failed on: " + verdict);
+        assertTrue(verdict.contains("budget is 5"), verdict);
+    }
+
+    // ---------------------------------------------------------------- mode selection
+
+    /**
+     * Staged mode must read the index, not the working copy. A developer who stages a clean version and
+     * then experiments in the same file has not committed the experiment, and a pre-commit hook must
+     * not judge it.
+     */
+    @Test
+    void stagedUsesIndexEvenWhenWorkingCopyIsFixed() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 1));
+        fixture().commitAll("base");
+        // Stage the regression...
+        fixture().write("app/Demo.java", classWithIfs("Demo", 11));
+        fixture().git("add", "app/Demo.java");
+        // ...then fix it in the working copy without staging. The index still holds the regression.
+        fixture().write("app/Demo.java", classWithIfs("Demo", 1));
+
+        ByteArrayOutputStream stagedErr = new ByteArrayOutputStream();
+        assertEquals(1, runGate(stagedErr, "--base", "HEAD", "--mode", "staged"),
+                () -> stagedErr.toString(StandardCharsets.UTF_8));
+        assertTrue(firstLine(stagedErr).contains("growth budget"), firstLine(stagedErr));
+
+        ByteArrayOutputStream worktreeErr = new ByteArrayOutputStream();
+        assertEquals(0, runGate(worktreeErr, "--base", "HEAD", "--mode", "worktree"),
+                () -> worktreeErr.toString(StandardCharsets.UTF_8));
+        assertTrue(firstLine(worktreeErr).startsWith("PASSED:"), firstLine(worktreeErr));
+    }
+
+    /**
+     * Committed mode must ignore the live checkout entirely, including edits that do not compile. A CI
+     * checkout has no meaningful local edits, and a synthetic merge commit left half-edited by a
+     * platform must not become the subject of a review.
+     */
+    @Test
+    void committedIgnoresUnstagedBreakingSyntax() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 1));
+        fixture().write("app/Other.java", classWithIfs("Other", 1));
+        fixture().commitAll("base");
+        fixture().write("app/Demo.java", classWithIfs("Demo", 11));
+        fixture().commitAll("the real change");
+        // A half-written file in the working copy, which no CI run would ever see.
+        fixture().write("app/Other.java", "package app; public class Other { this is not java");
+
+        ByteArrayOutputStream committedErr = new ByteArrayOutputStream();
+        assertEquals(1, runGate(committedErr, "--base", "HEAD~1", "--mode", "committed"),
+                () -> committedErr.toString(StandardCharsets.UTF_8));
+        assertTrue(firstLine(committedErr).contains("growth budget"),
+                "committed mode must review the commit, not the broken working file: " + committedErr);
+
+        // Worktree mode does see it, and a parse error is a failure.
+        ByteArrayOutputStream worktreeErr = new ByteArrayOutputStream();
+        assertEquals(1, runGate(worktreeErr, "--base", "HEAD~1", "--mode", "worktree"),
+                () -> worktreeErr.toString(StandardCharsets.UTF_8));
+        assertTrue(firstLine(worktreeErr).contains("parse error"), firstLine(worktreeErr));
+    }
+
+    /**
+     * The gate and the planner must resolve the same revisions, or a report describes one comparison
+     * while the verdict came from another.
+     */
+    @Test
+    void divergentBaseIsTheSameMergeBaseThePlannerChose(@TempDir Path elsewhere) throws Exception {
+        fixture().init();
+        fixture().write("app/Shared.java", classWithIfs("Shared", 1));
+        fixture().commitAll("fork point");
+        String forkPoint = GitOps.resolveCommit(repo, "HEAD");
+
+        // The base branch moves on and changes the same file the change will touch. Comparing against
+        // the tip of that branch would read "old" content the author never wrote.
+        fixture().git("checkout", "-q", "-b", "base-line", forkPoint);
+        fixture().write("app/Shared.java", classWithIfs("Shared", 2));
+        fixture().commitAll("base branch moved on");
+        String baseTip = GitOps.resolveCommit(repo, "HEAD");
+
+        // A feature branch forked at the earlier point.
+        fixture().git("checkout", "-q", "-b", "feature", forkPoint);
+        fixture().write("app/Shared.java", classWithIfs("Shared", 9));
+        fixture().commitAll("feature change");
+
+        ComparisonPlan plan = ComparisonPlanner.plan(repo, baseTip, ComparisonMode.COMMITTED);
+        assertEquals(forkPoint, plan.mergeBaseSha(),
+                "the merge base of a diverged branch is the fork point, not the base tip");
+        assertNotEquals(baseTip, plan.mergeBaseSha(),
+                "this fixture only means anything if the base moved past the merge base");
+
+        Path report = elsewhere.resolve("report.json");
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        runGate(err, "--base", baseTip, "--mode", "committed", "-o", report.toString());
+
+        JsonNode comparison = mapper.readTree(Files.readString(report)).get("comparison");
+        assertEquals(plan.mergeBaseSha(), comparison.get("mergeBaseSha").asText(),
+                "the report must name the merge base the planner resolved");
+        assertEquals(plan.headSha(), comparison.get("headSha").asText());
+        assertEquals("committed", comparison.get("mode").asText());
+    }
+
+    // ---------------------------------------------------------------- identity across paths
+
+    /** A file that moved is the same class, and must be compared against its own past. */
+    @Test
+    void pathRenameIsNotANewViolation() throws Exception {
+        fixture().init();
+        fixture().write("app/Legacy.java", classWithIfs("Legacy", 9));
+        fixture().commitAll("legacy, already violating");
+        fixture().git("mv", "app/Legacy.java", "app/Moved.java");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD");
+
+        // The class keeps violating CC exactly as it did at base, and grew by nothing. A move is not a
+        // regression, and the fairness rule says an already-violating entity is only failed for growth.
+        assertEquals(0, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        assertTrue(firstLine(err).startsWith("PASSED:"), firstLine(err));
+    }
+
+    /**
+     * A changed signature is a different entity. The old signature's metrics say nothing about the
+     * new one, so treating it as unchanged would launder a rewritten method through the fairness rule.
+     */
+    @Test
+    void changedSignatureIsANewEntity() throws Exception {
+        fixture().init();
+        String renamedMethod = "package app;\npublic class Rewritten {\n"
+                + "    public int compute(int x) { return x; }\n}\n";
+        fixture().write("app/Rewritten.java", renamedMethod);
+        fixture().commitAll("base");
+
+        String widenedSignature = "package app;\npublic class Rewritten {\n"
+                + "    public long compute(long x, int y) { return x + y; }\n"
+                + "    public int helper(int a) {\n"
+                + "        int r = 0;\n"
+                + "        for (int i = 0; i < a; i++) { r += i; }\n"
+                + "        for (int i = 0; i < a; i++) { r -= i; }\n"
+                + "        for (int i = 0; i < a; i++) { r *= 2; }\n"
+                + "        for (int i = 0; i < a; i++) { r /= 2; }\n"
+                + "        for (int i = 0; i < a; i++) { r -= 3; }\n"
+                + "        for (int i = 0; i < a; i++) { r += 7; }\n"
+                + "        for (int i = 0; i < a; i++) { r ^= 1; }\n"
+                + "        for (int i = 0; i < a; i++) { r <<= 1; }\n"
+                + "        for (int i = 0; i < a; i++) { r >>= 1; }\n"
+                + "        for (int i = 0; i < a; i++) { r &= 12; }\n"
+                + "        for (int i = 0; i < a; i++) { r |= 5; }\n"
+                + "        return r;\n    }\n}\n";
+        fixture().write("app/Rewritten.java", widenedSignature);
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD", "-p", "strict");
+
+        assertEquals(1, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        assertTrue(firstLine(err).contains("new violation"),
+                "a method whose signature changed has no comparable history: " + firstLine(err));
+        assertTrue(firstLine(err).contains("helper(int)"),
+                "the new entity is the newly-signed method, and the verdict must name it: "
+                        + firstLine(err));
+    }
+
+    // ---------------------------------------------------------------- report contract
+
+    /**
+     * No report field may contain a temporary path. A verdict naming
+     * {@code /var/folders/.../metrics-snapshot-9182/A.java} cannot be acted on and cannot be reproduced.
+     */
+    @Test
+    void reportsNeverLeakTempRoots() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 1));
+        fixture().commitAll("base");
+        fixture().write("app/Demo.java", classWithIfs("Demo", 11));
+        fixture().commitAll("regress");
+
+        for (OutputFormat format : new OutputFormat[] {OutputFormat.JSON, OutputFormat.HTML,
+                OutputFormat.AGENT_MD}) {
+            Path report = repo.resolve("report-" + format.name().toLowerCase(java.util.Locale.ROOT) + ".out");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            runGate(err, "--base", "HEAD~1", "-o", report.toString(),
+                    "--format", format.name().toLowerCase(java.util.Locale.ROOT));
+            String content = Files.readString(report);
+            assertFalse(content.contains("metrics-snapshot-"),
+                    format + " report leaked a snapshot root name");
+            assertFalse(content.contains("/private/var/folders") && content.contains("app/Demo.java"),
+                    format + " report leaked a system temp path");
+            assertTrue(content.contains("app/Demo.java"),
+                    format + " must name files by their repository-relative path");
+        }
+    }
+
+    /** The verdict is the first line of stderr; config warnings follow it and never precede it. */
+    @Test
+    void configWarningDoesNotPrecedeTheVerdict() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 1));
+        fixture().commitAll("base");
+        fixture().write("app/Demo.java", classWithIfs("Demo", 11));
+        fixture().commitAll("regress");
+        // An unknown top-level key: a warning, not an error, and not the first thing a CI log shows.
+        Files.writeString(repo.resolve(".metrics-gate.yml"), "notARealSetting: 1\n");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD~1");
+
+        assertEquals(1, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        String[] lines = err.toString(StandardCharsets.UTF_8).lines().toArray(String[]::new);
+        assertTrue(lines[0].startsWith("FAILED:"), "first line must be the verdict, got: " + lines[0]);
+        assertTrue(String.join("\n", lines).contains("notARealSetting"),
+                "the warning must still be shown");
+    }
+
+    /**
+     * A diff with no Java files must not invoke the analyzer. Running the parser over nothing is cheap,
+     * but a full analysis of a repository because the diff was documentation is not, and the report
+     * would then claim a checked file set of zero while having read the whole tree.
+     */
+    @Test
+    void noJavaDiffDoesNotInvokeTheAnalyzer() throws Exception {
+        fixture().init();
+        fixture().write("README.md", "# docs\n");
+        fixture().commitAll("base");
+        fixture().write("README.md", "# docs, revised\n");
+        fixture().commitAll("docs only");
+
+        CountingAnalyzer analyzer = new CountingAnalyzer();
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                analyzer, new MetricReportJsonWriter(), () -> repo);
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = app.run(new String[] {"gate", "--base", "HEAD~1"},
+                new ByteArrayOutputStream(), err);
+
+        assertEquals(0, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        assertTrue(firstLine(err).startsWith("PASSED:"), firstLine(err));
+        assertEquals(0, analyzer.invocations(),
+                "a diff with no Java files must not start an analysis pass");
+    }
+
+    /** A diff that is only deletions says so, rather than claiming it checked files. */
+    @Test
+    void deletionOnlyDiffSaysWhatItFound() throws Exception {
+        fixture().init();
+        fixture().write("app/Gone.java", classWithIfs("Gone", 1));
+        fixture().write("README.md", "# docs\n");
+        fixture().commitAll("base");
+        fixture().delete("app/Gone.java");
+        fixture().commitAll("delete the class");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        assertEquals(0, runGate(err, "--base", "HEAD~1"), () -> err.toString(StandardCharsets.UTF_8));
+        assertTrue(firstLine(err).contains("deleted"),
+                "a deletion-only diff must say it is a deletion, not a clean check: " + firstLine(err));
+    }
+}

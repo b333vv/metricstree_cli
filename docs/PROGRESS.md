@@ -1,5 +1,59 @@
 # what has been done
 
+## Session: ML-006 — the gate reads two snapshots, and names them (2026-09-28)
+
+**The gate could not see the change you had not committed yet.** That is the sentence the whole plan
+was written to remove, and it was still true at the end of ML-005. `GitOps.changedFiles` diffed
+`base...HEAD`, the base pass read old content into a temp directory, and the current pass analyzed
+files straight out of the working tree — so before a commit there was nothing to review at all. The new
+`GateSnapshotModesTest.uncommittedComplexityGrowthFailsBeforeCommit` writes CC 1→11, does **not** commit,
+and asserts exit 1 with a growth-budget verdict. That assertion is the deliverable.
+
+The second thing that was wrong is quieter. The two halves of the comparison came from two different
+states of the world: the current side was the live working tree, the base side was a temp directory that
+was deleted in a `finally` around the analysis call. A save between the two reads produced a verdict
+whose halves described different moments, and nobody could check the bytes afterwards because they were
+already gone. `GateCommand` now plans once, materializes both sides, and analyzes only those — inside a
+`try`-with-resources, so both roots are removed on every path including exceptions.
+
+**`--mode` is a real decision again, with the default that closes the blind spot.** `worktree` (default),
+`staged`, `committed`, each resolving through `ComparisonPlanner` and each demonstrated by a test rather
+than asserted: `stagedUsesIndexEvenWhenWorkingCopyIsFixed` stages a regression then repairs the working
+copy and proves staged still fails while worktree passes — the exact pre-commit-hook case. And
+`committedIgnoresUnstagedBreakingSyntax` writes a syntactically broken file the way a platform leaves a
+synthetic merge commit, and proves `committed` never sees it while `worktree` fails on it.
+
+**Entity identity is now qualified name plus signature, never a path.** The old index keyed on
+`/repo/app/Service.java` with a literal `/nonexistent-base` standing in for the base side, so base
+entities carried their temporary paths into the report. `pathRenameIsNotANewViolation` moves a
+already-violating class to a new directory and asserts a pass: a reorganization must not inherit a
+decade of debt. `changedSignatureIsANewEntity` asserts the other half — a rewritten signature is a
+different entity, because the old signature's metrics say nothing about the new one, and treating it as
+unchanged would launder a rewrite through the fairness rule.
+
+**A report now says which two revisions it judged.** The additive `comparison` block carries the mode,
+the requested ref, the resolved base/head/merge-base SHAs, both content digests, the subject files, and
+the unsupported paths. `--base origin/main` is a ref that moves; two runs against it can be two
+different comparisons, and only the resolved identifiers say whether they were.
+`reportsNeverLeakTempRoots` checks JSON, HTML and agent-Markdown alike for the string
+`metrics-snapshot-`.
+
+**One behaviour change beyond the mode default, and it is the one worth arguing about.** Config warnings
+used to be flushed to stderr *before* the verdict, because the old code called `flushWarnings` first. A
+CI log is read top down and often truncated, so a warning about an unrecognized config key could be the
+only line a reviewer saw above a build that passed. The verdict is now printed first and the buffered
+warnings after it, on every exit path including errors. `configWarningDoesNotPrecedeVerdict` pins it.
+
+**Legacy compatibility.** `violations`, `warnings`, `byFile`, `status` and `base` are byte-identical;
+`comparison` is purely additive, so no consumer breaks. `GateEvaluatorTest` was reworked onto real
+`SourceSnapshot`s — deliberately not a fake root, because the evaluator's contract is that an entity's
+file is whatever the snapshot says, and a stub would have been a third placeholder — and **no assertion
+was weakened**: the fairness rule, the worsened warning band, the `failOn` downgrade and the unparseable
+base skip all still hold.
+
+**Next ready task: ML-007**, which selects the safe local metric set and declares analysis requirements.
+
+
 ## Session: ML-005 — immutable source snapshots with logical paths (2026-09-28)
 
 **The gate analyzed the repository twice, in two different states, and could not tell.** The base pass

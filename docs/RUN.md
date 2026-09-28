@@ -695,13 +695,14 @@ Diff-aware quality gate: fails only on what this branch made worse, not on the p
 pre-existing state. This is the CI command for agent-generated (and human) pull requests.
 
 ```bash
-java-metrics-cli gate --base origin/main [-p <profile>] [-t <thresholds.json>] [-o <report.json>]
-    [--format=<json|html>] [--exclude-file=<path>]
+java-metrics-cli gate --base origin/main [--mode <worktree|staged|committed>] [-p <profile>]
+    [-t <thresholds.json>] [-o <report.json>] [--format=<json|html>] [--exclude-file=<path>]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `--base=<ref>` | **Required.** Base ref to diff against. Three-dot diff (`base...HEAD`) — only what this branch introduced |
+| `--base=<ref>` | **Required.** Base ref to diff against. Resolved once, together with `HEAD`, and their single merge base supplies both the changed file set and the old content. An unknown ref, a history with no merge base, and a criss-cross history with several are all errors (exit 2) — the gate will not pick a revision arbitrarily |
+| `--mode=<worktree\|staged\|committed>` | Which revision state is the "after" side. `worktree` (**default**), `staged`, `committed`. Overrides `gate.mode` in a project config |
 | `-p, --profile=<name>` | Threshold profile for this run: `relaxed`, `standard`, `strict`. Overrides `profile:` in a project config; that config's inline `thresholds:` still merge on top. An unknown name is a usage error (exit 2) |
 | `-t, --thresholds=<path>` | JSON/YAML thresholds. Optional: without it the gate still enforces growth budgets (defaults: CC +5, WMC +20). **Replaces** `-p` and any config thresholds outright rather than merging with them |
 | `-o, --output=<path>` | Write the full report here. Without it only the verdict line is printed |
@@ -710,24 +711,37 @@ java-metrics-cli gate --base origin/main [-p <profile>] [-t <thresholds.json>] [
 **Exit codes:** `0` pass · `1` gate failed · `2` usage or environment error (not a git
 repository, unknown `--base` ref).
 
+**Comparison modes** — what "after" means, and therefore what is being reviewed:
+
+| Mode | Before | After | Local changes |
+|------|-------|-------|----------------|
+| `worktree` (**default**) | merge base | tracked working files plus non-ignored untracked Java files | staged **and** unstaged edits included; ignored files excluded |
+| `staged` | merge base | the index at stage 0 | unstaged content is never read; untracked files excluded |
+| `committed` | merge base | the resolved `HEAD` tree | the live index and working tree are ignored entirely, conflicts included |
+
+All three include the branch's own commits, because all three compare against the merge base. To
+review only what is uncommitted, pass `--base HEAD`.
+
+**CI should use `--mode committed`.** A CI checkout has no meaningful local edits, and a platform that
+leaves a synthetic merge commit half-staged must not have that half-staged state become the subject of
+a review. The `worktree` default is a deliberate change from the previous behaviour, which compared
+`HEAD` against the working tree and therefore **passed everything before a commit** — the blind spot
+this command was built to close.
+
 **What it does:**
 
-1. Resolves the changed file set with `git diff --name-only <base>...HEAD` (run from the repo
-   root, so running from a subdirectory changes nothing), keeps `.java` files that still exist —
-   deleted files are ignored by design.
-2. Analyzes the working tree's versions and the base revision's versions of those same files
-   (base content read via `git show` into a temp directory — no checkout, no worktree, no
-   mutation of your repository).
-3. Compares class and method metrics between the two passes and applies the verdict rules:
-
-| Condition | Result |
-|---|---|
-| New class/method violates absolute thresholds | **FAILED** (`new-violation`) |
-| Existing entity passed a threshold at base, fails it now | **FAILED** (`threshold-crossing`) |
-| Existing entity grew beyond the growth budget (e.g. CC +5) | **FAILED** (`growth-budget`) |
-| Worse than base but within every bound | PASSED, reported as a warning (`worsened`) |
-| Improved or unchanged | PASSED |
-| Changed file does not parse | **FAILED** (`parse-error`) — unconditionally; uncompilable code cannot sneak past |
+1. Resolves `HEAD` and `--base` to full commit IDs once, then their single merge base. No merge base,
+   several merge bases, an unborn `HEAD`, an unmerged index (outside `committed` mode) and a missing
+   object are all errors naming what to do — never a silent fallback to an arbitrary ancestor.
+2. Captures **both** revisions into owned temporary directories and analyzes only those: the base from
+   git objects, the after side from the mode's source. No checkout, stash, reset, index write or build
+   of your project — the repository is only read, and the capture includes **all** Java sources of each
+   revision, not only the changed ones, so metrics resolve against the same context the change lives
+   in.
+3. Compares class and method metrics between the two passes, keyed on qualified name and method
+   signature rather than on file path. A class that moved between directories is still compared against
+   its own past; a method whose **signature changed** is treated as new, because the old signature's
+   metrics say nothing about the new one. Applies the verdict rules:
 
 **The fairness rule:** a class already violating at the base revision is *not* failed again for
 the same failing metric — only worsening beyond the growth budget fails it. That is what makes
@@ -740,7 +754,24 @@ FAILED: 1 growth budget breach — worst: CC grew 2→9 (+7), budget is 5 in app
 ```
 
 The full JSON report (`--output`) carries `status`, `base`, `violations` (with `severity`),
-`warnings`, and a `byFile` index — the agent's "where is the work" view.
+`warnings`, and a `byFile` index — the agent's "where is the work" view — plus an additive
+`comparison` block naming exactly what was compared:
+
+```json
+"comparison": {
+  "mode": "worktree",
+  "requestedBase": "origin/main",
+  "baseSha": "9f1c…", "headSha": "4ab2…", "mergeBaseSha": "7d0e…",
+  "beforeDigest": "…", "afterDigest": "…",
+  "subjectFiles": ["app/Demo.java"],
+  "unsupported": []
+}
+```
+
+The SHAs and the digests are what make a report checkable after the fact: `base` is a ref that moves,
+so two runs against the same ref can be two different comparisons, and only the resolved identifiers
+say whether they were. A selected Java path that cannot be read as source — a symlink, a submodule
+pointer — appears in `unsupported` rather than being dropped from the set without saying so.
 
 **Configuration** comes from `.metrics-gate.yml` (see [Project configuration](#project-configuration-metrics-gateyml)):
 
@@ -767,9 +798,10 @@ stderr and does not fail the run. The reason for the difference is direction: an
 is usually an option this version does not implement, whereas a key inside `gate:` changes what the
 gate enforces, and a budget that silently disappears is a gate weaker than its author believes.
 
-`mode`, `policy`, `enforcement` and `analysis` are accepted inside `gate:` and validated, but are not
-yet acted on — they arrive with the tasks that implement comparison modes, the maintainability policy
-and analysis scope.
+`mode` inside `gate:` sets the default comparison mode for the project; an explicit `--mode` wins.
+`policy`, `enforcement` and `analysis` are accepted and validated but are not yet acted on — they
+arrive with the tasks that implement the maintainability policy and analysis scope. An unknown
+`gate.mode` value is a usage error naming the accepted values, never a silent fallback.
 
 `--config` and `--no-config` cannot be combined: one names the file to read, the other asks for no
 file at all, and silently honouring either would let a build that reads no config be made to look
@@ -785,6 +817,12 @@ compare.
 Zero-setup CI gate on a pull request:
 ```bash
 java-metrics-cli gate --base origin/main
+```
+
+In CI, against the actual PR head:
+
+```bash
+java-metrics-cli gate --base origin/main --mode committed -o gate-report.json
 ```
 
 With a report artifact for the agent to consume:

@@ -9,6 +9,7 @@ import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.model.metric.value.Value;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -24,7 +25,16 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class GateEvaluatorTest {
 
-    private static final Path ROOT = Path.of("/repo");
+    /**
+     * A real capture root per test class.
+     *
+     * <p>ML-006 gave {@link GateEvaluator} two {@link SourceSnapshot}s instead of one directory, because
+     * the base side has no directory at all — it was a placeholder string standing in for "somewhere
+     * else". A fake root would have been a third placeholder, so the fixture creates a real one: the
+     * evaluator's contract is that an entity's file path is whatever the snapshot says it is, and a
+     * test that proves it must go through the same translation production code does.
+     */
+    private static Path root;
     private static final Set<GateFinding.Type> ALL_FAIL_ON = EnumSet.of(
             GateFinding.Type.NEW_VIOLATION,
             GateFinding.Type.THRESHOLD_CROSSING,
@@ -37,10 +47,49 @@ class GateEvaluatorTest {
 
     private static final Map<String, Double> GROWTH = Map.of("CC", 5.0, "WMC", 20.0);
 
+    @org.junit.jupiter.api.BeforeAll
+    static void createRoot() throws Exception {
+        root = SourceSnapshot.createRoot();
+    }
+
+    @org.junit.jupiter.api.AfterAll
+    static void removeRoot() {
+        SourceSnapshot.of(root, "test", List.of(), List.of()).close();
+    }
+
+    /**
+     * A snapshot that claims a set of logical paths, so the evaluator can map a report's absolute
+     * source path back to the repository-relative one a finding must quote.
+     */
+    private static SourceSnapshot snapshotOf(String... logicalPaths) throws Exception {
+        List<SourceSnapshot.SourceFile> files = new java.util.ArrayList<>();
+        List<SnapshotEntry> entries = new java.util.ArrayList<>();
+        for (String logical : logicalPaths) {
+            Path file = root.resolve(logical);
+            Files.createDirectories(file.getParent());
+            byte[] content = ("// " + logical + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            Files.write(file, content);
+            files.add(new SourceSnapshot.SourceFile(logical, content));
+            entries.add(new SnapshotEntry(logical, SourceSnapshot.sha256(content), content.length));
+        }
+        return SourceSnapshot.of(root, "test", entries, List.of());
+    }
+
+    /** The union of every path the two reports mention, which is the comparison's subject set. */
+    private static Set<String> allPaths(MetricReport... reports) throws Exception {
+        Set<String> paths = new java.util.LinkedHashSet<>();
+        for (MetricReport report : reports) {
+            for (ClassReport classReport : report.classes()) {
+                paths.add(root.relativize(classReport.sourcePath()).toString().replace('\\', '/'));
+            }
+        }
+        return paths;
+    }
+
     @Test
-    void newEntityViolatingThresholdsFails() {
-        MetricReport base = report("app.Base", Path.of("/repo/app/Base.java"), Map.of());
-        MetricReport current = report("app.New", Path.of("/repo/app/New.java"),
+    void newEntityViolatingThresholdsFails() throws Exception {
+        MetricReport base = report("app.Base", root.resolve("app/Base.java"), Map.of());
+        MetricReport current = report("app.New", root.resolve("app/New.java"),
                 Map.of(MetricCode.CC, 9.0));
 
         GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON);
@@ -54,19 +103,19 @@ class GateEvaluatorTest {
     }
 
     @Test
-    void newEntityWithinThresholdsPasses() {
-        MetricReport base = report("app.Base", Path.of("/repo/app/Base.java"), Map.of());
-        MetricReport current = report("app.New", Path.of("/repo/app/New.java"),
+    void newEntityWithinThresholdsPasses() throws Exception {
+        MetricReport base = report("app.Base", root.resolve("app/Base.java"), Map.of());
+        MetricReport current = report("app.New", root.resolve("app/New.java"),
                 Map.of(MetricCode.CC, 2.0));
 
         assertTrue(evaluate(base, current, ALL_FAIL_ON).violations().isEmpty());
     }
 
     @Test
-    void crossingFromPassingToFailingFails() {
-        MetricReport base = report("app.Service", Path.of("/repo/app/Service.java"),
+    void crossingFromPassingToFailingFails() throws Exception {
+        MetricReport base = report("app.Service", root.resolve("app/Service.java"),
                 Map.of(MetricCode.CC, 2.0));
-        MetricReport current = report("app.Service", Path.of("/repo/app/Service.java"),
+        MetricReport current = report("app.Service", root.resolve("app/Service.java"),
                 Map.of(MetricCode.CC, 4.0));
 
         GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON);
@@ -79,11 +128,11 @@ class GateEvaluatorTest {
     }
 
     @Test
-    void fairnessRule_baseAlreadyFailingIsNotFailedAgain() {
+    void fairnessRule_baseAlreadyFailingIsNotFailedAgain() throws Exception {
         // Base violates CC max and the change keeps it violating but within the growth budget.
-        MetricReport base = report("app.Legacy", Path.of("/repo/app/Legacy.java"),
+        MetricReport base = report("app.Legacy", root.resolve("app/Legacy.java"),
                 Map.of(MetricCode.CC, 8.0));
-        MetricReport current = report("app.Legacy", Path.of("/repo/app/Legacy.java"),
+        MetricReport current = report("app.Legacy", root.resolve("app/Legacy.java"),
                 Map.of(MetricCode.CC, 10.0));
 
         GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON);
@@ -93,10 +142,10 @@ class GateEvaluatorTest {
     }
 
     @Test
-    void growthBeyondBudgetFailsEvenWhenAlreadyViolating() {
-        MetricReport base = report("app.Legacy", Path.of("/repo/app/Legacy.java"),
+    void growthBeyondBudgetFailsEvenWhenAlreadyViolating() throws Exception {
+        MetricReport base = report("app.Legacy", root.resolve("app/Legacy.java"),
                 Map.of(MetricCode.CC, 8.0));
-        MetricReport current = report("app.Legacy", Path.of("/repo/app/Legacy.java"),
+        MetricReport current = report("app.Legacy", root.resolve("app/Legacy.java"),
                 Map.of(MetricCode.CC, 20.0));
 
         GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON);
@@ -109,16 +158,15 @@ class GateEvaluatorTest {
     }
 
     @Test
-    void worsenedButWithinBoundsIsAWarning() {
+    void worsenedButWithinBoundsIsAWarning() throws Exception {
         // A max-only ceiling: 1 -> 3 stays inside [.., 3] but moves toward the bound.
         Map<String, Threshold> ceilingOnly = Map.of("CC", new Threshold(-Double.MAX_VALUE, 3.0));
-        MetricReport base = report("app.Service", Path.of("/repo/app/Service.java"),
+        MetricReport base = report("app.Service", root.resolve("app/Service.java"),
                 Map.of(MetricCode.CC, 1.0));
-        MetricReport current = report("app.Service", Path.of("/repo/app/Service.java"),
+        MetricReport current = report("app.Service", root.resolve("app/Service.java"),
                 Map.of(MetricCode.CC, 3.0));
 
-        GateEvaluator.Result result = GateEvaluator.evaluate(
-                base, current, ROOT, ceilingOnly, Map.of(), ALL_FAIL_ON, Set.of());
+        GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON, Set.of(), ceilingOnly, Map.of());
 
         assertTrue(result.violations().isEmpty());
         assertEquals(1, result.warnings().size());
@@ -126,10 +174,10 @@ class GateEvaluatorTest {
     }
 
     @Test
-    void improvedEntityPassesWithoutWarning() {
-        MetricReport base = report("app.Service", Path.of("/repo/app/Service.java"),
+    void improvedEntityPassesWithoutWarning() throws Exception {
+        MetricReport base = report("app.Service", root.resolve("app/Service.java"),
                 Map.of(MetricCode.CC, 5.0));
-        MetricReport current = report("app.Service", Path.of("/repo/app/Service.java"),
+        MetricReport current = report("app.Service", root.resolve("app/Service.java"),
                 Map.of(MetricCode.CC, 1.0));
 
         GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON);
@@ -148,30 +196,27 @@ class GateEvaluatorTest {
      * deterioration, and inventing one produces warning noise no one can act on.
      */
     @Test
-    void maxOnlyIncreaseIsWorsening() {
+    void maxOnlyIncreaseIsWorsening() throws Exception {
         Map<String, Threshold> ceilingOnly = Map.of("CC", new Threshold(-Double.MAX_VALUE, 3.0));
-        MetricReport base = report("app.Service", Path.of("/repo/app/Service.java"),
+        MetricReport base = report("app.Service", root.resolve("app/Service.java"),
                 Map.of(MetricCode.CC, 2.0));
-        MetricReport current = report("app.Service", Path.of("/repo/app/Service.java"),
+        MetricReport current = report("app.Service", root.resolve("app/Service.java"),
                 Map.of(MetricCode.CC, 3.0));
 
-        GateEvaluator.Result worsened = GateEvaluator.evaluate(
-                base, current, ROOT, ceilingOnly, Map.of(), ALL_FAIL_ON, Set.of());
+        GateEvaluator.Result worsened = evaluate(base, current, ALL_FAIL_ON, Set.of(), ceilingOnly, Map.of());
         assertTrue(worsened.violations().isEmpty());
         assertEquals(1, worsened.warnings().size(),
                 "an increase toward a max-only ceiling is deterioration and must be reported");
         assertEquals(GateFinding.Type.WORSENED, worsened.warnings().get(0).type());
 
-        MetricReport improved = report("app.Service", Path.of("/repo/app/Service.java"),
+        MetricReport improved = report("app.Service", root.resolve("app/Service.java"),
                 Map.of(MetricCode.CC, 1.0));
-        GateEvaluator.Result better = GateEvaluator.evaluate(
-                base, improved, ROOT, ceilingOnly, Map.of(), ALL_FAIL_ON, Set.of());
+        GateEvaluator.Result better = evaluate(base, improved, ALL_FAIL_ON, Set.of(), ceilingOnly, Map.of());
         assertTrue(better.warnings().isEmpty(), "a decrease away from a max-only ceiling is an improvement");
 
         // Two-sided, inside to inside: no universal bad direction, so no generic warning. The growth
         // map is empty here, so this exercises the threshold rule and not the directional budget.
-        GateEvaluator.Result twoSided = GateEvaluator.evaluate(
-                base, current, ROOT, THRESHOLDS, Map.of(), ALL_FAIL_ON, Set.of());
+        GateEvaluator.Result twoSided = evaluate(base, current, ALL_FAIL_ON, Set.of(), THRESHOLDS, Map.of());
         assertTrue(twoSided.violations().isEmpty());
         assertTrue(twoSided.warnings().isEmpty(),
                 "0.4 -> 0.5 inside [0.33, 1.0] must not be called a deterioration");
@@ -179,10 +224,10 @@ class GateEvaluatorTest {
 
     /** A two-sided floor is still directional when the value leaves the interval — that is a crossing. */
     @Test
-    void twoSidedIntervalKeepsTheFloorDirection() {
-        MetricReport base = report("app.Cohesive", Path.of("/repo/app/Cohesive.java"),
+    void twoSidedIntervalKeepsTheFloorDirection() throws Exception {
+        MetricReport base = report("app.Cohesive", root.resolve("app/Cohesive.java"),
                 Map.of(MetricCode.TCC, 0.9));
-        MetricReport current = report("app.Cohesive", Path.of("/repo/app/Cohesive.java"),
+        MetricReport current = report("app.Cohesive", root.resolve("app/Cohesive.java"),
                 Map.of(MetricCode.TCC, 0.2));
 
         GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON);
@@ -196,25 +241,24 @@ class GateEvaluatorTest {
      * configured side, and a decrease moves away from it.
      */
     @Test
-    void floorMetricWorsensOnDecrease() {
+    void floorMetricWorsensOnDecrease() throws Exception {
         Map<String, Threshold> floorOnly = Map.of("TCC", new Threshold(0.33, Double.MAX_VALUE));
-        MetricReport base = report("app.Cohesive", Path.of("/repo/app/Cohesive.java"),
+        MetricReport base = report("app.Cohesive", root.resolve("app/Cohesive.java"),
                 Map.of(MetricCode.TCC, 0.9));
-        MetricReport current = report("app.Cohesive", Path.of("/repo/app/Cohesive.java"),
+        MetricReport current = report("app.Cohesive", root.resolve("app/Cohesive.java"),
                 Map.of(MetricCode.TCC, 0.5));
 
-        GateEvaluator.Result result = GateEvaluator.evaluate(
-                base, current, ROOT, floorOnly, Map.of(), ALL_FAIL_ON, Set.of());
+        GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON, Set.of(), floorOnly, Map.of());
 
         assertTrue(result.violations().isEmpty());
         assertEquals(1, result.warnings().size(), "a shrinking ratio below its floor is worse, not better");
     }
 
     @Test
-    void failOnSubsetDowngradesUnselectedTypesToWarnings() {
-        MetricReport base = report("app.Service", Path.of("/repo/app/Service.java"),
+    void failOnSubsetDowngradesUnselectedTypesToWarnings() throws Exception {
+        MetricReport base = report("app.Service", root.resolve("app/Service.java"),
                 Map.of(MetricCode.CC, 2.0));
-        MetricReport current = report("app.Service", Path.of("/repo/app/Service.java"),
+        MetricReport current = report("app.Service", root.resolve("app/Service.java"),
                 Map.of(MetricCode.CC, 4.0));
 
         GateEvaluator.Result result = evaluate(base, current,
@@ -227,23 +271,21 @@ class GateEvaluatorTest {
     }
 
     @Test
-    void unparseableBaseFileSkipsItsCurrentEntities() {
-        MetricReport base = report("app.Base", Path.of("/repo/app/Base.java"), Map.of());
-        MetricReport current = report("app.Broken", Path.of("/repo/app/Broken.java"),
+    void unparseableBaseFileSkipsItsCurrentEntities() throws Exception {
+        MetricReport base = report("app.Base", root.resolve("app/Base.java"), Map.of());
+        MetricReport current = report("app.Broken", root.resolve("app/Broken.java"),
                 Map.of(MetricCode.CC, 9.0));
 
-        GateEvaluator.Result result = GateEvaluator.evaluate(
-                base, current, ROOT, THRESHOLDS, GROWTH, ALL_FAIL_ON,
-                Set.of("app/Broken.java"));
+        GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON, Set.of("app/Broken.java"));
 
         assertTrue(result.violations().isEmpty(),
                 "a file whose base did not parse must not be judged as new");
     }
 
     @Test
-    void violationsAreSortedWorstFirstByOvershoot() {
-        MetricReport base = report("app.Base", Path.of("/repo/app/Base.java"), Map.of());
-        MetricReport current = report("app.Two", Path.of("/repo/app/Two.java"),
+    void violationsAreSortedWorstFirstByOvershoot() throws Exception {
+        MetricReport base = report("app.Base", root.resolve("app/Base.java"), Map.of());
+        MetricReport current = report("app.Two", root.resolve("app/Two.java"),
                 Map.of(MetricCode.CC, 5.0, MetricCode.WMC, 30.0));
 
         GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON);
@@ -254,8 +296,30 @@ class GateEvaluatorTest {
     }
 
     private static GateEvaluator.Result evaluate(
-            MetricReport base, MetricReport current, Set<GateFinding.Type> failOn) {
-        return GateEvaluator.evaluate(base, current, ROOT, THRESHOLDS, GROWTH, failOn, Set.of());
+            MetricReport base, MetricReport current, Set<GateFinding.Type> failOn) throws Exception {
+        return evaluate(base, current, failOn, Set.of());
+    }
+
+    private static GateEvaluator.Result evaluate(
+            MetricReport base,
+            MetricReport current,
+            Set<GateFinding.Type> failOn,
+            Set<String> unparseableBaseFiles) throws Exception {
+        return evaluate(base, current, failOn, unparseableBaseFiles, THRESHOLDS, GROWTH);
+    }
+
+    /** The same comparison with a different threshold table or budget map. */
+    private static GateEvaluator.Result evaluate(
+            MetricReport base,
+            MetricReport current,
+            Set<GateFinding.Type> failOn,
+            Set<String> unparseableBaseFiles,
+            Map<String, Threshold> thresholds,
+            Map<String, Double> growth) throws Exception {
+        Set<String> subjects = allPaths(base, current);
+        SourceSnapshot snapshot = snapshotOf(subjects.toArray(new String[0]));
+        return GateEvaluator.evaluate(base, current, snapshot, snapshot, subjects,
+                thresholds, growth, failOn, unparseableBaseFiles);
     }
 
     /** A one-class report with no methods — every test drives class-level metrics. */
