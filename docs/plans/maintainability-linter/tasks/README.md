@@ -12,7 +12,7 @@ Dependencies are technical prerequisites. Milestone boundaries and external evid
 | [ML-004](ML-004.md) | Resolve explicit comparison modes and one merge base | ML-003 | DONE |
 | [ML-005](ML-005.md) | Materialize immutable source snapshots with logical paths | ML-004 | DONE |
 | [ML-006](ML-006.md) | Wire snapshot comparison into the existing gate | ML-005 | DONE |
-| [ML-007](ML-007.md) | Select safe local metrics and declare analysis requirements | ML-006 | TODO |
+| [ML-007](ML-007.md) | Select safe local metrics and declare analysis requirements | ML-006 | DONE |
 | [ML-008](ML-008.md) | Make incomplete evaluation visible in every gate verdict | ML-007 | TODO |
 | [ML-009](ML-009.md) | Repair existing agent detection evidence and misleading text | ML-001 | TODO |
 | [ML-010](ML-010.md) | Add ordered analysis and bounded reproducibility checks | ML-007, ML-008 | TODO |

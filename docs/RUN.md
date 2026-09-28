@@ -701,6 +701,7 @@ java-metrics-cli gate --base origin/main [--mode <worktree|staged|committed>] [-
 
 | Option | Description |
 |--------|-------------|
+| `--analysis-scope=<local\|project>` | How much of the project the analysis may use. `local` (**default**) measures only metrics provable from one file's syntax, so a run with no classpath is still trustworthy; `project` also resolves symbols and measures coupling, and needs a usable classpath. Overrides `gate.analysis.scope` in a project config. See [Analysis scope](#analysis-scope-local-or-project) |
 | `--base=<ref>` | **Required.** Base ref to diff against. Resolved once, together with `HEAD`, and their single merge base supplies both the changed file set and the old content. An unknown ref, a history with no merge base, and a criss-cross history with several are all errors (exit 2) — the gate will not pick a revision arbitrarily |
 | `--mode=<worktree\|staged\|committed>` | Which revision state is the "after" side. `worktree` (**default**), `staged`, `committed`. Overrides `gate.mode` in a project config |
 | `-p, --profile=<name>` | Threshold profile for this run: `relaxed`, `standard`, `strict`. Overrides `profile:` in a project config; that config's inline `thresholds:` still merge on top. An unknown name is a usage error (exit 2) |
@@ -773,6 +774,31 @@ so two runs against the same ref can be two different comparisons, and only the 
 say whether they were. A selected Java path that cannot be read as source — a symlink, a submodule
 pointer — appears in `unsupported` rather than being dropped from the set without saying so.
 
+### Analysis scope: `local` or `project`
+
+The gate analyzes a *changed* file set but measures it in *full context*, so it always parses a whole
+snapshot. What varies is which metrics it computes from that parse:
+
+| Scope | Measures | Trustworthy without a classpath |
+|-------|----------|---------------------------------|
+| `local` (**default**) | `CC`, `CCM`, `CND`, `LND`, `MND`, `LOC`, `NOPM`, `NOL`, `WMC`, `CCC`, `CLOC`, `NOM` | **Yes** — all twelve are computed from one file's syntax and are identical whether or not the surrounding world resolved |
+| `project` | everything, including coupling and cohesion (`CBO`, `LCOM`, `TCC`, `DIT`, `RFC`, …) | No — these need resolved symbols, and an unresolved value is not a smaller true value |
+
+`local` exists because of the alternative. A class whose field type comes from a jar the gate never
+loaded still gets a `CBO` — a small one, because the couplings it could not resolve were simply not
+counted. That number is indistinguishable in the output from a measured one, which is why a local run
+now refuses to produce it. A metric your config asks for that `local` cannot measure is **reported on
+stderr with the reason and the remedy**, and the check is not evaluated:
+
+```
+WARNING: CBO is computed from resolved collaborators across the project, so it needs a classpath as
+well as analysis scope 'project', or it cannot be measured at all
+```
+
+Switching to `--analysis-scope project` makes the gate attempt those metrics — and makes the run
+depend on your classpath being right. It also does not make an unresolved value correct; that is a
+per-check status, reported separately.
+
 **Configuration** comes from `.metrics-gate.yml` (see [Project configuration](#project-configuration-metrics-gateyml)):
 
 ```yaml
@@ -798,8 +824,10 @@ stderr and does not fail the run. The reason for the difference is direction: an
 is usually an option this version does not implement, whereas a key inside `gate:` changes what the
 gate enforces, and a budget that silently disappears is a gate weaker than its author believes.
 
-`mode` inside `gate:` sets the default comparison mode for the project; an explicit `--mode` wins.
-`policy`, `enforcement` and `analysis` are accepted and validated but are not yet acted on — they
+`mode` inside `gate:` sets the default comparison mode and `analysis` its default analysis scope; an
+explicit `--mode` or `--analysis-scope` wins. An unknown value for either is a usage error naming the
+accepted values, never a silent fallback. `policy` and `enforcement` are accepted and validated but are
+not yet acted on — they
 arrive with the tasks that implement the maintainability policy and analysis scope. An unknown
 `gate.mode` value is a usage error naming the accepted values, never a silent fallback.
 

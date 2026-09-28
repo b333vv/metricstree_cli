@@ -1,5 +1,64 @@
 # what has been done
 
+## Session: ML-007 — a local run can no longer report a number it did not measure (2026-09-28)
+
+**A value computed from evidence that was missing is not a smaller true value.** That is the whole of
+this task, and the gate was doing it routinely. A local run of a file whose field type came from a jar
+nobody loaded still produced a CBO — small, because the couplings it could not resolve were simply not
+counted — and printed it with exactly the same typography as a measured one. A reviewer has no way to
+tell those apart, which makes the number worse than useless: it is confidently wrong, and it is wrong
+in the flattering direction.
+
+`MetricRequirements` (library core) now classifies **every** `MetricCode` as `SYNTAX_LOCAL`,
+`SYMBOL_CONTEXT` or `PROJECT_GLOBAL`, and an unclassified code defaults to `SYMBOL_CONTEXT`. The
+conservative direction is the only safe one here: a new metric someone forgets to declare becomes
+*reportedly unmeasurable*, which is a visible regression, rather than a plausible wrong number, which
+is not.
+
+**The local set was audited, and the audit is a test rather than a claim.** The contract names CC, CCM,
+CND, LND, MND, LOC, NOPM, NOL, WMC, CCC, CLOC and NOM. I checked each against its actual visitor: the
+ten raw metrics' visitors contain no symbol-resolution call at all, and CLOC and CCC are derived sums of
+LOC and CCM, so they inherit their inputs' safety. **Nothing had to be removed**, and
+`missingExternalTypeDoesNotChangeLocalCC` pins it: a class with a field, a parameter and a local
+variable of a type that exists nowhere is analysed twice — once with nothing, once with a
+non-existent classpath entry — and every local metric must come out identical, against expectations
+written out by hand (CC 6: base, if, else, for, inner if, while; the trailing ternary is an
+expression, not a branch, and McCabe has never counted those).
+
+`symbolMetricsDoDependOnResolution` is the mirror image and matters as much: it shows CBO *does* vary
+with resolvability. Without it, the symbol-context classification would be an assertion nobody had
+checked — a table that could be wrong in the direction that matters.
+
+**The gate now runs the visitors it needs, not all of them.** `GateMetricSelection` derives the
+selection from the configured threshold and growth keys, so a run asking about CC and WMC runs two
+visitors rather than forty. It also produces the list of what it *cannot* measure, and
+`selectingCboInLocalRecordsUnavailable` shows the shape of a refusal: the metric, what it actually
+needs, and the remedy — not a code, and not silence.
+
+Verified end to end against the installed distribution on this repository's own working tree. With a
+`CBO ≤ 1` threshold and no `--analysis-scope`:
+
+```
+PASSED: 10 changed files, no violations (3 warnings)
+WARNING: CBO is computed from resolved collaborators across the project, so it needs a classpath as
+well as analysis scope 'project', or it cannot be measured at all
+```
+
+and with `--analysis-scope project` the same config measures it and fails the change that introduced
+the new test class:
+
+```
+FAILED: 7 new violations — worst: class …GateMetricSelectionTest is new and CBO 38 is outside at
+most 1 in java-metrics-cli/src/test/java/org/b333vv/metric/cli/GateMetricSelectionTest.java
+```
+
+`MetricCodeNames` accepts both spellings a user actually has — the code (`"CC"`, what thresholds files
+and `--metric` use) and the published title (`"Cyclomatic Complexity"`, what the report prints) —
+because a name copied out of a report into a config must work.
+
+**Next ready task: ML-008**, which makes incomplete evaluation visible in every gate verdict.
+
+
 ## Session: ML-006 — the gate reads two snapshots, and names them (2026-09-28)
 
 **The gate could not see the change you had not committed yet.** That is the sentence the whole plan

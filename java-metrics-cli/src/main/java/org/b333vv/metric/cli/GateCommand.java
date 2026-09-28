@@ -82,6 +82,13 @@ final class GateCommand implements Callable<Integer> {
                     + "should use). Overrides gate.mode in a project config.")
     private ComparisonMode mode;
 
+    @CommandLine.Option(names = {"--analysis-scope"}, paramLabel = "SCOPE",
+            description = "How much of the project the analysis may use: local (default) measures only "
+                    + "metrics provable from one file's syntax, so a run without a classpath is still "
+                    + "trustworthy; project also resolves symbols and measures coupling, and needs a "
+                    + "usable classpath. Overrides gate.analysis.scope in a project config.")
+    private String analysisScope;
+
     @CommandLine.Option(names = {"--base"}, required = true, paramLabel = "REF",
             description = "Base ref to diff against (e.g. origin/main). Resolved once, together "
                     + "with HEAD, and their single merge base supplies both the changed file set "
@@ -165,10 +172,20 @@ final class GateCommand implements Callable<Integer> {
             return 0;
         }
 
+        // The metrics this run needs are exactly the ones the config and flags asked about — never
+        // "all of them". A local run therefore only runs the audited syntax visitors, and every
+        // requested metric it cannot measure is recorded rather than approximated.
+        GateMetricSelection metricSelection = GateMetricSelection.forMetrics(
+                requestedMetrics(thresholds, growth), resolveAnalysisScope(config));
+        if (!metricSelection.isComplete()) {
+            for (GateMetricSelection.UnavailableMetric metric : metricSelection.unavailable()) {
+                warningBuffer.append("WARNING: ").append(metric.reason()).append(System.lineSeparator());
+            }
+        }
+
         ExclusionConfig exclusions = loadExclusions(config);
-        AnalysisOptions options = exclusions.isEmpty()
-                ? AnalysisOptions.defaults()
-                : AnalysisOptions.defaults().withExclusions(exclusions);
+        AnalysisOptions options =
+                AnalysisOptions.of(metricSelection.selection()).withExclusions(exclusions);
 
         GateEvaluator.Result result;
         List<GateFinding> parseErrors;
@@ -232,6 +249,48 @@ final class GateCommand implements Callable<Integer> {
         }
         stdout.flush();
         return violations.isEmpty() ? 0 : 1;
+    }
+
+    /**
+     * The metrics this run has to be able to measure: every threshold key and every growth key.
+     *
+     * <p>Derived from what was actually configured rather than from the full code set, because a
+     * selection is a cost statement. Asking for forty visitors because the enum has forty constants
+     * would make the gate as slow as {@code analyze} while checking a fraction of what that does.
+     */
+    private static Set<org.b333vv.metric.library.core.MetricCode> requestedMetrics(
+            Map<String, Threshold> thresholds, Map<String, Double> growth) {
+        Set<org.b333vv.metric.library.core.MetricCode> requested = new java.util.LinkedHashSet<>();
+        thresholds.keySet().forEach(name -> MetricCodeNames.find(name).ifPresent(requested::add));
+        growth.keySet().forEach(name -> MetricCodeNames.find(name).ifPresent(requested::add));
+        return requested;
+    }
+
+    /**
+     * The analysis scope: an explicit {@code --analysis-scope} wins, then the config's
+     * {@code gate. analysis: scope}, then {@code local}.
+     *
+     * <p>Local is the default because it is the only scope whose values are trustworthy without a
+     * classpath, and a gate that publishes unresolved numbers with the same typography as measured ones
+     * is worse than a gate that says it could not measure them.
+     */
+    private org.b333vv.metric.library.core.MetricRequirements.Scope resolveAnalysisScope(
+            ProjectConfig config) {
+        String configured = config.gate() != null ? config.gate().analysis() : null;
+        String value = analysisScope != null ? analysisScope : configured;
+        if (value == null || value.isBlank()) {
+            return org.b333vv.metric.library.core.MetricRequirements.Scope.SYNTAX_LOCAL;
+        }
+        String normalized = value.trim().toLowerCase(java.util.Locale.ROOT);
+        if ("local".equals(normalized)) {
+            return org.b333vv.metric.library.core.MetricRequirements.Scope.SYNTAX_LOCAL;
+        }
+        if ("project".equals(normalized)) {
+            return org.b333vv.metric.library.core.MetricRequirements.Scope.SYMBOL_CONTEXT;
+        }
+        throw new IllegalArgumentException("Invalid gate analysis scope '" + value + "'"
+                + (analysisScope != null ? "" : " in " + config.file())
+                + ". Accepted values: local (default), project.");
     }
 
     /**
