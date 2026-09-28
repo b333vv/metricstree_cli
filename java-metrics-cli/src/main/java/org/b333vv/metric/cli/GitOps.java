@@ -268,6 +268,34 @@ final class GitOps {
         return files;
     }
 
+    /**
+     * Whether a path is a Java source file.
+     *
+     * <p>The extension is checked, case-sensitively, and nothing else is assumed: a path is never
+     * trimmed, normalized or split, so a name containing a newline is judged by its real final
+     * characters. {@code .JAVA} is not accepted because the analyzer's own file selection does not
+     * accept it either, and a manifest that disagreed with the analyzer would produce a changed-file
+     * set the analysis then quietly ignores.
+     */
+    static boolean isJavaPath(String path) {
+        return path != null && path.endsWith(".java");
+    }
+
+    /**
+     * The type of an object, as git reports it ({@code blob}, {@code tree}, {@code commit}).
+     *
+     * <p>Used to tell a real source file from a symlink or a gitlink. Both have an object ID, so the
+     * ID alone cannot answer the question — and reading a symlink's "content" would yield a target
+     * path that is not Java source at all.
+     */
+    static String objectType(Path repoRoot, String objectId) throws GitException {
+        Result result = run(repoRoot, false, "cat-file", "-t", objectId);
+        if (result.exitCode() != 0) {
+            throw new GitException("cannot read the type of git object " + objectId + firstLine(result));
+        }
+        return result.stdout().trim();
+    }
+
     // ---------------------------------------------------------------- content
 
     /**
