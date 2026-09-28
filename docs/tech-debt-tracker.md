@@ -134,6 +134,32 @@
   Anyone treating a corpus diff as evidence should expect this one class to move and should not
   attribute it to their change.
 
+- **ML-010 (2026-09-28) — ordered execution added; DEBT-11 is still open, and this is *not* evidence
+  that it is fixed.** `AnalysisExecution.ORDERED` (single-threaded, path-sorted visitation) now exists and
+  the gate uses it, so a blocking check no longer depends on a worker pool. A public synthetic fixture
+  with cross-file generics, a diamond inheritance chain and unresolvable types was run **20 times in each
+  mode**, comparing all 331 metric values across 49 metrics: no difference was observed in either mode.
+  Two further properties were checked and also held: reversing the order the files are handed to the
+  analyzer changes nothing, and a project analysed after a different one is unaffected.
+
+  **Why this does not close DEBT-11.** The historical failure is one class whose `RFC` read 35 in one
+  run and 34 in another on a 4 020-class corpus, and this fixture does not reproduce it. A small fixture
+  that cannot fail is evidence of nothing about a bug found on a large one, and the packet explicitly
+  forbids claiming DEBT-11 resolved without reproducing its historical case or an equivalent failure.
+  What ML-010 establishes is narrower and worth stating precisely:
+
+  1. A deterministic execution path **exists and is the gate's default**, so the remaining question is
+     scoped to the symbol metrics rather than to the whole verdict.
+  2. On a fixture built specifically to provoke cache-dependent resolution, **no variation was
+     observed** — in parallel *or* ordered mode. Ordered mode therefore cannot be shown to fix anything
+     here; its value is that it removes thread scheduling as a variable.
+  3. **Semantics remain unproven, not proven stable.** If the historical class still moves, it is a
+     resolution outcome inside JavaParser's own caches, which ordered visitation does not touch — the
+     same caches are populated on one thread.
+
+  Re-closing this needs the 4 020-class benchmark corpus run repeatedly in each mode, which is ML-031's
+  measurement rather than a unit test. Until that number exists, DEBT-11 stays open.
+
 - **DEBT-12 — The symbol solver re-parses from disk behind a single JVM-wide-ish lock, and that lock
   is what caps analysis scaling.** Found by TASK-205's profiling (2026-09-17), measured, and left
   unfixed because the lock is JavaParser's and the task scopes the solver as "document, don't fix".

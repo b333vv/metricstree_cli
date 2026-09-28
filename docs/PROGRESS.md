@@ -1,5 +1,50 @@
 # what has been done
 
+## Session: ML-010 — a deterministic path exists; DEBT-11 is still open (2026-09-28)
+
+**A metric value that depends on thread scheduling is not a property of the code.** That is the whole
+concern behind this task. Anything computed from symbol resolution can in principle depend on which class
+another worker happened to finish first, because the solver's caches fill as the run proceeds — which
+would make a CI verdict change when the machine gets busier. `AnalysisExecution` now makes the schedule
+an explicit choice, and the gate takes the deterministic branch: single thread, files visited in sorted
+path order.
+
+**The compatibility work is deliberately inert.** `AnalysisOptions` gained a component, and *every*
+pre-existing constructor is retained and defaults to `PARALLEL`, so no library caller changes behaviour.
+`analyze`, `validate` and `detect` are untouched; only the gate asks for `ORDERED`, and it reports the
+mode in `analysis.execution`.
+
+**Now the part worth reading: the experiment did not reproduce the bug, and I am not claiming it did.**
+
+The fixture is built to be hostile — cross-file generics, a diamond inheritance chain, an interface
+shape, and types that exist nowhere so the cache is recording failures while other work succeeds. It
+yields 331 metric values across 49 distinct metrics, two of them `UNDEFINED`, so the semantic surface
+being compared is real. Twenty repetitions in **both** modes: no difference. Reversing the order the
+files are handed to the analyzer: no difference. A project analysed after a different one: no difference.
+
+**DEBT-11 therefore stays open, and the tracker says so in those words.** The historical failure is one
+class whose `RFC` read 35 in one run and 34 in another across a 4 020-class corpus. This fixture does not
+reproduce that, and a small fixture that *cannot* fail is evidence of nothing about a bug found on a large
+one. Ordered mode does not touch JavaParser's own caches — on one thread they are populated exactly as
+they are on eight — so it cannot be the fix. What ML-010 establishes is narrower: a deterministic path
+exists and is the gate's default, so the open question is scoped to semantic metrics rather than to the
+whole verdict. Closing it needs the benchmark corpus run repeatedly in each mode, which is ML-031's job.
+
+**One test of mine was wrong and I replaced it rather than keeping it.** `orderedExecutionVisitsSortedFiles`
+originally asserted that the report's class order was sorted. I checked that assertion by deleting the
+sort from the analyzer — and it still passed, because the analyzer sorts classes globally before
+reporting, so the assertion was measuring the report's ordering and proving nothing about visit order.
+The test now perturbs the *input* order and asserts the values are unchanged, which is the property a
+user can actually observe. I also verified that one fails when the ordering guarantee is removed, because
+a reproducibility test that cannot fail is a comment with assertions in it.
+
+`resourcesClosedAfterFailure` writes a deliberately unparseable file and asserts the files beside it come
+out with identical values — a run that dies on one bad file must not perturb the rest, and a manager that
+leaked a permit or a unit would show up there.
+
+**Next ready task: ML-011**, full per-revision semantic context in project mode.
+
+
 ## Session: ML-009 — the agent report stopped omitting what it found (2026-09-28)
 
 **A package-level antipattern was detected, counted, and then not written down.** The agent-Markdown

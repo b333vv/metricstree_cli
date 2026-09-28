@@ -39,12 +39,24 @@ import java.util.Set;
  * @param eligibleFiles  the changed Java files that were actually analyzed
  * @param excludedFiles  selected files that configuration excluded
  * @param parsedFiles    selected files that parsed and declared supported types
+ * @param execution      the schedule the run used, so a report says how it was produced
  */
 record AnalysisCompleteness(
         List<CheckEvaluationIssue> issues,
         int eligibleFiles,
         List<String> excludedFiles,
-        List<String> parsedFiles) {
+        List<String> parsedFiles,
+        org.b333vv.metric.library.core.AnalysisExecution execution) {
+
+    /** A completeness record for a run whose schedule is not being reported. */
+    AnalysisCompleteness(
+            List<CheckEvaluationIssue> issues,
+            int eligibleFiles,
+            List<String> excludedFiles,
+            List<String> parsedFiles) {
+        this(issues, eligibleFiles, excludedFiles, parsedFiles,
+                org.b333vv.metric.library.core.AnalysisExecution.PARALLEL);
+    }
 
     AnalysisCompleteness {
         issues = issues.stream().sorted(CheckEvaluationIssue::compareTo).toList();
@@ -187,7 +199,8 @@ record AnalysisCompleteness(
                     path + " was excluded by configuration and was not checked"));
         }
 
-        return new AnalysisCompleteness(issues, subjectPaths.size(), excluded, parsed);
+        return new AnalysisCompleteness(issues, subjectPaths.size(), excluded, parsed,
+                org.b333vv.metric.library.core.AnalysisExecution.ORDERED);
     }
 
     /**

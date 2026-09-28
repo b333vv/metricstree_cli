@@ -858,6 +858,17 @@ Switching to `--analysis-scope project` makes the gate attempt those metrics —
 depend on your classpath being right. It also does not make an unresolved value correct; that is a
 per-check status, reported separately.
 
+**Execution order.** The gate analyses its snapshots on a single thread, visiting files in sorted path
+order. This is deliberate: the gate parses a whole snapshot to measure a handful of changed files, so the
+parallelism available buys almost nothing at this file count, while a metric whose value depended on
+which worker resolved a symbol first would make the verdict a function of machine load. Syntax metrics —
+the ones the default scope measures — are provably independent of this either way; the reproducibility
+fixture runs the full 331-value comparison 20 times in each mode and observes no difference. Semantic
+metrics are a separate question: the analyzer's own caches can still produce a different resolution
+outcome between runs, which is recorded as an open item in [the tech-debt
+tracker](tech-debt-tracker.md) rather than claimed as fixed. The mode used is reported in the run's
+`analysis.execution` field.
+
 **Configuration** comes from `.metrics-gate.yml` (see [Project configuration](#project-configuration-metrics-gateyml)):
 
 ```yaml

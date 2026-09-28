@@ -267,7 +267,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 diagnostics,
                 metricSelection,
                 resolutionStats,
-                options.unresolvedSymbolDiagnosticCap());
+                options.unresolvedSymbolDiagnosticCap(),
+                options);
         List<FileAnalysis> fileAnalyses = pass.fileAnalyses();
         List<SyntaxSupport.FileSupport> syntaxSupport = pass.syntaxSupport();
 
@@ -332,7 +333,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             List<AnalysisDiagnostic> diagnostics,
             MetricSelection metricSelection,
             ResolutionStats resolutionStats,
-            int unresolvedSymbolDiagnosticCap) {
+            int unresolvedSymbolDiagnosticCap,
+            AnalysisOptions options) {
         long phaseStart = System.nanoTime();
 
         // Files named individually on the command line are the one case a source root cannot cover:
@@ -374,12 +376,34 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             fileAnalyses.add(analyzeUnit(explicitFile.path(), explicitFile.compilationUnit(), typeSolver,
                     metricSelection, resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport));
         }
-        fileAnalyses.addAll(runInDedicatedPool(() -> astMemoryManager.parseInWindows(
-                windowedSourceFiles,
-                parserConfiguration,
-                windowDiagnostics -> mergeDiagnostics(diagnostics, windowDiagnostics),
-                (sourceFile, unit) -> analyzeUnit(sourceFile, unit, typeSolver, metricSelection,
-                        resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport))));
+        if (options.execution() == org.b333vv.metric.library.core.AnalysisExecution.ORDERED) {
+            // One thread, sorted files, and no shared state between units. Ordered mode is not about
+            // memory -- the window still bounds residency -- it is about making the visit order a
+            // property of the input rather than of thread scheduling, which is the only way two runs
+            // over the same sources can be compared at all. The residency bound is trivially
+            // satisfied by processing one unit at a time.
+            List<Path> ordered = windowedSourceFiles.stream().sorted().toList();
+            List<AnalysisDiagnostic> parseDiagnostics = new ArrayList<>();
+            for (Path sourceFile : ordered) {
+                astMemoryManager.parseInWindows(
+                        List.of(sourceFile),
+                        parserConfiguration,
+                        parseDiagnostics::addAll,
+                        (file, unit) -> analyzeUnit(file, unit, typeSolver, metricSelection,
+                                resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport))
+                        .forEach(fileAnalyses::add);
+            }
+            if (!parseDiagnostics.isEmpty()) {
+                mergeDiagnostics(diagnostics, parseDiagnostics);
+            }
+        } else {
+            fileAnalyses.addAll(runInDedicatedPool(() -> astMemoryManager.parseInWindows(
+                    windowedSourceFiles,
+                    parserConfiguration,
+                    windowDiagnostics -> mergeDiagnostics(diagnostics, windowDiagnostics),
+                    (sourceFile, unit) -> analyzeUnit(sourceFile, unit, typeSolver, metricSelection,
+                            resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport))));
+        }
 
         if (!fileAnalyses.isEmpty()
                 && fileAnalyses.stream().noneMatch(fileAnalysis -> !fileAnalysis.moduleDescriptor())) {

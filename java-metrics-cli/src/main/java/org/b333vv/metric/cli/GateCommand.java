@@ -2,6 +2,7 @@ package org.b333vv.metric.cli;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import org.b333vv.metric.library.core.AnalysisDiagnostic;
+import org.b333vv.metric.library.core.AnalysisExecution;
 import org.b333vv.metric.library.core.AnalysisOptions;
 import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.ExclusionConfig;
@@ -208,8 +209,15 @@ final class GateCommand implements Callable<Integer> {
             }
         }
 
-        AnalysisOptions options =
-                AnalysisOptions.of(metricSelection.selection()).withExclusions(exclusions);
+        // Ordered execution, deliberately and for now. The gate analyzes a small set of files in
+        // parallel for no useful reason -- there is not enough work to fill a pool -- while paying the
+        // cost that actually matters: a metric whose value depends on which worker resolved a symbol
+        // first would make the verdict a function of machine load. The throughput that PARALLEL buys is
+        // irrelevant at this file count, and reproducibility is the whole product. ML-031 measures both;
+        // until it does, the slower deterministic branch is the right one for a blocking check.
+        AnalysisOptions options = AnalysisOptions.of(metricSelection.selection())
+                .withExclusions(exclusions)
+                .withExecution(AnalysisExecution.ORDERED);
 
         GateEvaluator.Result result;
         List<GateFinding> parseErrors;
