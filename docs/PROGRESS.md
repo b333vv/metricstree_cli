@@ -1,5 +1,22 @@
 # what has been done
 
+## Session: maintainability linter positioning review (2026-09-28)
+
+- Reviewed the analysis library, CLI gate/detection flow, profiles, reports, GitHub Action,
+  documentation, and known debt to assess positioning for agent-assisted Java development.
+- Added `docs/proposals/maintainability-linter-strategy.md` as a proposal, not an approved
+  implementation roadmap. It distinguishes measurements, structural findings, and change policy;
+  recommends an evidence-based maintainability regression workflow and a maintainer pilot.
+- Compared the proposal with primary research and PMD, SonarQube, CodeScene, and ArchUnit
+  documentation. Metric combinations and agent integrations already exist in competing tools;
+  the proposed differentiation needs real-world validation.
+- Confirmed a gate workflow gap using a disposable repository and the packaged CLI: the same
+  method CC increase from 1 to 11 passes before commit (`no changed Java files`) and fails
+  after commit. The proposal also records code-inspection concerns about merge-base consistency,
+  missing relational context, new entities without thresholds, and agent report completeness.
+- No runtime behavior or default rules changed. `./gradlew check` succeeded (test tasks were
+  up-to-date); the temporary-repository CLI probe ran separately.
+
 ## Phase 4: the ecosystem — SARIF output and one config format (2026-09-17)
 
 ### TASK-402 — one config facade, JSON or YAML — done (2026-09-17)

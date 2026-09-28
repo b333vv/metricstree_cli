@@ -4,6 +4,7 @@
 - **Agent Instructions:** `AGENTS.md` — Development workflow and rules
 - **Architecture:** `docs/ARCHITECTURE.md` — System design (create this file)
 - **Work progress:** `docs/PROGRESS.md`
+- **Product positioning proposal:** `docs/proposals/maintainability-linter-strategy.md` — maintainability linting, agent workflows, research, and adoption experiment
 
 ## Road-Map Realization
 - **Implementation plan:** `docs/prd/implementation-plan.md` — staged plan realizing `docs/prd/road-map.md`
