@@ -5,7 +5,10 @@ import com.github.javaparser.ParseResult;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.AnnotationDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.EnumDeclaration;
+import com.github.javaparser.ast.body.RecordDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -39,6 +42,7 @@ import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.library.core.DerivedMetricCalculator;
 import org.b333vv.metric.library.core.MethodReport;
 import org.b333vv.metric.library.core.MetricCode;
+import org.b333vv.metric.library.core.SyntaxSupport;
 import org.b333vv.metric.library.core.MetricReport;
 import org.b333vv.metric.library.core.MetricSelection;
 import org.b333vv.metric.library.core.PackageReport;
@@ -235,13 +239,16 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         List<Path> sourceFiles = resolveSourceFiles(request, diagnostics);
         phaseListener.onPhaseCompleted(
                 AnalysisPhaseListener.Phase.RESOLVE_SOURCES, System.nanoTime() - phaseStart);
+        // Declared before the early return below: a run that resolved no files still has to say so
+        // through the same field every other run uses, rather than through a special case.
         if (sourceFiles.isEmpty()) {
             diagnostics.add(new AnalysisDiagnostic(
                     "NO_SOURCE_FILES",
                     AnalysisSeverity.ERROR,
                     "No Java source files were resolved for analysis",
                     request.sourceRoots().isEmpty() ? null : new SourceLocation(request.sourceRoots().get(0).path(), 1, 1)));
-            return new MetricReport(new ProjectReport(request.projectName(), Map.of(), List.of()), diagnostics);
+            return new MetricReport(new ProjectReport(request.projectName(), Map.of(), List.of()),
+                    diagnostics, SyntaxSupport.empty());
         }
 
         // One tally for the whole run, shared by every collector, so the coverage reported at the end
@@ -254,13 +261,15 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         // once it returns. Pass 2 below therefore runs with only the snapshots reachable, which is
         // what makes "the cross-class metrics are computed after the ASTs are released" a property of
         // the code rather than a convention. See docs/adr/0002-bounded-ast-residency.md.
-        List<FileAnalysis> fileAnalyses = analyzeClasses(
+        Pass1 pass = analyzeClasses(
                 request,
                 sourceFiles,
                 diagnostics,
                 metricSelection,
                 resolutionStats,
                 options.unresolvedSymbolDiagnosticCap());
+        List<FileAnalysis> fileAnalyses = pass.fileAnalyses();
+        List<SyntaxSupport.FileSupport> syntaxSupport = pass.syntaxSupport();
 
         // Files are analysed in path order — the window forces it — but the report must not depend on
         // which order the pool happened to finish them in, and the package sums must add up in the
@@ -298,7 +307,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             mergeDiagnostics(diagnostics, fileAnalysis.diagnostics());
         }
 
-        return new MetricReport(projectReport, diagnostics);
+        return new MetricReport(projectReport, diagnostics, new SyntaxSupport(syntaxSupport));
     }
 
     /**
@@ -317,7 +326,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
      * not finished with it — see {@link #analyze}. What this method does not do is merge it: merging
      * is the caller's job, once the buffer is closed.
      */
-    private List<FileAnalysis> analyzeClasses(
+    private Pass1 analyzeClasses(
             AnalysisRequest request,
             List<Path> sourceFiles,
             List<AnalysisDiagnostic> diagnostics,
@@ -355,16 +364,22 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         // are the one exception, because the in-memory index that resolves them holds them.
         ParserConfiguration parserConfiguration = AnalysisParserConfiguration.create();
         List<FileAnalysis> fileAnalyses = new ArrayList<>();
+        // The window runs one task per worker, so the inventory is collected into a synchronized list.
+        // The order it ends up in does not matter -- every consumer either looks a file up by path or
+        // counts -- but the list has to survive concurrent adds, and a plain ArrayList would lose
+        // entries silently, which is precisely the failure this inventory exists to prevent.
+        List<SyntaxSupport.FileSupport> syntaxSupport =
+                java.util.Collections.synchronizedList(new ArrayList<>());
         for (ParsedFile explicitFile : explicitFiles) {
             fileAnalyses.add(analyzeUnit(explicitFile.path(), explicitFile.compilationUnit(), typeSolver,
-                    metricSelection, resolutionStats, unresolvedSymbolDiagnosticCap));
+                    metricSelection, resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport));
         }
         fileAnalyses.addAll(runInDedicatedPool(() -> astMemoryManager.parseInWindows(
                 windowedSourceFiles,
                 parserConfiguration,
                 windowDiagnostics -> mergeDiagnostics(diagnostics, windowDiagnostics),
                 (sourceFile, unit) -> analyzeUnit(sourceFile, unit, typeSolver, metricSelection,
-                        resolutionStats, unresolvedSymbolDiagnosticCap))));
+                        resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport))));
 
         if (!fileAnalyses.isEmpty()
                 && fileAnalyses.stream().noneMatch(fileAnalysis -> !fileAnalysis.moduleDescriptor())) {
@@ -378,7 +393,7 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
         phaseListener.onPhaseCompleted(AnalysisPhaseListener.Phase.VISIT, System.nanoTime() - phaseStart);
 
-        return fileAnalyses;
+        return new Pass1(fileAnalyses, syntaxSupport);
     }
 
     /**
@@ -742,13 +757,25 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
      * meant a lock per diagnostic on the hot path and, on the parse path, an unguarded write from a
      * worker. The caller merges the buffer once the global pass has stopped writing to it.
      */
+    /**
+     * What pass 1 produced: one analysis per file, and the declaration inventory for all of them.
+     *
+     * <p>A record rather than two return values because the inventory is meaningless apart from the
+     * pass that produced it, and two parallel return lists invite the caller to mix them up.
+     */
+    private record Pass1(
+            List<FileAnalysis> fileAnalyses,
+            List<SyntaxSupport.FileSupport> syntaxSupport) {
+    }
+
     private FileAnalysis analyzeUnit(
             Path sourceFile,
             CompilationUnit compilationUnit,
             TypeSolver typeSolver,
             MetricSelection metricSelection,
             ResolutionStats resolutionStats,
-            int unresolvedSymbolDiagnosticCap) {
+            int unresolvedSymbolDiagnosticCap,
+            List<SyntaxSupport.FileSupport> syntaxSupport) {
         List<AnalysisDiagnostic> diagnostics = new ArrayList<>();
         compilationUnit.setData(Node.SYMBOL_RESOLVER_KEY, new JavaSymbolSolver(typeSolver));
 
@@ -756,8 +783,19 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             // A module descriptor is a source unit but never a type declaration, so it is parsed — a
             // syntax error in module-info.java is still worth reporting — and then kept out of the
             // type pipeline, which has nothing to do with it. See ModuleDescriptorAnalysisTest.
+            syntaxSupport.add(new SyntaxSupport.FileSupport(
+                    sourceFile, 0, 0, 0, 0, false, true, true));
             return new FileAnalysis(sourceFile, true, moduleNameOf(compilationUnit), List.of(), diagnostics);
         }
+
+        // The declaration inventory, taken from the AST before anything is filtered. The class
+        // pipeline only knows about class and interface declarations, so a file made entirely of enums
+        // or records produces an empty class list -- and an empty class list is exactly what a fully
+        // analysed file with no classes looks like. Recording what was there is what keeps the two
+        // distinguishable downstream.
+        int enumCount = compilationUnit.findAll(EnumDeclaration.class).size();
+        int recordCount = compilationUnit.findAll(RecordDeclaration.class).size();
+        int annotationCount = compilationUnit.findAll(AnnotationDeclaration.class).size();
 
         // Sorted within the file so a file's classes are always visited in the same order, whatever
         // order the window's workers finish their files in. The global order is restored once every
@@ -772,6 +810,12 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                         resolutionStats,
                         unresolvedSymbolDiagnosticCap))
                 .toList();
+        boolean packageOnly = classes.isEmpty()
+                && !compilationUnit.getPackageDeclaration().isPresent()
+                && !compilationUnit.getModule().isPresent()
+                && enumCount == 0 && recordCount == 0 && annotationCount == 0;
+        syntaxSupport.add(new SyntaxSupport.FileSupport(sourceFile, classes.size(), enumCount,
+                recordCount, annotationCount, packageOnly, false, true));
         return new FileAnalysis(sourceFile, false, null, classes, diagnostics);
     }
 

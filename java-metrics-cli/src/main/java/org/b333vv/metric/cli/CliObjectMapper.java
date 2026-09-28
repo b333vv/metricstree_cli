@@ -2,6 +2,7 @@ package org.b333vv.metric.cli;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -151,6 +152,22 @@ final class CliObjectMapper {
     @JsonPropertyOrder({"project", "diagnostics"})
     @JsonIgnoreProperties({"packages", "classes", "methods", "hasDiagnostics", "hasWarnings", "hasErrors"})
     interface MetricReportMixin {
+
+        /**
+         * The parser's declaration inventory is deliberately <em>not</em> part of the wire shape.
+         *
+         * <p>{@code analyze} writes a metrics catalogue, and its JSON is a frozen contract that
+         * TASK-001 goldens compare byte for byte. The inventory answers "what was in that file that you
+         * did not measure", which is a question the catalogue's consumers do not ask — they asked for
+         * metrics and got them. Emitting it would add a key to every existing report to serve a case
+         * that has exactly one consumer, {@code gate}, which reads the value in memory.
+         *
+         * <p>So the field is available to the programmatic API that needs it and absent from the file
+         * format that does not. A future version of the report contract can add it deliberately, with
+         * the goldens regenerated on purpose.
+         */
+        @JsonIgnore
+        org.b333vv.metric.library.core.SyntaxSupport syntaxSupport();
     }
 
     /**

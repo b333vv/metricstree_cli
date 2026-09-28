@@ -12,10 +12,43 @@ final class AgentMarkdownReportWriter {
                 .append("- **Base:** ").append(view.base()).append('\n')
                 .append("- **Changed Java files:** ").append(view.changedFiles()).append('\n')
                 .append("- **Violations:** ").append(view.violations().size()).append('\n')
-                .append("- **Warnings:** ").append(view.warnings().size()).append("\n\n");
+                .append("- **Warnings:** ").append(view.warnings().size()).append('\n');
+        appendGateCompleteness(out, view);
         appendGateFindings(out, "Violations", view.violations());
         appendGateFindings(out, "Warnings", view.warnings());
         return out.toString();
+    }
+
+    /**
+     * The completeness block, rendered for an agent that will act on the report.
+     *
+     * <p>Placed before the findings, and marked required/optional per issue, because an agent reading
+     * this document needs to know what it is not allowed to conclude. A report listing zero violations
+     * with a required gap reads as an all-clear unless something says the gate could not look at part
+     * of the change -- and an agent that treats it as an all-clear will report a success it cannot
+     * support.
+     */
+    private void appendGateCompleteness(StringBuilder out, GateCommand.GateReportView view) {
+        AnalysisCompleteness analysis = view.analysis();
+        out.append("\n");
+        if (analysis == null || analysis.issues().isEmpty()) {
+            out.append("Every required check was evaluated.\n\n");
+            return;
+        }
+        out.append("## Could not be evaluated\n\n")
+                .append("A check listed here was not performed. Its absence is not a result: it is an "
+                        + "input the gate could not reach.\n\n")
+                .append("| Required | Code | File | Detail |\n")
+                .append("|---|---|---|---|\n");
+        for (CheckEvaluationIssue issue : analysis.issues()) {
+            out.append("| ").append(issue.required() ? "yes" : "no")
+                    .append(" | `").append(issue.reasonCode()).append('`')
+                    .append(" | ").append(issue.file() == null ? "—" : "`" + issue.file() + "`")
+                    .append(" | ").append(issue.message()).append(" |\n");
+        }
+        out.append("\n")
+                .append("Analyzed files: ").append(analysis.parsedFiles().size())
+                .append(" of ").append(analysis.eligibleFiles()).append(".\n\n");
     }
 
     String forValidate(String status, List<ValidateCommand.MetricValidationResult> results,

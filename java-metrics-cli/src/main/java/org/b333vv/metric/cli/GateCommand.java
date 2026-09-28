@@ -151,30 +151,55 @@ final class GateCommand implements Callable<Integer> {
         // The changed Java files that still exist on the after side. Deleted paths are ignored by
         // design, and a diff with no surviving Java file is a legitimate pass -- but it is a pass
         // over nothing, and the report says so rather than claiming a checked file set.
+        ExclusionConfig exclusions = loadExclusions(config);
         Set<String> subjectPaths = new java.util.LinkedHashSet<>();
+        List<String> excludedPaths = new ArrayList<>();
         for (String relative : plan.afterSnapshotPaths()) {
             if (plan.unsupported().contains(relative)) {
                 // Recorded as an issue on the snapshot; not analyzed, and not silently absent either.
+                continue;
+            }
+            // The exclusion decision is made here rather than left to the analyzer, because the gate
+            // passes explicit source units: the analyzer derives an FQCN by relativizing against a
+            // source root, and the gate has none, so it would compare patterns against a file path and
+            // silently match nothing. A silently ineffective exclusion is worse than no exclusion --
+            // it is a rule the config file appears to express and the tool does not apply.
+            if (exclusions.isExcluded(qualifiedNameOf(relative))) {
+                excludedPaths.add(relative);
                 continue;
             }
             subjectPaths.add(relative);
         }
 
         if (subjectPaths.isEmpty()) {
-            stderr.println(describeEmptyDiff(plan));
+            // Nothing survived exclusion or deletion. The report still has to say so: "no changed
+            // Java files" and "every changed file was excluded" are different sentences, and a reader
+            // who saw the first would conclude their change was reviewed.
+            String verdict = excludedPaths.isEmpty()
+                    ? describeEmptyDiff(plan)
+                    : "PASSED: " + excludedPaths.size() + " changed file"
+                            + (excludedPaths.size() == 1 ? "" : "s")
+                            + ", all excluded by configuration and none checked";
+            stderr.println(verdict);
             stderr.flush();
             flushWarnings(warningBuffer);
             if (outputFile != null) {
                 writeReport(effectiveFormat, "PASSED",
                         new GateReportView("PASSED", base, 0, List.of(), List.of(), List.of(),
-                                comparison(plan, null, null, null)));
+                                comparison(plan, null, null, null),
+                                new AnalysisCompleteness(
+                                        excludedPaths.stream()
+                                                .map(path -> CheckEvaluationIssue.optional(path,
+                                                        "excluded", path
+                                                                + " was excluded by configuration and was not checked"))
+                                                .toList(),
+                                        0,
+                                        excludedPaths,
+                                        List.of())));
             }
             return 0;
         }
 
-        // The metrics this run needs are exactly the ones the config and flags asked about — never
-        // "all of them". A local run therefore only runs the audited syntax visitors, and every
-        // requested metric it cannot measure is recorded rather than approximated.
         GateMetricSelection metricSelection = GateMetricSelection.forMetrics(
                 requestedMetrics(thresholds, growth), resolveAnalysisScope(config));
         if (!metricSelection.isComplete()) {
@@ -183,12 +208,12 @@ final class GateCommand implements Callable<Integer> {
             }
         }
 
-        ExclusionConfig exclusions = loadExclusions(config);
         AnalysisOptions options =
                 AnalysisOptions.of(metricSelection.selection()).withExclusions(exclusions);
 
         GateEvaluator.Result result;
         List<GateFinding> parseErrors;
+        AnalysisCompleteness completeness;
         // Digests are captured inside the try-with-resources, while the roots still exist, and used
         // after it closes -- the snapshots are the evidence, the roots are an implementation detail.
         String[] digests = new String[2];
@@ -203,6 +228,7 @@ final class GateCommand implements Callable<Integer> {
                     "gate-base", List.of(), before.units(), List.of(), options));
 
             parseErrors = parseErrors(currentReport, after, subjectPaths);
+            Set<String> unparseableBase = unparseableBaseFiles(baseReport, before);
             result = GateEvaluator.evaluate(
                     baseReport,
                     currentReport,
@@ -212,7 +238,26 @@ final class GateCommand implements Callable<Integer> {
                     thresholds,
                     growth,
                     failOn,
-                    unparseableBaseFiles(baseReport, before));
+                    unparseableBase);
+
+            // What the run could not evaluate, decided from the report's own declaration inventory
+            // rather than from the file list. A file that declares only enums has no classes to check,
+            // and without this it is indistinguishable from a file that was checked and found clean.
+            // A file the analysis excluded is counted as excluded, not as analysed. The analyzer knows
+            // which classes it dropped, so the answer is looked up rather than inferred from a report
+            // that simply has no entry for the file.
+            List<String> excludedFiles = excludedPaths;
+
+            completeness = AnalysisCompleteness.of(
+                    currentReport,
+                    after,
+                    subjectPaths,
+                    requestedMetrics(thresholds, growth),
+                    unparseableBase,
+                    metricSelection.unavailable(),
+                    plan.unsupported(),
+                    excludedFiles,
+                    parseErrors.stream().map(GateFinding::file).distinct().toList());
         } catch (SnapshotMaterializer.UnstableSourceException exception) {
             // The working tree moved while it was being read. Reporting this as a gate failure would
             // blame the code for an editor saving a file; reporting it as a pass would publish a
@@ -231,24 +276,45 @@ final class GateCommand implements Callable<Integer> {
         List<GateFinding> violations = new ArrayList<>(parseErrors);
         violations.addAll(result.violations());
 
+        // Verdict precedence, in exactly this order. A parse error or an eligible blocking finding is a
+        // FAILED regardless of anything else -- the code is broken, and no amount of missing evidence
+        // changes that. Only when nothing failed can incompleteness matter, and then it is INCOMPLETE
+        // rather than PASSED, because "no finding" and "no finding could be established" are different
+        // answers and a gate that conflates them is worse than one that does not run.
+        String status;
+        int exitCode;
+        if (!violations.isEmpty()) {
+            status = "FAILED";
+            exitCode = 1;
+        } else if (completeness.hasRequiredGaps()) {
+            status = "INCOMPLETE";
+            exitCode = 2;
+        } else {
+            status = "PASSED";
+            exitCode = 0;
+        }
+
         // The verdict is printed first, and buffered config warnings after it. A CI log is read top
         // down and often truncated: the line that decides the build has to be the one that cannot be
         // cut off, and a config warning printed above it both hides the verdict and makes a
         // passing-looking build the first thing a reviewer sees.
-        String verdict = verdictLine(violations, result.warnings(), subjectPaths.size());
+        String verdict = verdictLine(status, violations, result.warnings(), subjectPaths.size(),
+                completeness);
         stderr.println(verdict);
         stderr.flush();
         flushWarnings(warningBuffer);
 
+        // The report is written for an incomplete run too. That is the case a reader most needs it:
+        // the verdict line says something could not be checked, and only the report says what.
         if (outputFile != null) {
-            writeReport(effectiveFormat, violations.isEmpty() ? "PASSED" : "FAILED",
-                    new GateReportView(violations.isEmpty() ? "PASSED" : "FAILED", base,
-                            subjectPaths.size(), violations, result.warnings(),
-                            byFile(violations, result.warnings()),
-                            comparison(plan, subjectPaths, digests[0], digests[1])));
+            writeReport(effectiveFormat, status,
+                    new GateReportView(status, base, subjectPaths.size(), violations,
+                            result.warnings(), byFile(violations, result.warnings()),
+                            comparison(plan, subjectPaths, digests[0], digests[1]),
+                            completeness));
         }
         stdout.flush();
-        return violations.isEmpty() ? 0 : 1;
+        return exitCode;
     }
 
     /**
@@ -355,6 +421,21 @@ final class GateCommand implements Callable<Integer> {
                 afterDigest,
                 subjectPaths == null ? List.of() : List.copyOf(subjectPaths),
                 plan.unsupported());
+    }
+
+    /**
+     * The qualified class name a repository-relative Java path stands for.
+     *
+     * <p>Derived from the path, because that is the only thing available before parsing and the only
+     * thing exclusion patterns are matched against. {@code app/service/Order.java} becomes
+     * {@code app.service.Order} — the same convention {@code deriveFqcn} uses for source roots, so a
+     * pattern that works in a config file written for {@code analyze} also works here.
+     */
+    static String qualifiedNameOf(String relativePath) {
+        String withoutExtension = relativePath.endsWith(".java")
+                ? relativePath.substring(0, relativePath.length() - ".java".length())
+                : relativePath;
+        return withoutExtension.replace('/', '.');
     }
 
     /**
@@ -472,18 +553,51 @@ final class GateCommand implements Callable<Integer> {
     }
 
     /**
-     * The one line a CI log shows. Counts by type first, then the single worst finding — the
-     * PRD's contract: "so the CI log needs no drill-down".
+     * The one line a CI log shows.
+     *
+     * <p>Three answers, not two. A failed gate names the counts and the worst finding, because a
+     * developer needs to know what to fix first. An incomplete gate names how many required checks
+     * could not be evaluated, because "INCOMPLETE" alone invites a rerun-with-more-verbosity as the
+     * next action, whereas a count points at the report and names the problem as coverage. A passed
+     * gate says what it checked, and mentions optional gaps without letting them turn a real pass
+     * into an error.
      */
     private static String verdictLine(
-            List<GateFinding> violations, List<GateFinding> warnings, int changedFiles) {
-        if (violations.isEmpty()) {
-            String line = "PASSED: " + changedFiles + " changed files, no violations";
-            if (!warnings.isEmpty()) {
-                line += " (" + warnings.size() + " warning" + (warnings.size() == 1 ? "" : "s") + ")";
-            }
-            return line;
+            String status,
+            List<GateFinding> violations,
+            List<GateFinding> warnings,
+            int changedFiles,
+            AnalysisCompleteness completeness) {
+        if ("FAILED".equals(status)) {
+            return failedLine(violations, warnings, changedFiles);
         }
+        if ("INCOMPLETE".equals(status)) {
+            int required = completeness.requiredGapCount();
+            int optional = completeness.optionalGapCount();
+            return "INCOMPLETE: " + required + " required check" + (required == 1 ? "" : "s")
+                    + " could not be evaluated across " + changedFiles + " changed file"
+                    + (changedFiles == 1 ? "" : "s")
+                    + " — see the report for what is missing"
+                    + (optional > 0
+                            ? " (" + optional + " optional check" + (optional == 1 ? "" : "s")
+                                    + " also unavailable)"
+                            : "");
+        }
+        String line = "PASSED: " + changedFiles + " changed file" + (changedFiles == 1 ? "" : "s")
+                + ", no violations"
+                + (warnings.isEmpty() ? "" : " (" + warnings.size() + " warning"
+                        + (warnings.size() == 1 ? "" : "s") + ")");
+        int optional = completeness.optionalGapCount();
+        if (optional > 0) {
+            line += "; " + optional + " optional check" + (optional == 1 ? "" : "s")
+                    + " could not be evaluated";
+        }
+        return line;
+    }
+
+    /** The failed case: counts by type first, then the single worst finding. */
+    private static String failedLine(
+            List<GateFinding> violations, List<GateFinding> warnings, int changedFiles) {
         Map<GateFinding.Type, Integer> counts = new LinkedHashMap<>();
         for (GateFinding violation : violations) {
             counts.merge(violation.type(), 1, Integer::sum);
@@ -571,7 +685,8 @@ final class GateCommand implements Callable<Integer> {
             List<GateFinding> violations,
             List<GateFinding> warnings,
             List<GateFileView> byFile,
-            GateComparisonView comparison) {
+            GateComparisonView comparison,
+            AnalysisCompleteness analysis) {
     }
 
     /**

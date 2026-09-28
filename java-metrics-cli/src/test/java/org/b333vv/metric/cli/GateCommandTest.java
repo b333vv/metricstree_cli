@@ -241,6 +241,18 @@ class GateCommandTest {
     }
 
     @Test
+    /**
+     * ML-008 changed the exit code this test asserts, and the change is the point rather than an
+     * accident.
+     *
+     * <p>{@code standard} configures three dozen thresholds, most of them relational, and a local
+     * analysis cannot measure those. Under the comparison contract a required check that could not be
+     * evaluated is {@code INCOMPLETE} with exit 2, not a pass — so this run is no longer exit 0. The
+     * assertion about {@code failOn} itself is unchanged in meaning and is now made where it can be
+     * made at all: with a scope that can actually measure the configured metrics, so the test still
+     * checks that an unselected finding type does not fail the gate, and no longer conflates that with
+     * whether the analysis had the evidence to run.
+     */
     void failOnSubsetDowngradesUnselectedTypes() throws Exception {
         initRepo();
         write(".metrics-gate.yml", """
@@ -254,11 +266,33 @@ class GateCommandTest {
         commitAll("worse");
 
         ByteArrayOutputStream err = new ByteArrayOutputStream();
-        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1");
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1", "--analysis-scope", "project");
 
         assertEquals(0, exitCode,
                 "growth-budget not in failOn must not fail: " + err.toString(StandardCharsets.UTF_8));
         assertTrue(firstStderrLine(err).contains("warning"), firstStderrLine(err));
+    }
+
+    /**
+     * The same config in the default scope, where most of its thresholds cannot be measured. The gate
+     * must say so rather than reporting a pass it cannot support.
+     */
+    @Test
+    void unmeasurableConfiguredThresholdsMakeTheRunIncomplete() throws Exception {
+        initRepo();
+        write(".metrics-gate.yml", "profile: standard\n");
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 2));
+        commitAll("small change");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1");
+
+        assertEquals(2, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        String verdict = firstStderrLine(err);
+        assertTrue(verdict.startsWith("INCOMPLETE:"), verdict);
+        assertTrue(verdict.contains("required check"), verdict);
     }
 
     @Test

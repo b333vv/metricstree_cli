@@ -7,7 +7,33 @@ import java.util.Optional;
 /**
  * Neutral analysis result returned by the public Java metrics facade.
  */
-public record MetricReport(ProjectReport project, List<AnalysisDiagnostic> diagnostics) {
+public record MetricReport(
+        ProjectReport project,
+        List<AnalysisDiagnostic> diagnostics,
+        SyntaxSupport syntaxSupport) {
+
+    /**
+     * The two-argument form every existing caller uses.
+     *
+     * <p>Kept because {@code MetricReport} is the public result of the library's facade: adding a
+     * component to the record changes its canonical constructor, and every consumer compiled against the
+     * old shape would break. The new field is therefore additive with a defined empty value, not a
+     * breaking change — a report built by older code says nothing about declarations it never counted.
+     */
+    public MetricReport(ProjectReport project, List<AnalysisDiagnostic> diagnostics) {
+        this(project, diagnostics, SyntaxSupport.empty());
+    }
+
+    /**
+     * Whether any file declared types the analyzer did not analyse.
+     *
+     * <p>The question a consumer actually needs. A report with no classes and no unsupported
+     * declarations is complete; a report with no classes and some enums is not, and the difference is
+     * invisible everywhere else in the model.
+     */
+    public boolean hasUnsupportedDeclarations() {
+        return syntaxSupport.files().stream().anyMatch(SyntaxSupport.FileSupport::hasUnsupportedDeclarations);
+    }
 
     /**
      * Total order over diagnostics.

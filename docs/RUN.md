@@ -769,6 +769,21 @@ The full JSON report (`--output`) carries `status`, `base`, `violations` (with `
 }
 ```
 
+and an additive `analysis` block saying what could not be evaluated at all:
+
+```json
+"analysis": {
+  "issues": [
+    { "reasonCode": "unsupported-declaration", "file": "app/Colour.java", "required": true,
+      "message": "app/Colour.java declares 1 enum, which are not analysed as classes or methods" }
+  ],
+  "eligibleFiles": 2, "excludedFiles": [], "parsedFiles": ["app/Demo.java"]
+}
+```
+
+The JSON, HTML and agent-Markdown reports all carry this, and all three name the stable reason code so a
+consumer can match on it rather than on prose.
+
 The SHAs and the digests are what make a report checkable after the fact: `base` is a ref that moves,
 so two runs against the same ref can be two different comparisons, and only the resolved identifiers
 say whether they were. A selected Java path that cannot be read as source — a symlink, a submodule

@@ -140,11 +140,47 @@ final class HtmlReportWriter {
         card(cards, view.changedFiles(), "Changed files");
         card(cards, view.violations().size(), "Violations");
         card(cards, view.warnings().size(), "Warnings");
+        AnalysisCompleteness analysis = view.analysis();
+        if (analysis != null) {
+            // Only shown when there is something to show. A "0 gaps" card next to "0 violations"
+            // reads as reassurance, which is right, but adding it to every report would bury the
+            // number that matters on the reports that have gaps.
+            card(cards, analysis.requiredGapCount(), "Unevaluated checks");
+        }
 
         StringBuilder body = new StringBuilder();
+        gateCompletenessSection(body, analysis);
         gateSection(body, "Violations", view.violations());
         gateSection(body, "Warnings", view.warnings());
         return page("Metrics gate report", "base " + view.base(), cards, body);
+    }
+
+    /**
+     * The unevaluated checks, rendered only when the run has some.
+     *
+     * <p>Open by default even though the findings sections are also open, because a reader who lands on
+     * an INCOMPLETE report needs the reason before the (possibly empty) findings list -- an empty
+     * violations table under a green-looking status is the exact misreading this section prevents.
+     */
+    private static void gateCompletenessSection(StringBuilder body, AnalysisCompleteness analysis) {
+        if (analysis == null || analysis.issues().isEmpty()) {
+            return;
+        }
+        body.append("<details class=\"section\" open><summary><span>Could not be evaluated</span>"
+                + "<span class=\"count\">").append(analysis.issues().size())
+                .append("</span></summary>");
+        body.append("<p class=\"note\">A check listed here was not performed. Its absence is not "
+                + "a result: it is an input the gate could not reach.</p>");
+        body.append("<table><tr><th>Required</th><th>Code</th><th>File</th><th>Detail</th></tr>");
+        for (CheckEvaluationIssue issue : analysis.issues()) {
+            body.append("<tr><td>").append(issue.required() ? "yes" : "no")
+                    .append("</td><td class=\"mono\">").append(esc(issue.reasonCode()))
+                    .append("</td><td class=\"path\">")
+                    .append(esc(issue.file() == null ? "—" : issue.file()))
+                    .append("</td><td>").append(esc(issue.message())).append("</td></tr>");
+        }
+        body.append("</table><p class=\"note\">Analyzed ").append(analysis.parsedFiles().size())
+                .append(" of ").append(analysis.eligibleFiles()).append(" changed files.</p></details>");
     }
 
     private static void gateSection(StringBuilder body, String title, List<GateFinding> findings) {

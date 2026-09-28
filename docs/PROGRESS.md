@@ -1,5 +1,80 @@
 # what has been done
 
+## Session: ML-008 — a `PASSED` you cannot support is no longer a `PASSED` (2026-09-28)
+
+**"Nothing was found" and "nothing could be established" printed the same thing.** That is the entire
+task. A symlinked source file, a file of enums, a threshold the analysis scope could not measure, a value
+that came out `NaN` — each one removed a comparison from the run, and each one left a green `PASSED`
+claiming the change was fine. The claim was supported by nothing and looked exactly like a claim that was.
+
+`AnalysisCompleteness` decides what the run could not reach, from evidence rather than from the file list,
+and the verdict has three answers instead of two. Precedence is strict: a parse error or an eligible
+blocking finding is `FAILED` even when the run is *also* incomplete, because a failure masked by a
+coverage complaint is a failure somebody goes hunting for later. Only when nothing failed can
+incompleteness matter, and then the answer is `INCOMPLETE` with exit 2.
+
+**The enum case was the sharpest one, and it is a real product consequence.** The analyzer visits
+`ClassOrInterfaceDeclaration`. A file of enums therefore produced *no classes at all* — and a report of
+no classes is indistinguishable from a report of a fully checked file that had nothing wrong. So the
+parser's own declaration inventory now travels with the report (`SyntaxSupport`, additive, old
+constructor preserved), derived from the AST rather than from a regex over the text, because a regex
+would have to guess about an `enum` inside a string literal and an over-count turns a supported file
+into a false alarm. `enumOrRecordOnlyFileCannotAppearFullyChecked` pins it;
+`packageInfoIsNotAnUnsupportedClass` pins the exemption, since a false alarm here trains people to
+ignore the signal.
+
+**A missing value is never a zero.** `NaN`, the infinities and `Value.UNDEFINED` are reported as
+unmeasured. This needed identity comparison against the `Value` singletons, not `doubleValue()`:
+`UNDEFINED` and `INFINITY` both return `0.0`, so a numeric reading would have reported a real zero for a
+value that was never measured — exactly the substitution that turns "unknown" into "good" for every
+threshold whose minimum is zero, which is most of them. `nanInfinityAndUndefinedNeverUndefined` also
+asserts a real `0.0` is *not* unavailable, because that direction would fail every class with no fields.
+
+**A defect found on the way: exclusions did nothing.** The gate passes explicit source units, and the
+analyzer derives a class's qualified name by relativizing it against a *source root* — of which the gate
+has none. So exclusion patterns were matched against a file path and silently matched nothing. A
+silently ineffective rule is worse than no rule: the config file appears to express it. The gate now
+makes the decision itself from the repository-relative path, and `allExcludedReportsCounts` shows the
+counts (`excludedFiles: 1`, `parsedFiles: 0`) plus a verdict that says "all excluded by configuration
+and none checked" rather than "no changed Java files".
+
+**The compatibility cost, stated plainly.** `standard` configures three dozen thresholds and `local`
+cannot measure most of them, so a default `gate -p standard` run now exits 2 with `INCOMPLETE`. That is
+the contract doing what it says, and it is a large behavioural change. `failOnSubsetDowngradesUnselectedTypes`
+was moved to `--analysis-scope project` — where it tests what its name says, that an unselected finding
+type does not fail the gate — and a new `unmeasurableConfiguredThresholdsMakeTheRunIncomplete` pins the
+new behaviour. I changed an existing test's mode rather than its assertion, and I say so here because a
+test quietly adjusted to match new code is exactly how a regression gets shipped.
+
+The `analyze` catalogue is untouched: `MetricReport`'s new `syntaxSupport` component is `@JsonIgnore`d,
+so the TASK-001 goldens pass **without regeneration**. One consumer needs the field and it reads it in
+memory; a wire-format change serving a single caller is not a trade worth making.
+
+Verified against the installed distribution. Real output on this repository:
+
+```
+INCOMPLETE: 3 required checks could not be evaluated across 6 changed files — see the report for what is missing
+EXIT=2
+  unsupported-declaration | java-metrics-cli/.../GateCommand.java
+  unsupported-declaration | java-metrics-cli/.../GateMetricSelection.java
+  unsupported-declaration | java-metrics-lib/.../MetricReport.java
+```
+
+and, with a threshold file that also configures `CBO`, the failure outranks the gap:
+
+```
+FAILED: 1 growth budget breach — worst: WMC grew 79→102 (+23), budget is 20 in …/GateCommand.java
+WARNING: CBO is computed from resolved collaborators across the project, so it needs a classpath as well
+         as analysis scope 'project', or it cannot be measured at all
+```
+
+Those three `unsupported-declaration` hits are the tool being correct about itself: those files *do*
+contain `record` declarations, and records are genuinely not measured as classes and methods yet.
+Making them measurable is out of scope here and is the most useful next thing the plan could do.
+
+**Next ready task: ML-009**, repairing the existing agent-detection evidence and its misleading text.
+
+
 ## Session: ML-007 — a local run can no longer report a number it did not measure (2026-09-28)
 
 **A value computed from evidence that was missing is not a smaller true value.** That is the whole of
