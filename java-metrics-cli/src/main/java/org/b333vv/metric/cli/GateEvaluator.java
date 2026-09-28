@@ -35,10 +35,10 @@ import java.util.Set;
  * breaking the parser. {@code worsened} is a warning: worse than base, still within every bound.
  *
  * <h2>Direction of "worse"</h2>
- * <p>Ceiling metrics ({@code min == 0}, complexity-style) get worse when they grow; floor
- * metrics ({@code min > 0}, cohesion-style ratios) get worse when they shrink. The heuristic is
- * documented rather than configured because the threshold table already encodes it: a metric
- * whose configured minimum is zero is a count that can only be too big.
+ * <p>Read from the configured bounds — see {@link #worsened}. A ceiling-only metric gets worse when
+ * it grows, a floor-only metric when it shrinks, and a two-sided interval only when the value moves
+ * <em>outside</em> it. This used to be inferred from the sign of {@code min}, which mistook a
+ * sentinel minimum for a statement about the metric; ML-001 replaced it with the configured answer.
  */
 final class GateEvaluator {
 
@@ -123,7 +123,7 @@ final class GateEvaluator {
                 continue;
             }
             double value = metric.getValue();
-            if (within(value, threshold)) {
+            if (threshold.contains(value)) {
                 continue;
             }
             GateFinding finding = new GateFinding(
@@ -139,9 +139,8 @@ final class GateEvaluator {
                     null,
                     Severity.forOutOfRange(value, threshold.min(), threshold.max()),
                     entity.kind() + " " + entity.display() + " is new and " + metric.getKey().name()
-                            + " " + format(value) + " is outside [" + format(threshold.min())
-                            + ", " + format(threshold.max()) + "]");
-            add(finding, overshoot(value, threshold), failOn, candidates, warnings);
+                            + " " + format(value) + " is outside " + threshold.describe());
+            add(finding, threshold.overshoot(value), failOn, candidates, warnings);
         }
     }
 
@@ -169,8 +168,8 @@ final class GateEvaluator {
             boolean crossing = false;
 
             if (threshold != null) {
-                boolean baseIn = within(baseValue, threshold);
-                boolean nowIn = within(value, threshold);
+                boolean baseIn = threshold.contains(baseValue);
+                boolean nowIn = threshold.contains(value);
                 if (baseIn && !nowIn) {
                     crossing = true;
                     GateFinding finding = new GateFinding(
@@ -186,9 +185,8 @@ final class GateEvaluator {
                             null,
                             Severity.forOutOfRange(value, threshold.min(), threshold.max()),
                             name + " " + format(baseValue) + "→" + format(value)
-                                    + " crossed out of [" + format(threshold.min()) + ", "
-                                    + format(threshold.max()) + "] (was passing)");
-                    add(finding, overshoot(value, threshold), failOn, candidates, warnings);
+                                    + " crossed out of " + threshold.describe() + " (was passing)");
+                    add(finding, threshold.overshoot(value), failOn, candidates, warnings);
                 }
             }
 
@@ -227,18 +225,34 @@ final class GateEvaluator {
                         null,
                         name + " " + format(baseValue) + "→" + format(value)
                                 + (threshold != null
-                                        ? ", still within [" + format(threshold.min()) + ", "
-                                                + format(threshold.max()) + "]"
+                                        ? ", still within " + threshold.describe()
                                         : ", within budget " + format(budget))));
             }
         }
     }
 
     /**
-     * "Worse than base, but not worse enough to fail": the warning band. A metric with a
-     * configured growth budget worsens on increase (the budget itself is an allowed increase);
-     * a floor metric (min &gt; 0, cohesion-style ratio) worsens on decrease; everything else —
-     * the complexity metrics the threshold tables are full of — worsens on increase.
+     * "Worse than base, but not worse enough to fail": the warning band.
+     *
+     * <p>Direction comes from the bound the policy actually configured, not from a guess about what
+     * the metric means. The previous rule inferred it from the sign of {@code min} ({@code min > 0}
+     * meant "a ratio, so shrinking is worse"), which conflated "the user wrote a positive floor" with
+     * "the user wrote a floor at all" and so mis-judged every max-only ceiling — those carry a
+     * sentinel minimum, and the rule read the sentinel as an increase-only metric for the wrong
+     * reason, while a genuine two-sided interval was reported as deteriorating in a direction the
+     * policy never expressed.
+     *
+     * <ul>
+     *   <li><b>Growth budget</b> — directional by definition: the budget is an allowed increase, so
+     *       only an increase can exceed it. Unchanged.</li>
+     *   <li><b>Ceiling only</b> — the bad direction is up. This is the case the heuristic got right
+     *       by accident and now gets right by reading the configuration.</li>
+     *   <li><b>Floor only</b> — the bad direction is down.</li>
+     *   <li><b>Both sides</b> — no universal bad direction exists, so only distance <em>outside</em>
+     *       the interval is deterioration. Inside-to-inside movement is not reported: 0.4 &#8594; 0.5
+     *       inside {@code [0.33, 1.0]} is a change, not a regression, and warning about it produces
+     *       noise a reviewer has to dismiss by hand.</li>
+     * </ul>
      */
     private static boolean worsened(
             Threshold threshold, Double budget, double baseValue, double value) {
@@ -248,10 +262,16 @@ final class GateEvaluator {
         if (budget != null) {
             return value > baseValue;
         }
-        if (threshold != null && threshold.min() > 0) {
+        if (threshold == null) {
+            return false;
+        }
+        if (threshold.hasMax() && !threshold.hasMin()) {
+            return value > baseValue;
+        }
+        if (threshold.hasMin() && !threshold.hasMax()) {
             return value < baseValue;
         }
-        return value > baseValue;
+        return threshold.overshoot(value) > threshold.overshoot(baseValue);
     }
 
     private static void add(
@@ -268,20 +288,6 @@ final class GateEvaluator {
         }
     }
 
-    private static boolean within(double value, Threshold threshold) {
-        return value >= threshold.min() && value <= threshold.max();
-    }
-
-    /** How far outside the bound — the tie-break that makes "worst" mean "furthest over". */
-    private static double overshoot(double value, Threshold threshold) {
-        if (value > threshold.max()) {
-            return value - threshold.max();
-        }
-        if (value < threshold.min()) {
-            return threshold.min() - value;
-        }
-        return 0;
-    }
 
     private record Scored(GateFinding finding, double magnitude) {
     }

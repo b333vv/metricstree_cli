@@ -171,9 +171,9 @@ final class SarifReportWriter {
     /**
      * Names the bound that was crossed, so the message is readable without the thresholds file.
      *
-     * <p>Only one bound can be crossed, and it is always one the file actually configured:
-     * {@code ValidateCommand} fills a missing bound with {@code Double.MIN_VALUE} /
-     * {@code Double.MAX_VALUE}, and no value is outside those. So the sentinels never reach a message.
+     * <p>Only one bound can be crossed, and it is always one the file actually configured: an omitted
+     * bound becomes a sentinel ({@code -Double.MAX_VALUE} / {@code Double.MAX_VALUE}) that no metric
+     * value can be outside of. So the sentinels never reach a message — see {@code Threshold#of}.
      */
     private static String describeViolation(ValidateCommand.MetricValidationResult result) {
         boolean belowMinimum = result.value() < result.expectedMin();

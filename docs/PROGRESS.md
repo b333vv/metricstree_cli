@@ -1,5 +1,56 @@
 # what has been done
 
+## Session: ML-001 — repair and validate threshold bounds (2026-09-28)
+
+**A max-only threshold rejected the value it was written to allow.** `ConfigLoader` filled an omitted
+bound with `Double.MIN_VALUE` — the smallest *positive* double (`4.9e-324`) — and the check is
+`value >= min && value <= max`, so `"CBO": { "max": 0 }` failed `CBO == 0` and told the user
+`"CBO is 0.0, below the configured minimum 4.9E-324"`: a bound the file never contained. This was not
+hypothetical. The shipped `golden-config/thresholds.json` contains exactly that entry and the golden
+`validate.json` pinned the consequence on every CBO result. The fix is one line per bound, and it was
+deferred from TASK-402 precisely because it changes user-visible validation results and needs its own
+reviewed decision. **DEBT-14 is now closed**; the migration is documented in `docs/RUN.md`.
+
+The second defect was quieter and worse. `JsonNode.asDouble()` turns a string into `0.0`, `.nan` into
+`NaN` and `.inf` into `Infinity`, and an unknown metric key was accepted and then silently never
+matched. So `{"WMC": {"min": "abc"}}` loaded successfully and enforced `min >= 0`, and a threshold on a
+metric that does not exist failed nothing — a configuration bug that reads as a passing gate. All of
+these are now configuration errors that name the exact key to fix. This is the item `docs/RUN.md`
+longer lists under "what the loader does not do".
+
+**"Worse" was a guess, and the guess was in the wrong place.** `GateEvaluator.worsened` inferred
+direction from the sign of `min`: `min > 0` meant "a ratio, so shrinking is worse". That conflated "the
+user wrote a positive floor" with "the user wrote a floor at all" — a max-only ceiling carries a
+*sentinel* minimum, and the rule read that sentinel as a statement about the metric. Direction now comes
+from the configured bound: ceiling-only worsens on increase, floor-only on decrease, and a two-sided
+interval only when the value moves *outside* it. Inside-to-inside movement (`TCC` 0.4 → 0.5 inside
+`[0.33, 1.0]`) is no longer reported as a deterioration — there is no universal bad direction there, and
+the warning was noise a reviewer had to dismiss by hand. Growth budgets are unchanged: explicitly
+directional increases.
+
+`Threshold` grew the seams this needs — `of(min, max)` as the single sentinel producer,
+`hasMin()`/`hasMax()` for "was this side configured", and `contains`/`overshoot`/`describe` moved onto
+it so `GateEvaluator` stopped keeping a private duplicate of the same three comparisons. `describe()` is
+how the sentinels stopped reaching humans: a finding message now says `at most 0` instead of
+`[-1.7976931348623157E308 .. 0]`, while the legacy JSON keeps the numeric fields for compatibility.
+
+**The golden diff was reviewed, not regenerated blind.** Exactly two things moved: the sentinel
+`expectedMin` on every CBO result, and the single `CBO == 0` check in the fixture flipping `FAILED` →
+`PASSED` (`passed` 25 → 26, `failed` 15 → 14). No metric value changed and no other golden moved.
+That flip is the repair working: a ceiling of zero should accept zero.
+
+- Tests added: `maxOnlyAcceptsZero`, `minOnlyAcceptsLargerValue`, `rejectsInvalidThresholds`
+  (ConfigLoaderTest); `maxOnlyIncreaseIsWorsening`, `twoSidedIntervalKeepsTheFloorDirection`
+  (GateEvaluatorTest). Two existing tests were retargeted onto explicit one-sided thresholds because
+  the old heuristic they pinned was the defect.
+- Verification: focused `ConfigLoaderTest`/`GateEvaluatorTest`/`BaselineFilterTest` green, then
+  `./gradlew check` green (165 CLI tests plus the library suite and the distribution integration test).
+- Known limitation: `hasMin()`/`hasMax()` detect an omitted side by comparing against the sentinel, so
+  an explicit `min: -1.7976931348623157E308` is indistinguishable from omitting it — the same
+  constraint either way. NaN/Infinity metric *values* are still compared as ordinary numbers; ML-008
+  turns them into an explicit unavailable evaluation status.
+- Next ready task: ML-002 (validate gate configuration and fix profile plumbing).
+
 ## Session: detailed maintainability linter implementation plan (2026-09-28)
 
 - The user accepted the positioning review and requested a plan detailed enough for a smaller

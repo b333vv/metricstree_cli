@@ -18,7 +18,7 @@
     "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
     "metric" : "CBO",
     "value" : 3.0,
-    "expectedMin" : 4.9E-324,
+    "expectedMin" : -1.7976931348623157E308,
     "expectedMax" : 0.0,
     "status" : "FAILED",
     "severity" : "low"
@@ -55,7 +55,7 @@
     "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
     "metric" : "CBO",
     "value" : 4.0,
-    "expectedMin" : 4.9E-324,
+    "expectedMin" : -1.7976931348623157E308,
     "expectedMax" : 0.0,
     "status" : "FAILED",
     "severity" : "low"
@@ -92,7 +92,7 @@
     "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
     "metric" : "CBO",
     "value" : 1.0,
-    "expectedMin" : 4.9E-324,
+    "expectedMin" : -1.7976931348623157E308,
     "expectedMax" : 0.0,
     "status" : "FAILED",
     "severity" : "low"
@@ -129,7 +129,7 @@
     "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
     "metric" : "CBO",
     "value" : 3.0,
-    "expectedMin" : 4.9E-324,
+    "expectedMin" : -1.7976931348623157E308,
     "expectedMax" : 0.0,
     "status" : "FAILED",
     "severity" : "low"
@@ -166,10 +166,9 @@
     "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
     "metric" : "CBO",
     "value" : 0.0,
-    "expectedMin" : 4.9E-324,
+    "expectedMin" : -1.7976931348623157E308,
     "expectedMax" : 0.0,
-    "status" : "FAILED",
-    "severity" : "low"
+    "status" : "PASSED"
   }, {
     "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
     "metric" : "NOM",
@@ -202,7 +201,7 @@
     "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
     "metric" : "CBO",
     "value" : 1.0,
-    "expectedMin" : 4.9E-324,
+    "expectedMin" : -1.7976931348623157E308,
     "expectedMax" : 0.0,
     "status" : "FAILED",
     "severity" : "low"
@@ -239,7 +238,7 @@
     "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
     "metric" : "CBO",
     "value" : 2.0,
-    "expectedMin" : 4.9E-324,
+    "expectedMin" : -1.7976931348623157E308,
     "expectedMax" : 0.0,
     "status" : "FAILED",
     "severity" : "low"
@@ -276,7 +275,7 @@
     "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
     "metric" : "CBO",
     "value" : 4.0,
-    "expectedMin" : 4.9E-324,
+    "expectedMin" : -1.7976931348623157E308,
     "expectedMax" : 0.0,
     "status" : "FAILED",
     "severity" : "low"
@@ -296,15 +295,15 @@
     "expectedMax" : 40.0,
     "status" : "PASSED"
   } ],
-  "passed" : 25,
-  "failed" : 15,
+  "passed" : 26,
+  "failed" : 14,
   "byFile" : [ {
     "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
     "failures" : [ {
       "file" : "<GOLDEN_PROJECT>/src/a/Base.java",
       "metric" : "CBO",
       "value" : 3.0,
-      "expectedMin" : 4.9E-324,
+      "expectedMin" : -1.7976931348623157E308,
       "expectedMax" : 0.0,
       "status" : "FAILED",
       "severity" : "low"
@@ -323,7 +322,7 @@
       "file" : "<GOLDEN_PROJECT>/src/a/Derived.java",
       "metric" : "CBO",
       "value" : 4.0,
-      "expectedMin" : 4.9E-324,
+      "expectedMin" : -1.7976931348623157E308,
       "expectedMax" : 0.0,
       "status" : "FAILED",
       "severity" : "low"
@@ -342,7 +341,7 @@
       "file" : "<GOLDEN_PROJECT>/src/a/Marker.java",
       "metric" : "CBO",
       "value" : 1.0,
-      "expectedMin" : 4.9E-324,
+      "expectedMin" : -1.7976931348623157E308,
       "expectedMax" : 0.0,
       "status" : "FAILED",
       "severity" : "low"
@@ -361,7 +360,7 @@
       "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
       "metric" : "CBO",
       "value" : 3.0,
-      "expectedMin" : 4.9E-324,
+      "expectedMin" : -1.7976931348623157E308,
       "expectedMax" : 0.0,
       "status" : "FAILED",
       "severity" : "low"
@@ -376,16 +375,8 @@
     }, {
       "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
       "metric" : "CBO",
-      "value" : 0.0,
-      "expectedMin" : 4.9E-324,
-      "expectedMax" : 0.0,
-      "status" : "FAILED",
-      "severity" : "low"
-    }, {
-      "file" : "<GOLDEN_PROJECT>/src/a/Outer.java",
-      "metric" : "CBO",
       "value" : 1.0,
-      "expectedMin" : 4.9E-324,
+      "expectedMin" : -1.7976931348623157E308,
       "expectedMax" : 0.0,
       "status" : "FAILED",
       "severity" : "low"
@@ -404,7 +395,7 @@
       "file" : "<GOLDEN_PROJECT>/src/a/Unresolvable.java",
       "metric" : "CBO",
       "value" : 2.0,
-      "expectedMin" : 4.9E-324,
+      "expectedMin" : -1.7976931348623157E308,
       "expectedMax" : 0.0,
       "status" : "FAILED",
       "severity" : "low"
@@ -423,7 +414,7 @@
       "file" : "<GOLDEN_PROJECT>/src/a/b/Helper.java",
       "metric" : "CBO",
       "value" : 4.0,
-      "expectedMin" : 4.9E-324,
+      "expectedMin" : -1.7976931348623157E308,
       "expectedMax" : 0.0,
       "status" : "FAILED",
       "severity" : "low"

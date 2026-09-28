@@ -330,8 +330,9 @@ final class HtmlReportWriter {
                     .append("<td class=\"path\">").append(esc(result.file())).append("</td>")
                     .append("<td class=\"mono\">").append(esc(result.metric())).append("</td>")
                     .append("<td class=\"mono\">").append(formatNumber(result.value())).append("</td>")
-                    .append("<td class=\"mono\">[").append(formatNumber(result.expectedMin()))
-                    .append(" .. ").append(formatNumber(result.expectedMax())).append("]</td>")
+                    .append("<td class=\"mono\">")
+                    .append(esc(Threshold.of(result.expectedMin(), result.expectedMax()).describe()))
+                    .append("</td>")
                     .append("<td class=\"").append(failedCheck ? "fail" : "pass").append("\">")
                     .append(result.status()).append("</td><td>")
                     .append(failedCheck

@@ -110,12 +110,15 @@ class GateEvaluatorTest {
 
     @Test
     void worsenedButWithinBoundsIsAWarning() {
+        // A max-only ceiling: 1 -> 3 stays inside [.., 3] but moves toward the bound.
+        Map<String, Threshold> ceilingOnly = Map.of("CC", new Threshold(-Double.MAX_VALUE, 3.0));
         MetricReport base = report("app.Service", Path.of("/repo/app/Service.java"),
                 Map.of(MetricCode.CC, 1.0));
         MetricReport current = report("app.Service", Path.of("/repo/app/Service.java"),
                 Map.of(MetricCode.CC, 3.0));
 
-        GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON);
+        GateEvaluator.Result result = GateEvaluator.evaluate(
+                base, current, ROOT, ceilingOnly, Map.of(), ALL_FAIL_ON, Set.of());
 
         assertTrue(result.violations().isEmpty());
         assertEquals(1, result.warnings().size());
@@ -135,17 +138,76 @@ class GateEvaluatorTest {
         assertTrue(result.warnings().isEmpty(), "improvements must not warn");
     }
 
+    /**
+     * "Worse" is a property of the configured bound, not of the sign of {@code min}.
+     *
+     * <p>The old heuristic was {@code min > 0 ⇒ worsens on decrease}, which was a guess standing in
+     * for information the threshold does not carry. With a max-only ceiling the bad direction is
+     * unambiguous — an increase moves toward (and past) the ceiling — and with a two-sided interval
+     * there is no universal bad direction at all: 0.4 → 0.5 inside {@code [0.33, 1.0]} is not a
+     * deterioration, and inventing one produces warning noise no one can act on.
+     */
+    @Test
+    void maxOnlyIncreaseIsWorsening() {
+        Map<String, Threshold> ceilingOnly = Map.of("CC", new Threshold(-Double.MAX_VALUE, 3.0));
+        MetricReport base = report("app.Service", Path.of("/repo/app/Service.java"),
+                Map.of(MetricCode.CC, 2.0));
+        MetricReport current = report("app.Service", Path.of("/repo/app/Service.java"),
+                Map.of(MetricCode.CC, 3.0));
+
+        GateEvaluator.Result worsened = GateEvaluator.evaluate(
+                base, current, ROOT, ceilingOnly, Map.of(), ALL_FAIL_ON, Set.of());
+        assertTrue(worsened.violations().isEmpty());
+        assertEquals(1, worsened.warnings().size(),
+                "an increase toward a max-only ceiling is deterioration and must be reported");
+        assertEquals(GateFinding.Type.WORSENED, worsened.warnings().get(0).type());
+
+        MetricReport improved = report("app.Service", Path.of("/repo/app/Service.java"),
+                Map.of(MetricCode.CC, 1.0));
+        GateEvaluator.Result better = GateEvaluator.evaluate(
+                base, improved, ROOT, ceilingOnly, Map.of(), ALL_FAIL_ON, Set.of());
+        assertTrue(better.warnings().isEmpty(), "a decrease away from a max-only ceiling is an improvement");
+
+        // Two-sided, inside to inside: no universal bad direction, so no generic warning. The growth
+        // map is empty here, so this exercises the threshold rule and not the directional budget.
+        GateEvaluator.Result twoSided = GateEvaluator.evaluate(
+                base, current, ROOT, THRESHOLDS, Map.of(), ALL_FAIL_ON, Set.of());
+        assertTrue(twoSided.violations().isEmpty());
+        assertTrue(twoSided.warnings().isEmpty(),
+                "0.4 -> 0.5 inside [0.33, 1.0] must not be called a deterioration");
+    }
+
+    /** A two-sided floor is still directional when the value leaves the interval — that is a crossing. */
+    @Test
+    void twoSidedIntervalKeepsTheFloorDirection() {
+        MetricReport base = report("app.Cohesive", Path.of("/repo/app/Cohesive.java"),
+                Map.of(MetricCode.TCC, 0.9));
+        MetricReport current = report("app.Cohesive", Path.of("/repo/app/Cohesive.java"),
+                Map.of(MetricCode.TCC, 0.2));
+
+        GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON);
+
+        assertEquals(1, result.violations().size());
+        assertEquals(GateFinding.Type.THRESHOLD_CROSSING, result.violations().get(0).type());
+    }
+
+    /**
+     * The floor-metric warning survives, but for the honest reason: a min-only threshold has one
+     * configured side, and a decrease moves away from it.
+     */
     @Test
     void floorMetricWorsensOnDecrease() {
+        Map<String, Threshold> floorOnly = Map.of("TCC", new Threshold(0.33, Double.MAX_VALUE));
         MetricReport base = report("app.Cohesive", Path.of("/repo/app/Cohesive.java"),
                 Map.of(MetricCode.TCC, 0.9));
         MetricReport current = report("app.Cohesive", Path.of("/repo/app/Cohesive.java"),
                 Map.of(MetricCode.TCC, 0.5));
 
-        GateEvaluator.Result result = evaluate(base, current, ALL_FAIL_ON);
+        GateEvaluator.Result result = GateEvaluator.evaluate(
+                base, current, ROOT, floorOnly, Map.of(), ALL_FAIL_ON, Set.of());
 
         assertTrue(result.violations().isEmpty());
-        assertEquals(1, result.warnings().size(), "a shrinking ratio is worse, not better");
+        assertEquals(1, result.warnings().size(), "a shrinking ratio below its floor is worse, not better");
     }
 
     @Test

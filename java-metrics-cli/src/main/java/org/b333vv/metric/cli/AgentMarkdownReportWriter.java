@@ -27,9 +27,9 @@ final class AgentMarkdownReportWriter {
         for (ValidateCommand.MetricValidationResult result : results) {
             if (result.status() == ValidateCommand.ValidationStatus.FAILED) {
                 out.append("- `").append(result.file()).append("` **").append(result.metric())
-                        .append(":** ").append(number(result.value())).append(" (expected [")
-                        .append(number(result.expectedMin())).append(" .. ")
-                        .append(number(result.expectedMax())).append("])\n");
+                        .append(":** ").append(number(result.value())).append(" (expected ")
+                        .append(Threshold.of(result.expectedMin(), result.expectedMax()).describe())
+                        .append(")\n");
             }
         }
         if (failed == 0) out.append("No failed checks.\n");

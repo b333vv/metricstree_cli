@@ -351,9 +351,38 @@ Analysis failed: Error: Failed to parse class rules file /work/rules.yml (from -
 
 Reading a config file is not the same as judging it, and the difference is on purpose:
 
-- An **unknown metric name** in a thresholds file is still silently never matched — that behaviour is unchanged, and it is why a threshold on a metric that does not exist fails nothing rather than warning.
+- An **unknown metric name** in a thresholds file is now a configuration error naming the key (ML-001). A threshold on a metric that does not exist used to fail nothing, which read as a passing gate.
 - An **unknown key** in a rule condition is still captured and reported by `detect` rather than rejected at parse time — see [Rule problems](#rule-problems). A partially broken rule degrades instead of disappearing.
-- An **omitted `min` or `max`** in a thresholds entry is still filled with a sentinel rather than rejected, which has a known defect for one-sided thresholds — see DEBT-14 in `docs/tech-debt-tracker.md`.
+- An **omitted `min` or `max`** in a thresholds entry is filled with a sentinel rather than rejected — that is what makes a one-sided threshold a normal thing to write. The sentinel is `-Double.MAX_VALUE` / `Double.MAX_VALUE` (unbounded in the unconfigured direction), so it never appears in a human-readable message; the legacy JSON report still carries it as a number for compatibility.
+- A thresholds entry that is **not an object**, configures **neither `min` nor `max`**, has a **non-numeric or non-finite bound**, an **inverted range**, or an **unknown metric key** is a configuration error naming the exact key, e.g. `Error: invalid threshold 'WMC.min' in --thresholds: expected a finite number but found the string "abc"`.
+
+### One-sided thresholds: what changed for you
+
+ML-001 (2026-09-28) repaired two defects in how threshold bounds are read. Both were live in every
+existing configuration.
+
+1. **An omitted `min` used to become `Double.MIN_VALUE`**, the smallest *positive* double (`4.9e-324`),
+   rather than the most negative one. A threshold that configured only a maximum therefore had an
+   effective minimum of `4.9e-324`, and a metric whose value was `0` failed it — reported as
+   `"CBO is 0.0, below the configured minimum 4.9E-324"`, a bound the file never contained. An omitted
+   `min` is now `-Double.MAX_VALUE`, so `"CBO": { "max": 0 }` accepts `CBO == 0`.
+
+   **What this means for you:** a check that used to fail can now pass. That is the repair, not a
+   regression — a ceiling of zero should accept zero. The legacy JSON report's `expectedMin` field
+   changes from `4.9E-324` to `-1.7976931348623157E308` for a one-sided threshold; if you parse that
+   field, compare against the value rather than assuming it is a bound someone wrote. Human-readable
+   output (SARIF, Markdown, HTML) names the unconfigured side instead of printing the sentinel.
+
+2. **A malformed bound used to be accepted silently.** `{"WMC": {"min": "abc"}}` became `min: 0.0`,
+   `.nan` became `NaN` (which fails every comparison), and an unknown metric key loaded and then never
+   matched anything. These are now configuration errors that name the exact key to fix.
+
+   **What this means for you:** a thresholds file that previously loaded with a typo in it will now
+   stop the run with an error instead of silently checking nothing. That is the intended direction —
+   a gate that cannot check what you asked for should not report success.
+
+Unchanged: `analyze`, `detect`, the `validate`/`detect` report formats, the built-in `relaxed` /
+`standard` / `strict` profiles, and every two-sided threshold's numeric result.
 
 ## Examples
 

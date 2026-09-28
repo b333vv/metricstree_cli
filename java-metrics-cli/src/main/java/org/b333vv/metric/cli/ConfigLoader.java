@@ -5,18 +5,22 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import org.b333vv.metric.library.core.ExclusionConfig;
+import org.b333vv.metric.library.core.MetricCode;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Arrays;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.PatternSyntaxException;
+import java.util.stream.Collectors;
 
 /**
  * The one way this tool reads a configuration file: thresholds, detection rules and exclusions.
@@ -73,6 +77,14 @@ final class ConfigLoader {
      */
     private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
 
+    /**
+     * The metric codes a thresholds file may name. Held here so an unknown key is a config error with
+     * the offending name in it, instead of a rule that loads and then silently never matches.
+     */
+    private static final Set<String> KNOWN_METRICS = Arrays.stream(MetricCode.values())
+            .map(MetricCode::name)
+            .collect(Collectors.toUnmodifiableSet());
+
     private static final ConfigSource THRESHOLDS = new ConfigSource(
             "--thresholds",
             "thresholds",
@@ -105,8 +117,10 @@ final class ConfigLoader {
      * Reads a thresholds file: metric code to allowed range.
      *
      * <p>The shape is an object keyed by metric code, each value an object with optional {@code min}
-     * and {@code max}. An omitted bound is filled with a sentinel rather than rejected; see
-     * {@link Threshold} for what that means and for the defect it hides.
+     * and {@code max}. An omitted bound is filled with a sentinel rather than rejected, because a
+     * one-sided threshold is a legitimate and common thing to write; see {@link Threshold}. A bound
+     * that is present must be a finite number, the range must not be inverted, and the key must be a
+     * real metric code — each of those is a configuration error naming the key that has to change.
      */
     static Map<String, Threshold> thresholds(Path file) {
         return thresholds(readTree(file, THRESHOLDS));
@@ -118,18 +132,95 @@ final class ConfigLoader {
      * {@code thresholds:} section of a project config.
      */
     static Map<String, Threshold> thresholds(JsonNode root) {
-        Map<String, Threshold> thresholds = new HashMap<>();
+        Map<String, Threshold> thresholds = new LinkedHashMap<>();
+        if (root == null || !root.isObject()) {
+            throw configError("<root>", "expected an object keyed by metric code", root);
+        }
         Iterator<Map.Entry<String, JsonNode>> fields = root.fields();
         while (fields.hasNext()) {
             Map.Entry<String, JsonNode> entry = fields.next();
-            JsonNode thresholdNode = entry.getValue();
-
-            double min = thresholdNode.has("min") ? thresholdNode.get("min").asDouble() : Double.MIN_VALUE;
-            double max = thresholdNode.has("max") ? thresholdNode.get("max").asDouble() : Double.MAX_VALUE;
-
-            thresholds.put(entry.getKey(), new Threshold(min, max));
+            thresholds.put(entry.getKey(), threshold(entry.getKey(), entry.getValue()));
         }
         return thresholds;
+    }
+
+    /**
+     * One metric's range, validated.
+     *
+     * <p>The five rejections below are the ones where a file that "loads" produces a check nobody
+     * wrote: a bare number, an empty object, a non-numeric or non-finite bound, an inverted range, and
+     * a key that is not a metric code at all. The last one used to be accepted and then silently
+     * never match — a threshold on a metric that does not exist failed nothing, which is the most
+     * expensive kind of configuration bug because it reads as a passing gate.
+     */
+    private static Threshold threshold(String metricCode, JsonNode node) {
+        if (node == null || !node.isObject()) {
+            throw configError(metricCode, "expected an object with 'min' and/or 'max'", node);
+        }
+        if (!KNOWN_METRICS.contains(metricCode)) {
+            throw configError(metricCode, "unknown metric code; it can never match a reported metric", node);
+        }
+        boolean hasMin = node.has("min");
+        boolean hasMax = node.has("max");
+        if (!hasMin && !hasMax) {
+            throw configError(metricCode,
+                    "configures neither 'min' nor 'max', so it constrains nothing", node);
+        }
+        double min = hasMin ? bound(metricCode, "min", node.get("min")) : Threshold.NO_MIN;
+        double max = hasMax ? bound(metricCode, "max", node.get("max")) : Threshold.NO_MAX;
+        if (min > max) {
+            throw configError(metricCode,
+                    "has min " + min + " greater than max " + max + ", so no value can satisfy it", node);
+        }
+        return Threshold.of(hasMin ? min : null, hasMax ? max : null);
+    }
+
+    /**
+     * A single bound, which has to be a finite number.
+     *
+     * <p>{@code JsonNode.asDouble()} is the trap this replaces: it yields {@code 0.0} for a string,
+     * {@code NaN} for {@code .nan} and {@code Infinity} for {@code .inf}, so all three became a bound
+     * the user never wrote and the file still loaded. NaN in particular compares false against
+     * everything, so it would have failed every check rather than none.
+     */
+    private static double bound(String metricCode, String side, JsonNode node) {
+        if (!node.isNumber()) {
+            throw configError(metricCode + "." + side,
+                    "expected a finite number but found " + describe(node), node);
+        }
+        double value = node.doubleValue();
+        if (!Double.isFinite(value)) {
+            throw configError(metricCode + "." + side,
+                    "expected a finite number but found " + value, node);
+        }
+        return value;
+    }
+
+    private static String describe(JsonNode node) {
+        if (node == null || node.isMissingNode()) {
+            return "nothing";
+        }
+        if (node.isNull()) {
+            return "null";
+        }
+        if (node.isTextual()) {
+            return "the string \"" + node.asText() + "\"";
+        }
+        return node.toString();
+    }
+
+    /**
+     * A configuration error that names the exact key. The key is the thing the user has to edit, and
+     * an error that only says "invalid thresholds file" sends them reading the whole file.
+     *
+     * <p>It names {@code --thresholds} even when the file actually arrived inline in a project
+     * config: the wording points at the concept, and the enclosing parse error already names the
+     * file when there is one.
+     */
+    private static IllegalArgumentException configError(String key, String problem, JsonNode node) {
+        return new IllegalArgumentException(
+                "Error: invalid threshold '" + key + "' in " + THRESHOLDS.option() + ": " + problem
+                        + " (entry: " + describe(node) + ")");
     }
 
     /**

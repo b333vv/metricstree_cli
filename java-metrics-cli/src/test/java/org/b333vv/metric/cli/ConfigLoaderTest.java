@@ -172,8 +172,97 @@ class ConfigLoaderTest {
 
         assertEquals(fromJson, fromYaml);
         assertEquals(new Threshold(0.0, 100.0), fromJson.get("WMC"));
-        assertEquals(new Threshold(Double.MIN_VALUE, 0.0), fromJson.get("CBO"),
-                "an omitted min is filled with Double.MIN_VALUE, which is the existing behaviour");
+        assertEquals(new Threshold(-Double.MAX_VALUE, 0.0), fromJson.get("CBO"),
+                "an omitted min must be unbounded below, so a metric whose value is 0 passes");
+    }
+
+    /**
+     * The DEBT-14 regression, end to end through {@code validate}.
+     *
+     * <p>Before the repair an omitted {@code min} was filled with {@link Double#MIN_VALUE} — the
+     * smallest <em>positive</em> double — so {@code "CBO": { "max": 0 }} rejected {@code CBO == 0}
+     * with the nonsense message "below the configured minimum 4.9E-324". A ceiling that says "at
+     * most zero" has to accept zero.
+     */
+    @Test
+    void maxOnlyAcceptsZero() throws IOException {
+        Path thresholds = tempDir.resolve("max-only.json");
+        Files.writeString(thresholds, "{ \"CBO\": { \"max\": 0 } }");
+
+        Map<String, Threshold> loaded = ConfigLoader.thresholds(thresholds);
+        assertEquals(new Threshold(-Double.MAX_VALUE, 0.0), loaded.get("CBO"));
+        assertTrue(loaded.get("CBO").contains(0.0),
+                () -> "max=0 must accept a value of exactly 0, got " + loaded.get("CBO"));
+        assertFalse(loaded.get("CBO").contains(1.0), "max=0 must still reject 1");
+    }
+
+    /**
+     * A floor and a ceiling are independent, and a negative metric is a legal input: this suite must
+     * not "fix" the sentinel by rejecting one-sided or out-of-[0,1] values.
+     */
+    @Test
+    void minOnlyAcceptsLargerValue() throws IOException {
+        Path thresholds = tempDir.resolve("min-only.json");
+        Files.writeString(thresholds, "{ \"TCC\": { \"min\": 2 } }");
+
+        Threshold floor = ConfigLoader.thresholds(thresholds).get("TCC");
+        assertTrue(floor.contains(2.0), "min=2 is inside the range");
+        assertTrue(floor.contains(3.0), "min=2 accepts anything larger");
+        assertFalse(floor.contains(1.0), "min=2 rejects anything smaller");
+
+        Path ceiling = tempDir.resolve("negative-max.json");
+        Files.writeString(ceiling, "{ \"CBO\": { \"max\": -1 } }");
+        assertTrue(ConfigLoader.thresholds(ceiling).get("CBO").contains(-1.0),
+                "a negative ceiling is a legal range, not a missing bound");
+    }
+
+    /**
+     * A thresholds file that cannot mean what it says is a configuration error, and the message has
+     * to name the exact key. Every case below used to be accepted and then silently never match, or
+     * match with a bound nobody wrote.
+     */
+    @Test
+    void rejectsInvalidThresholds() throws IOException {
+        assertConfigError("WMC: { min: notanumber }", "'WMC.min'");
+        // .nan / .inf are rejected by the YAML parser itself, so the non-finite value that actually
+        // reaches a thresholds file arrives as a JSON literal that overflows a double.
+        assertConfigError("WMC: { min: .nan }", "Failed to parse thresholds file");
+        assertConfigError("WMC: { min: .inf }", "Failed to parse thresholds file");
+        assertJsonConfigError("{ \"WMC\": { \"min\": 1e400 } }", "'WMC.min'");
+        assertConfigError("WMC: { min: null }", "'WMC.min'");
+        assertConfigError("WMC: { }", "'WMC'");
+        assertConfigError("WMC: 7", "'WMC'");
+        assertConfigError("WMC: { min: 10, max: 1 }", "'WMC'");
+        assertConfigError("NOT_A_METRIC: { max: 1 }", "'NOT_A_METRIC'");
+    }
+
+    private void assertJsonConfigError(String json, String expectedKeyFragment) {
+        Path file = tempDir.resolve("invalid-json-" + Math.abs(json.hashCode()) + ".json");
+        try {
+            Files.writeString(file, json);
+        } catch (IOException exception) {
+            throw new AssertionError("fixture preparation failed", exception);
+        }
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> ConfigLoader.thresholds(file), () -> "expected a config error for: " + json);
+        assertTrue(thrown.getMessage().contains(expectedKeyFragment),
+                () -> "the error must name the exact key " + expectedKeyFragment
+                        + ", got: " + thrown.getMessage());
+    }
+
+    private void assertConfigError(String yaml, String expectedKeyFragment) {
+        Path file = tempDir.resolve("invalid-" + expectedKeyFragment.replaceAll("[^A-Za-z0-9]", "")
+                + Math.abs(yaml.hashCode()) + ".yml");
+        try {
+            Files.writeString(file, yaml);
+        } catch (IOException exception) {
+            throw new AssertionError("fixture preparation failed", exception);
+        }
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> ConfigLoader.thresholds(file), () -> "expected a config error for: " + yaml);
+        assertTrue(thrown.getMessage().contains(expectedKeyFragment),
+                () -> "the error must name the exact key " + expectedKeyFragment
+                        + ", got: " + thrown.getMessage());
     }
 
     @Test
@@ -328,8 +417,12 @@ class ConfigLoaderTest {
 
         assertEquals(fromJson, fromYaml,
                 "a YAML copy of the thresholds file must produce the same validation report");
-        assertTrue(fromJson.contains("\"failed\" : 15"),
+        // 15 before ML-001, 14 after: the golden config's "CBO": { "max": 0 } entry used to reject
+        // the entity whose CBO was exactly 0, because the omitted min was Double.MIN_VALUE.
+        assertTrue(fromJson.contains("\"failed\" : 14"),
                 () -> "the fixture must actually fail something, or this proves nothing: " + fromJson);
+        assertFalse(fromJson.contains("\"expectedMin\" : 4.9E-324"),
+                "an omitted min must no longer leak Double.MIN_VALUE into the report");
     }
 
     /**

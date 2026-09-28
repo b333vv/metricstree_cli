@@ -76,6 +76,10 @@ class HtmlReportWriterTest {
 
         assertTrue(html.contains("Validate Report"));
         assertTrue(html.contains("[0 .. 1]"), "the expected range is shown next to the value");
+        // An unconfigured side is named rather than printed as a sentinel: -1.7976931348623157E308 in
+        // a report cell tells the reader nothing about what the thresholds file actually said.
+        assertFalse(html.contains("1.7976931348623157E308"),
+                "no sentinel bound may leak into the human-facing page");
         assertTrue(html.contains("sev-high"), "failed checks carry a severity badge");
         assertTrue(html.contains("class=\"pass\">PASSED"), "passed checks have no badge");
     }
