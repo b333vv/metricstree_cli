@@ -1,5 +1,56 @@
 # what has been done
 
+## Session: ML-005 — immutable source snapshots with logical paths (2026-09-28)
+
+**The gate analyzed the repository twice, in two different states, and could not tell.** The base pass
+read old content with `git show` into a temp directory while the current pass analyzed files straight
+out of the working tree. Between those two reads the developer could save, stash or check out, and
+nothing in the run would notice: the verdict would describe a comparison whose two halves came from
+different points in time, and would report it with the same confidence as a comparison that did not.
+Worse, the base temp directory was deleted in a `finally` around the *analysis* call, so the bytes the
+verdict was computed from were gone before anyone could check them.
+
+`SnapshotMaterializer` now captures both sides **once**, into owned temporary roots, and everything
+downstream reads only those. The capture set is **every** Java source of the revision, not the changed
+paths — metric values are contextual, and a comparison computed over the changed file alone reports
+differences the diff does not contain. Two selection rules make "every Java source" mean the same
+thing everywhere: tracked files are always included even when a newly-added ignore rule now matches
+them (a tracked file is part of the source tree), and untracked files are included only in worktree
+mode and only when git does not consider them ignored.
+
+**The temp path is now structurally excluded from every answer.** `SourceSnapshot.digest()` is SHA-256
+over sorted `path\0contentHash` records, so no root name, absolute path or timestamp can enter it —
+`snapshotDigestIndependentOfTempRoot` asserts two captures in two different roots agree, and
+`singleByteChangeChangesDigest` asserts one byte changes it. The separator is NUL for the same reason
+git uses it: without it `("a","bc")` and `("ab","c")` hash identically.
+
+**A file that changes while it is being read is now an error, not a guess.** `readStable` reads twice
+and compares, retries once, and reports instability rather than capturing bytes that correspond to no
+state the file was ever in. `verifyUnchanged` re-reads the working inventory and content at the end of
+the run, so a file that appears or is saved mid-analysis produces a stated difference rather than a
+stale verdict presented as current.
+
+**Unsupported inputs are recorded, not followed and not dropped.** A symlinked Java file is not read
+(the link's blob is a target path, and parsing it would attribute a parse error to the wrong file);
+`SnapshotEntry` keeps the tree mode so the decision is made from the manifest rather than from a read
+that failed later. The path becomes an entry in `issues()` — which is exactly what ML-008 needs to turn
+an unanalyzable input into visible incompleteness instead of a quiet pass.
+
+Path traversal is refused at two points: `SnapshotEntry` rejects a `..` segment *before* normalization
+(`Path.normalize()` resolves a leading `../x` against the working directory and hands back something
+that looks perfectly relative), and `resolveInside` re-checks the normalized result against the root.
+Cleanup is bounded by an ownership check — `SourceSnapshot.close()` refuses any directory that is not
+a `metrics-snapshot-` root, and deletes the walk of exactly that root, so no failure path can remove
+anything the tool did not create. `failedConstructionCleansOwnedFilesOnly` proves it by driving a real
+partial-construction failure and asserting a sentinel beside the root survives while the root does not.
+
+**Not switched on.** Per the packet, `GateCommand` still uses `GitOps.changedFiles` and
+`GitOps.fileAt`; ML-006 replaces both with this layer. No golden changed and no existing assertion
+moved — `./gradlew check` is green on the whole repository.
+
+**Next ready task: ML-006**, which wires these snapshots into the existing gate.
+
+
 ## Session: ML-003 — a NUL-safe, read-only Git access layer (2026-09-28)
 
 **A Java file with a space in its name was silently dropped from the gate.** The old layer listed the

@@ -199,6 +199,21 @@ final class GitOps {
         return entries;
     }
 
+    /**
+     * The tracked paths, whether or not they are modified.
+     *
+     * <p>Read from the index rather than from the HEAD tree, because the question is "what does this
+     * checkout <em>contain</em>", not "what did the last commit record". A newly added file that is
+     * staged and never committed is tracked, and it is part of the change under review. Using
+     * {@code --cached} also means a tracked file is still selected when an ignore rule now matches
+     * it: {@code --others --exclude-standard} would have dropped it, and dropping a tracked file from
+     * a snapshot is how context silently disappears from the analysis.
+     */
+    static List<String> trackedPaths(Path repoRoot) throws GitException {
+        byte[] output = runBytes(repoRoot, "ls-files", "-z", "--cached");
+        return decodePaths(splitNul(output));
+    }
+
     /** The untracked, non-ignored paths — the set {@code --others --exclude-standard} reports. */
     static List<String> untrackedPaths(Path repoRoot) throws GitException {
         byte[] output = runBytes(repoRoot, "ls-files", "--others", "--exclude-standard", "-z");
