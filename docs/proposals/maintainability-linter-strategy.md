@@ -1,6 +1,8 @@
 # MetricsTree as a maintainability linter
 
-Date: 2026-09-28. Status: proposal for discussion, not an approved implementation roadmap.
+Date: 2026-09-28. Status: strategy accepted by the user on 2026-09-28.
+Implementation is specified in the [maintainability linter plan](../plans/maintainability-linter/README.md).
+The observations below describe the reviewed pre-implementation state.
 
 ## Recommendation
 

@@ -1,5 +1,24 @@
 # what has been done
 
+## Session: detailed maintainability linter implementation plan (2026-09-28)
+
+- The user accepted the positioning review and requested a plan detailed enough for a smaller
+  implementation model. Added `docs/plans/maintainability-linter/` with a master plan, execution
+  protocol, four behavior contracts, concrete examples/acceptance matrix, and 40 ordered tasks.
+- Each ML task records dependencies, repository paths, ordered implementation steps, required
+  positive/negative tests, acceptance criteria, exclusions, verification commands and handoff.
+- Fixed planning decisions: consistent Git snapshots for worktree/staged/committed modes;
+  conservative completeness and exit semantics; an opt-in candidate rule policy; stable finding
+  identities; versioned reports; role-aware rules; narrow suppressions and a cumulative baseline.
+- Separated the first usable release (ML-001–032) from real maintainer evidence/calibration
+  (ML-033–034), structural extensions (ML-035–039), and measured caching (ML-040). External pilot
+  work explicitly cannot be declared complete using synthetic feedback.
+- Updated docs navigation and marked the strategy accepted. No production implementation or
+  default behavior changed in this planning session.
+- Verification: all plan-local links, 40 unique task IDs and prerequisite ordering checked;
+  `./gradlew check` succeeded (test tasks were up-to-date). Documentation whitespace and
+  cross-task consistency were checked before committing.
+
 ## Session: maintainability linter positioning review (2026-09-28)
 
 - Reviewed the analysis library, CLI gate/detection flow, profiles, reports, GitHub Action,
@@ -1488,6 +1507,10 @@ All three proposals were accepted and implemented; backward compatibility was no
 - `./gradlew check` clean.
 
 # what is in progress
+
+- New active work: accepted maintainability linter strategy, planned in
+  `docs/plans/maintainability-linter/README.md`. All ML-001–ML-040 tasks are TODO.
+  Start with ML-001; implement one packet per commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.
