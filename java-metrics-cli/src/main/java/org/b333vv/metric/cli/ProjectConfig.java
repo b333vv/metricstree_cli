@@ -29,11 +29,8 @@ import java.util.Map;
  *                         it so a bad value is reported as a usage error, not a config error)
  * @param detectFormat     default for detect {@code --format}
  * @param analyzeFormat    default for analyze {@code --format}
- * @param gateGrowth       per-metric growth budget for {@code gate} (metric → allowed growth
- *                         between revisions); {@code null} means "use the built-in default"
- * @param gateFailOn       finding types that fail the {@code gate} (subset of
- *                         {@code new-violation}, {@code threshold-crossing}, {@code growth-budget});
- *                         {@code null} means "all of them"
+ * @param gate             the {@code gate:} section, already validated; {@code null} means the
+ *                         section was absent, which is distinct from an empty one
  * @param unknownKeys      top-level keys the loader did not recognise — always reported to the
  *                         user, never silently ignored (same philosophy as rule-condition
  *                         problems: a config that is weaker than its author believes must say so)
@@ -52,13 +49,12 @@ record ProjectConfig(
         String validateFormat,
         String detectFormat,
         String analyzeFormat,
-        Map<String, Double> gateGrowth,
-        List<String> gateFailOn,
+        GateSettings gate,
         List<String> unknownKeys) {
 
     static final ProjectConfig EMPTY = new ProjectConfig(
             null, null, null, null, null, null, null, null,
-            null, null, null, null, null, null, null, List.of());
+            null, null, null, null, null, null, List.of());
 
     boolean isEmpty() {
         return file == null;
@@ -70,6 +66,41 @@ record ProjectConfig(
      * supplies neither a profile nor inline thresholds — the caller then reports the missing
      * configuration.
      */
+    /**
+     * The growth budgets in effect, or {@code null} when neither the config nor the command supplies
+     * any — the caller then applies its own defaults, because "use the built-in default" is a product
+     * decision rather than a statement a config file made.
+     */
+    Map<String, Double> gateGrowth() {
+        return gate == null ? null : gate.growth();
+    }
+
+    /**
+     * The thresholds in effect when no {@code --thresholds} file was given: the profile's table with
+     * the file's inline overrides merged on top, key by key. {@code null} when the config supplies
+     * neither a profile nor inline thresholds — the caller then reports the missing configuration.
+     *
+     * <p>{@code profileOverride} is the {@code --profile} flag, which wins over {@code profile} from
+     * the file: an explicit flag is the more specific statement. The file's inline {@code thresholds:}
+     * still merge on top, because a config that says "use relaxed, except CBO ≤ 5" is one statement,
+     * not two.
+     */
+    Map<String, Threshold> effectiveThresholds(String profileOverride) {
+        String effectiveProfile = profileOverride != null ? profileOverride : profile;
+        Map<String, Threshold> base = effectiveProfile != null
+                ? Profiles.thresholds(effectiveProfile, file)
+                : null;
+        if (base == null) {
+            return thresholds;
+        }
+        if (thresholds == null) {
+            return base;
+        }
+        Map<String, Threshold> merged = new java.util.HashMap<>(base);
+        merged.putAll(thresholds);
+        return merged;
+    }
+
     Map<String, Threshold> effectiveThresholds() {
         Map<String, Threshold> base = profile != null ? Profiles.thresholds(profile, file) : null;
         if (base == null) {

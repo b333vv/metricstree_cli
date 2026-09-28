@@ -142,4 +142,75 @@ class ProjectConfigLoaderTest {
         assertTrue(stderrText.contains("thresholdz"));
         assertFalse(config.isEmpty());
     }
+
+    // ---------------------------------------------------------------- gate section validation
+
+    /**
+     * A malformed gate section must never quietly become a weaker gate.
+     *
+     * <p>Before this, {@code gate: [1, 2]} produced no error at all: {@code root.get("gate")} was an
+     * array, {@code array.get("growth")} was null, and every gate setting silently fell back to its
+     * default. The same held for {@code failOn: "new-violation"} (a bare string is not an array, so
+     * it became "absent" and the gate became <em>stricter</em> than the author asked for) and for
+     * {@code failOn: [1]} (the non-string element was dropped, leaving an empty selection).
+     */
+    @Test
+    void gateConfigRejectsWrongShape() throws Exception {
+        assertGateError("gate: [1, 2]", "gate");
+        assertGateError("gate: nope", "gate");
+        assertGateError("gate: { growth: nope }", "gate.growth");
+        assertGateError("gate: { failOn: new-violation }", "gate.failOn");
+        assertGateError("gate: { failOn: [1] }", "gate.failOn");
+        assertGateError("gate: { failOn: [1, growth-budget] }", "gate.failOn");
+        assertGateError("gate: { failOn: [] }", "gate.failOn");
+        assertGateError("gate: { failOn: [bogus] }", "gate.failOn");
+        assertGateError("gate: { failOn: [parse-error] }", "gate.failOn");
+        assertGateError("gate: { failOn: [worsened] }", "gate.failOn");
+        assertGateError("gate: { growht: { CC: 5 } }", "gate.growht");
+        assertGateError("gate: { growth: { NOT_A_METRIC: 5 } }", "gate.growth.NOT_A_METRIC");
+        assertGateError("gate: { growth: { CC: -1 } }", "gate.growth.CC");
+        assertGateError("gate: { growth: { CC: notanumber } }", "gate.growth.CC");
+        assertGateError("gate: { growth: { CC: 1e400 } }", "gate.growth.CC");
+    }
+
+    /** The three accepted values load, so the validation above is not simply rejecting everything. */
+    @Test
+    void gateConfigAcceptsTheDocumentedShape() throws Exception {
+        Path file = tempDir.resolve("gate-ok.yml");
+        Files.writeString(file, """
+                gate:
+                  growth:
+                    CC: 5
+                    WMC: 20
+                  failOn:
+                    - new-violation
+                    - growth-budget
+                """);
+
+        ProjectConfig config = ProjectConfigLoader.load(file);
+
+        assertEquals(2, config.gate().growth().size());
+        assertEquals(5.0, config.gate().growth().get("CC"));
+        assertEquals(java.util.List.of("new-violation", "growth-budget"), config.gate().failOn());
+    }
+
+    /** An absent gate section is "no opinion", which is distinct from an empty one. */
+    @Test
+    void absentGateSectionIsNull() throws Exception {
+        Path file = tempDir.resolve("no-gate.yml");
+        Files.writeString(file, "profile: standard\n");
+
+        assertNull(ProjectConfigLoader.load(file).gate());
+    }
+
+    private void assertGateError(String yaml, String expectedKey) throws Exception {
+        Path file = tempDir.resolve("bad-" + Math.abs((yaml + expectedKey).hashCode()) + ".yml");
+        Files.writeString(file, yaml);
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> ProjectConfigLoader.load(file), () -> "expected a config error for: " + yaml);
+        assertTrue(thrown.getMessage().contains(expectedKey),
+                () -> "the error must name '" + expectedKey + "', got: " + thrown.getMessage());
+        assertTrue(thrown.getMessage().contains(".metrics-gate") || thrown.getMessage().contains(".yml"),
+                () -> "the error must name the config file, got: " + thrown.getMessage());
+    }
 }

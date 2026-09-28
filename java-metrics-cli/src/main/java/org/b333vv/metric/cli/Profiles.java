@@ -25,6 +25,9 @@ final class Profiles {
 
     static final List<String> NAMES = List.of("relaxed", "standard", "strict");
 
+    /** The same names as one string, for use in a picocli description (annotations need constants). */
+    static final String NAMES_TEXT = "relaxed, standard, strict";
+
     private Profiles() {
     }
 
@@ -34,7 +37,7 @@ final class Profiles {
      */
     static Map<String, Threshold> thresholds(String name, Path origin) {
         if (!NAMES.contains(name)) {
-            throw new IllegalArgumentException(
+            throw new ConfigError(
                     "Error: unknown profile '" + name + "'"
                             + (origin != null ? " in " + origin.toAbsolutePath().normalize() : "")
                             + ". Available profiles: " + String.join(", ", NAMES) + ".");

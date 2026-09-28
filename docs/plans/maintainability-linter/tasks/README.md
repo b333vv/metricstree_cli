@@ -7,7 +7,7 @@ Dependencies are technical prerequisites. Milestone boundaries and external evid
 | Task | Description | Dependencies | Status |
 | --- | --- | --- | --- |
 | [ML-001](ML-001.md) | Repair and validate threshold bounds | — | DONE |
-| [ML-002](ML-002.md) | Validate gate configuration and fix profile plumbing | ML-001 | TODO |
+| [ML-002](ML-002.md) | Validate gate configuration and fix profile plumbing | ML-001 | DONE |
 | [ML-003](ML-003.md) | Create a NUL-safe read-only Git access layer | ML-002 | TODO |
 | [ML-004](ML-004.md) | Resolve explicit comparison modes and one merge base | ML-003 | TODO |
 | [ML-005](ML-005.md) | Materialize immutable source snapshots with logical paths | ML-004 | TODO |

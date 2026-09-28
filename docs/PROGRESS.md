@@ -1,5 +1,61 @@
 # what has been done
 
+## Session: ML-002 — validate the gate config section, give `gate` a real `--profile` (2026-09-28)
+
+**The GitHub Action's own documented invocation did not work.** `action.yml` builds
+`gate --base=... -p "${{ inputs.profile }}"`, and `gate` had no `-p` option at all — so any consumer
+who set the `profile` input got a picocli usage error. The option exists now, resolves through the
+same `Profiles` lookup as everywhere else, overrides `profile:` from a project config, and lets that
+config's inline `thresholds:` merge on top (one statement, not two). An explicit `-t` replaces the
+profile's table outright rather than merging: merging would let a profile quietly supply bounds the
+user thought they had overridden.
+
+**Every malformed gate setting was a silent fallback, and one of them made the gate stricter.**
+`gate: [1, 2]` was not an object, so every setting fell back to its default. `failOn: "new-violation"`
+— a bare string where a list belongs — was read as "absent", which means *all* finding types fail, so
+an author trying to narrow the gate got a wider one. `failOn: [1]` dropped the non-string element and
+left an empty selection. And a typo like `growht` is the expensive case: the author believes they set
+a budget and the gate runs with none, which is a gate weaker than its author believes and a build
+that reports success. All of these are now errors naming the config file and the exact dotted key.
+
+The strictness is deliberately scoped. An unknown **top-level** key is still a warning on stderr, as
+it has always been, because the usual cause is an option this version does not implement — annoying,
+but not a silent weakening. Inside `gate:` a wrong key changes what is enforced, so it is an error.
+
+**Config errors were being reported as analysis failures.** `failOn: [everything]` surfaced as
+`Analysis failed: ...` with exit 1, telling a CI author their change broke the tool when nothing had
+been analysed at all. A new `ConfigError` type marks malformed configuration as a usage error: exit 2,
+message only, no misleading prefix. It extends `IllegalArgumentException`, so no call site changed —
+only the reporting. `--config` together with `--no-config` is now an error too, for the same reason:
+silently honouring either would let a build that reads no config be made to look like one that read
+the named file.
+
+`ProjectConfig` no longer carries two positional gate fields; it holds a new immutable `GateSettings`.
+That type also makes a distinction the flat record could not express: `null` means the section was
+absent, while a present instance with empty `growth` means the author wrote something narrower. Both
+are now reachable and neither is accidental. `GateSettings` additionally carries `mode`, `policy`,
+`enforcement` and `analysis` — **parsed and validated but deliberately inert**, because ML-004, ML-007
+and ML-019 own those behaviours. A setting that exists without behaviour is a setting that is
+silently ignored, which is the exact failure this task is about.
+
+- Tests added: `gateConfigRejectsWrongShape` (15 cases), `gateConfigAcceptsTheDocumentedShape`,
+  `absentGateSectionIsNull` (ProjectConfigLoaderTest); `gateProfileFlagWorks`,
+  `gateProfileFlagSelectsBetweenProfileTables`, `unknownGateProfileIsAUsageError`,
+  `explicitThresholdsBeatProfile`, `mutuallyExclusiveConfigOptionsExitTwo` (GateCommandTest).
+  The existing discovery, `--no-config` and unknown-`failOn` tests pass unchanged.
+- Verification: focused suites green, then `./gradlew check` green (179 CLI tests plus the library
+  suite and the distribution integration test). Also verified against the *installed* distribution in a
+  throwaway repository: `-p strict` reports `CC 1→4 crossed out of [0 .. 2]` with strict's own bound,
+  and `-p nope` / `--config` + `--no-config` both exit 2 with a clean message.
+- Two of my own first-draft assertions were wrong about the shipped profile values (I had CC caps of 21
+  for relaxed and 10 for strict; they are 5 and 2 — 21 is DIT). The implementation was right in both
+  cases and the tests now assert against the real tables, with the finding's own `expectedMax` as the
+  evidence that the profile was actually loaded rather than defaulted.
+- Known limitation: `KNOWN_METRICS` is restated in `ProjectConfigLoader` rather than shared with
+  `ConfigLoader`, because the two sections answer different questions. If a metric is ever legal in a
+  thresholds file but not as a growth budget, one of the two needs a deliberate change.
+- Next ready task: ML-003 (NUL-safe read-only Git access layer).
+
 ## Session: ML-001 — repair and validate threshold bounds (2026-09-28)
 
 **A max-only threshold rejected the value it was written to allow.** `ConfigLoader` filled an omitted

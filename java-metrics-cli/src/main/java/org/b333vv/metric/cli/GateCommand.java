@@ -84,6 +84,13 @@ final class GateCommand implements Callable<Integer> {
                     + "project config (.metrics-gate.yml) supplies a profile or inline thresholds.")
     private Path thresholdsFile;
 
+    @CommandLine.Option(names = {"-p", "--profile"}, paramLabel = "NAME",
+            description = "Threshold profile for this run: " + Profiles.NAMES_TEXT
+                    + ". Overrides the profile named in a project config; the config's inline "
+                    + "thresholds still merge on top. Ignored when --thresholds is given, which "
+                    + "replaces the profile's table outright.")
+    private String profile;
+
     @CommandLine.Option(names = {"-o", "--output"}, paramLabel = "PATH",
             description = "Path to write the full report to. Without it only the verdict line is printed.")
     private Path outputFile;
@@ -104,6 +111,7 @@ final class GateCommand implements Callable<Integer> {
         Map<String, Double> growth = config.gateGrowth() != null
                 ? config.gateGrowth()
                 : DEFAULT_GROWTH;
+
         Set<GateFinding.Type> failOn = resolveFailOn(config);
 
         if (format == OutputFormat.SARIF) {
@@ -203,39 +211,28 @@ final class GateCommand implements Callable<Integer> {
         if (thresholdsFile != null) {
             return ConfigLoader.thresholds(thresholdsFile);
         }
-        Map<String, Threshold> thresholds = config.effectiveThresholds();
+        Map<String, Threshold> thresholds = config.effectiveThresholds(profile);
         return thresholds != null ? thresholds : Map.of();
     }
 
     /**
-     * Which finding types fail the gate. An unknown {@code failOn} entry is a usage error that
-     * names the config file — the treatment {@code format:} gets. {@code parse-error} and
-     * {@code worsened} are deliberately not selectable: the first always fails, the second never does.
+     * Which finding types fail the gate: all three selectable types when the config is silent.
+     *
+     * <p>The values themselves were already checked by {@code ProjectConfigLoader} — an unknown or
+     * non-selectable entry is a config error naming the file and key, raised before any Git work
+     * starts. That ordering matters: a typo in a budget should not cost a full analysis pass to
+     * discover, and a malformed config should never be reported as a gate failure.
      */
     private Set<GateFinding.Type> resolveFailOn(ProjectConfig config) {
-        if (config.gateFailOn() == null) {
+        if (config.gate() == null || config.gate().failOn() == null) {
             return EnumSet.of(
                     GateFinding.Type.NEW_VIOLATION,
                     GateFinding.Type.THRESHOLD_CROSSING,
                     GateFinding.Type.GROWTH_BUDGET);
         }
         EnumSet<GateFinding.Type> failOn = EnumSet.noneOf(GateFinding.Type.class);
-        for (String value : config.gateFailOn()) {
-            GateFinding.Type type = GateFinding.Type.fromConfig(value);
-            if (type == null || type == GateFinding.Type.PARSE_ERROR
-                    || type == GateFinding.Type.WORSENED) {
-                throw new CommandLine.ParameterException(spec.commandLine(),
-                        "Unknown gate.failOn value '" + value + "' in project config "
-                                + config.file().toAbsolutePath().normalize()
-                                + ". Accepted values: " + GateFinding.Type.acceptedValues() + ".");
-            }
-            failOn.add(type);
-        }
-        if (failOn.isEmpty()) {
-            throw new CommandLine.ParameterException(spec.commandLine(),
-                    "gate.failOn in project config " + config.file().toAbsolutePath().normalize()
-                            + " must list at least one of: "
-                            + GateFinding.Type.acceptedValues() + ".");
+        for (String value : config.gate().failOn()) {
+            failOn.add(GateFinding.Type.fromConfig(value));
         }
         return failOn;
     }

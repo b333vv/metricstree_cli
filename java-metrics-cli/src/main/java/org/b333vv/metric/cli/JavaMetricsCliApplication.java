@@ -51,9 +51,16 @@ final class JavaMetricsCliApplication {
         commandLine.getSubcommands().values()
                 .forEach(subcommand -> subcommand.setCaseInsensitiveEnumValuesAllowed(true));
         commandLine.setExecutionExceptionHandler((exception, commandLine1, parseResult) -> {
-            stderr.println("Analysis failed: " + exception.getMessage());
+            // A malformed config is a usage error (exit 2), not a failed analysis. Reporting it as
+            // "Analysis failed" told CI authors their change broke the tool when nothing was analysed.
+            boolean configError = exception instanceof ConfigError;
+            stderr.println(configError
+                    ? exception.getMessage()
+                    : "Analysis failed: " + exception.getMessage());
             stderr.flush();
-            return 1;
+            return configError
+                    ? commandLine1.getCommandSpec().exitCodeOnInvalidInput()
+                    : 1;
         });
         commandLine.setParameterExceptionHandler((exception, args1) -> {
             stderr.println(exception.getMessage());

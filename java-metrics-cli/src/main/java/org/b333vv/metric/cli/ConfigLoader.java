@@ -217,8 +217,8 @@ final class ConfigLoader {
      * config: the wording points at the concept, and the enclosing parse error already names the
      * file when there is one.
      */
-    private static IllegalArgumentException configError(String key, String problem, JsonNode node) {
-        return new IllegalArgumentException(
+    private static ConfigError configError(String key, String problem, JsonNode node) {
+        return new ConfigError(
                 "Error: invalid threshold '" + key + "' in " + THRESHOLDS.option() + ": " + problem
                         + " (entry: " + describe(node) + ")");
     }

@@ -1,12 +1,15 @@
 package org.b333vv.metric.cli;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.b333vv.metric.library.core.MetricCode;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -29,6 +32,15 @@ final class ProjectConfigLoader {
 
     static final List<String> CANDIDATE_NAMES = List.of(
             ".metrics-gate.yml", ".metrics-gate.yaml", ".metrics-gate.json");
+
+    /**
+     * The metric codes a config may name in {@code gate.growth}. The same set {@code ConfigLoader}
+     * validates thresholds against, restated here because the two sections answer different
+     * questions and a future change to one must be a deliberate decision about the other.
+     */
+    private static final Set<String> KNOWN_METRICS = java.util.Arrays.stream(MetricCode.values())
+            .map(MetricCode::name)
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     private static final Set<String> KNOWN_KEYS = Set.of(
             "profile", "thresholds",
@@ -63,7 +75,7 @@ final class ProjectConfigLoader {
     static ProjectConfig load(Path file) {
         JsonNode root = ConfigLoader.projectConfigTree(file);
         if (root == null || !root.isObject()) {
-            throw new IllegalArgumentException(
+            throw new ConfigError(
                     "Error: project config at " + file.toAbsolutePath().normalize()
                             + " (from --config) must be a mapping at the top level.");
         }
@@ -95,49 +107,163 @@ final class ProjectConfigLoader {
                 validate != null ? textOrNull(validate.get("format")) : null,
                 detect != null ? textOrNull(detect.get("format")) : null,
                 analyze != null ? textOrNull(analyze.get("format")) : null,
-                gate != null ? growthMap(gate.get("growth"), file) : null,
-                gate != null ? stringList(gate.get("failOn")) : null,
+                gate != null ? gateSettings(gate, file) : null,
                 List.copyOf(unknownKeys));
     }
 
-    /** {@code growth: {CC: 5}} → metric → budget. Non-numeric budgets are a config error. */
-    private static Map<String, Double> growthMap(JsonNode growth, Path file) {
+    /** The keys the {@code gate:} section accepts. Anything else is a typo the user has to see. */
+    private static final Set<String> GATE_KEYS = Set.of(
+            "growth", "failOn", "mode", "policy", "enforcement", "analysis");
+
+    /**
+     * The {@code gate:} section, validated as a whole.
+     *
+     * <p>Every rejection here used to be a silent fallback, and the direction of the fallback is what
+     * made it dangerous. {@code failOn: "new-violation"} (a bare string instead of a list) was read as
+     * "absent", which means <em>all</em> finding types fail the gate — the author's narrower
+     * selection silently became a stricter one. {@code failOn: [1]} dropped the non-string element and
+     * left an empty selection. {@code gate: [1, 2]} was not an object at all, so every setting fell
+     * back to its default. A typo like {@code growht} is the most expensive case of all: the author
+     * believes they set a budget and the gate runs with none.
+     *
+     * <p>The three later keys ({@code mode}, {@code policy}, {@code enforcement}, {@code analysis})
+     * are carried but not yet acted on — see {@link GateSettings}.
+     */
+    private static GateSettings gateSettings(JsonNode gate, Path file) {
+        if (gate.isNull()) {
+            return null;
+        }
+        if (!gate.isObject()) {
+            throw gateError(file, "gate",
+                    "must be a mapping of gate settings, not a " + kindOf(gate));
+        }
+        List<String> unknown = new ArrayList<>();
+        gate.fieldNames().forEachRemaining(key -> {
+            if (!GATE_KEYS.contains(key)) {
+                unknown.add(key);
+            }
+        });
+        if (!unknown.isEmpty()) {
+            throw gateError(file, "gate." + unknown.get(0),
+                    "is not a gate setting. Accepted keys: " + String.join(", ", GATE_KEYS));
+        }
+        return new GateSettings(
+                growth(gate.get("growth"), file),
+                failOn(gate.get("failOn"), file),
+                text(gate.get("mode"), file, "gate.mode"),
+                text(gate.get("policy"), file, "gate.policy"),
+                text(gate.get("enforcement"), file, "gate.enforcement"),
+                text(gate.get("analysis"), file, "gate.analysis"));
+    }
+
+    /** {@code growth: {CC: 5}} → metric → budget. */
+    private static Map<String, Double> growth(JsonNode growth, Path file) {
         if (growth == null || growth.isNull()) {
             return null;
         }
         if (!growth.isObject()) {
-            throw new IllegalArgumentException(
-                    "Error: gate.growth in project config " + file.toAbsolutePath().normalize()
-                            + " must be a mapping of metric name to allowed growth.");
+            throw gateError(file, "gate.growth",
+                    "must be a mapping of metric name to allowed growth, not a " + kindOf(growth));
         }
         Map<String, Double> budgets = new LinkedHashMap<>();
-        growth.fieldNames().forEachRemaining(name -> {
-            JsonNode budget = growth.get(name);
-            if (!budget.isNumber() || budget.doubleValue() < 0) {
-                throw new IllegalArgumentException(
-                        "Error: gate.growth." + name + " in project config "
-                                + file.toAbsolutePath().normalize()
-                                + " must be a non-negative number, got: " + budget + ".");
+        Iterator<Map.Entry<String, JsonNode>> fields = growth.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> entry = fields.next();
+            String metric = entry.getKey();
+            String key = "gate.growth." + metric;
+            if (!KNOWN_METRICS.contains(metric)) {
+                throw gateError(file, key,
+                        "is not a metric code, so no budget would ever apply to it");
             }
-            budgets.put(name, budget.doubleValue());
-        });
+            JsonNode budget = entry.getValue();
+            if (!budget.isNumber()) {
+                throw gateError(file, key, "must be a non-negative finite number, got: " + budget);
+            }
+            double value = budget.doubleValue();
+            if (!Double.isFinite(value) || value < 0) {
+                throw gateError(file, key,
+                        "must be a non-negative finite number, got: " + budget
+                                + " (a negative or infinite budget can never be respected)");
+            }
+            budgets.put(metric, value);
+        }
         return budgets;
     }
 
-    private static List<String> stringList(JsonNode node) {
+    /**
+     * {@code failOn: [...]} → the listed finding types.
+     *
+     * <p>Only the three selectable types are accepted. {@code parse-error} always fails the gate
+     * unconditionally and {@code worsened} never does, so listing either states a falsehood about how
+     * the gate behaves; a value the user cannot act on is a config error, not a no-op.
+     */
+    private static List<String> failOn(JsonNode node, Path file) {
         if (node == null || node.isNull()) {
             return null;
         }
         if (!node.isArray()) {
-            return null;
+            throw gateError(file, "gate.failOn",
+                    "must be a list of finding types, not a " + kindOf(node)
+                            + ". Accepted values: " + GateFinding.Type.acceptedValues());
         }
         List<String> values = new ArrayList<>();
-        node.forEach(element -> {
-            if (element.isTextual()) {
-                values.add(element.asText());
+        for (JsonNode element : node) {
+            if (!element.isTextual()) {
+                throw gateError(file, "gate.failOn",
+                        "must contain only finding-type names, found: " + element
+                                + ". Accepted values: " + GateFinding.Type.acceptedValues());
             }
-        });
-        return List.copyOf(values);
+            String value = element.asText();
+            GateFinding.Type type = GateFinding.Type.fromConfig(value);
+            if (type == null || type == GateFinding.Type.PARSE_ERROR
+                    || type == GateFinding.Type.WORSENED) {
+                throw gateError(file, "gate.failOn",
+                        "has unknown value '" + value + "'. Accepted values: "
+                                + GateFinding.Type.acceptedValues());
+            }
+            values.add(value);
+        }
+        if (values.isEmpty()) {
+            throw gateError(file, "gate.failOn",
+                    "must list at least one of: " + GateFinding.Type.acceptedValues()
+                            + ". An empty list would let every finding pass.");
+        }
+        return values;
+    }
+
+    private static String text(JsonNode node, Path file, String key) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (!node.isTextual()) {
+            throw gateError(file, key, "must be a string, got: " + node);
+        }
+        return node.asText();
+    }
+
+    /**
+     * A config error that names the file and the dotted key. Both are needed: the file says which
+     * document to open, the key says which line to change.
+     */
+    private static IllegalArgumentException gateError(Path file, String key, String problem) {
+        return new ConfigError("Error: '" + key + "' in project config "
+                + file.toAbsolutePath().normalize() + " " + problem);
+    }
+
+    private static String kindOf(JsonNode node) {
+        if (node.isArray()) {
+            return "list";
+        }
+        if (node.isTextual()) {
+            return "string";
+        }
+        if (node.isNumber()) {
+            return "number";
+        }
+        if (node.isBoolean()) {
+            return "boolean";
+        }
+        return node.getNodeType().toString().toLowerCase(Locale.ROOT);
     }
 
     /** A file reference inside the config, resolved against the config's own directory. */

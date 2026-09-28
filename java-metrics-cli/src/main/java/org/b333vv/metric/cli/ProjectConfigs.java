@@ -24,13 +24,25 @@ final class ProjectConfigs {
      * otherwise auto-discovery runs from the working directory.
      *
      * <p>Unknown top-level keys are reported on stderr — a config that is weaker than its author
-     * believes must say so — but do not fail the run.
+     * believes must say so — but do not fail the run. That leniency is scoped deliberately to the
+     * <em>top level</em>: an unknown key inside a section is a typo in a setting that changes what the
+     * gate enforces, and {@code ProjectConfigLoader} rejects it outright (ML-002).
      */
     static ProjectConfig resolve(
             JavaMetricsCliCommand parent,
             Supplier<Path> workingDirectory,
             PrintWriter stderr) {
-        if (parent == null || parent.isNoConfig()) {
+        if (parent == null) {
+            return ProjectConfig.EMPTY;
+        }
+        if (parent.isNoConfig() && parent.getConfigPath() != null) {
+            // Silently preferring one would let a build that reads no config be made to look like
+            // one that read the file its author named. Both were passed, so neither can be honoured.
+            throw new ConfigError(
+                    "Error: --config and --no-config cannot be used together: --config names the "
+                            + "file to read and --no-config asks for no file at all.");
+        }
+        if (parent.isNoConfig()) {
             return ProjectConfig.EMPTY;
         }
         ProjectConfig config = parent.getConfigPath() != null

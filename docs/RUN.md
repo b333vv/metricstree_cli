@@ -695,14 +695,15 @@ Diff-aware quality gate: fails only on what this branch made worse, not on the p
 pre-existing state. This is the CI command for agent-generated (and human) pull requests.
 
 ```bash
-java-metrics-cli gate --base origin/main [-t <thresholds.json>] [-o <report.json>]
+java-metrics-cli gate --base origin/main [-p <profile>] [-t <thresholds.json>] [-o <report.json>]
     [--format=<json|html>] [--exclude-file=<path>]
 ```
 
 | Option | Description |
 |--------|-------------|
 | `--base=<ref>` | **Required.** Base ref to diff against. Three-dot diff (`base...HEAD`) — only what this branch introduced |
-| `-t, --thresholds=<path>` | JSON/YAML thresholds. Optional: without it the gate still enforces growth budgets (defaults: CC +5, WMC +20) |
+| `-p, --profile=<name>` | Threshold profile for this run: `relaxed`, `standard`, `strict`. Overrides `profile:` in a project config; that config's inline `thresholds:` still merge on top. An unknown name is a usage error (exit 2) |
+| `-t, --thresholds=<path>` | JSON/YAML thresholds. Optional: without it the gate still enforces growth budgets (defaults: CC +5, WMC +20). **Replaces** `-p` and any config thresholds outright rather than merging with them |
 | `-o, --output=<path>` | Write the full report here. Without it only the verdict line is printed |
 | `--format=<json\|html>` | Report format for `--output`; default `json`. `sarif` is rejected — the gate's output is a verdict over a diff, not a findings list |
 
@@ -752,8 +753,27 @@ gate:
   failOn: [new-violation, threshold-crossing, growth-budget]   # any subset
 ```
 
-An unknown `failOn` value is a usage error naming the config file. `parse-error` and `worsened`
-are not selectable: the first always fails, the second never does.
+The `gate:` section is validated when the config is read, and every problem below is an error naming
+the file and the exact key (exit 2) rather than a silent fallback to defaults:
+
+- a `gate:` that is not a mapping, or an unknown key inside it (a typo like `growht`);
+- a `failOn` that is not a list, contains a non-string, is empty, or names an unknown value.
+  `parse-error` and `worsened` are not selectable: the first always fails the gate, the second never
+  does, so listing either states something untrue about how the gate behaves;
+- a `growth` key that is not a metric code, or a budget that is negative, non-numeric or non-finite.
+
+This strictness is scoped to the `gate:` section. An unknown **top-level** key is still a warning on
+stderr and does not fail the run. The reason for the difference is direction: an unknown top-level key
+is usually an option this version does not implement, whereas a key inside `gate:` changes what the
+gate enforces, and a budget that silently disappears is a gate weaker than its author believes.
+
+`mode`, `policy`, `enforcement` and `analysis` are accepted inside `gate:` and validated, but are not
+yet acted on — they arrive with the tasks that implement comparison modes, the maintainability policy
+and analysis scope.
+
+`--config` and `--no-config` cannot be combined: one names the file to read, the other asks for no
+file at all, and silently honouring either would let a build that reads no config be made to look
+like one that did.
 
 **Unparseable files:** a changed file that fails to parse fails the gate (a parser problem is
 reported as a finding with its reason). If the *base* version of a file did not parse, its

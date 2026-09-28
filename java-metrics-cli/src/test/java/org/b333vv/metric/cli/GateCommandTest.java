@@ -333,4 +333,153 @@ class GateCommandTest {
         assertTrue(html.contains("Violations"));
         assertTrue(html.contains("app/Demo.java"));
     }
+
+    // ------------------------------------------------------------------ profile option
+
+    /**
+     * The GitHub Action already passes {@code -p <profile>} to {@code gate}, but the command had no
+     * such option — so a consumer following the action's own documentation got a usage error. This is
+     * the option that invocation always meant.
+     */
+    /**
+     * The GitHub Action already passes {@code -p <profile>} to {@code gate}, but the command had no
+     * such option — so a consumer following the action's own documentation got a usage error. This is
+     * the option that invocation always meant.
+     *
+     * <p>The proof is the threshold table, not the verdict: the default growth budget is CC +5, and
+     * the default (no profile at all) has no thresholds, so a run without {@code -p} reports exactly
+     * one finding. With {@code -p relaxed} — whose CC cap is 5 — the same change additionally crosses
+     * a threshold. A second finding appearing is the observable difference, and the finding quotes the
+     * profile's own bound.
+     */
+    @Test
+    void gateProfileFlagWorks() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 8));
+        commitAll("more branches");
+
+        ByteArrayOutputStream withoutProfile = new ByteArrayOutputStream();
+        runGateIn(repo, withoutProfile, "gate", "--base", "HEAD~1",
+                "-o", repo.resolve("no-profile.json").toString());
+        Path report = repo.resolve("gate-report.json");
+        ByteArrayOutputStream withProfile = new ByteArrayOutputStream();
+        runGateIn(repo, withProfile, "gate", "--base", "HEAD~1",
+                "-p", "relaxed", "-o", report.toString());
+
+        JsonNode bare = mapper.readTree(Files.readString(repo.resolve("no-profile.json")));
+        String relaxedJson = Files.readString(report);
+        JsonNode relaxed = mapper.readTree(relaxedJson);
+
+        assertEquals(1, bare.get("violations").size(),
+                "without thresholds only the default growth budget can fire");
+        assertEquals(2, relaxed.get("violations").size(),
+                "--profile relaxed loads the CC cap of 5, which this change crosses: " + relaxedJson);
+        // Violations are sorted worst-first, so this asserts the set rather than a position.
+        assertTrue(violationTypes(relaxed).contains("threshold-crossing"),
+                () -> "expected a threshold crossing from relaxed's table: " + relaxedJson);
+        assertEquals(5.0, finding(relaxed, "threshold-crossing").get("expectedMax").asDouble(),
+                "the finding must quote relaxed's own bound, proving the table was loaded");
+    }
+
+    private static List<String> violationTypes(JsonNode report) {
+        List<String> types = new ArrayList<>();
+        report.get("violations").forEach(violation -> types.add(violation.get("type").asText()));
+        return types;
+    }
+
+    private static JsonNode finding(JsonNode report, String type) {
+        for (JsonNode violation : report.get("violations")) {
+            if (violation.get("type").asText().equals(type)) {
+                return violation;
+            }
+        }
+        throw new AssertionError("no " + type + " finding in " + report);
+    }
+
+    /** strict caps CC at 2, where relaxed allows 5: the same change crosses under both. */
+    @Test
+    void gateProfileFlagSelectsBetweenProfileTables() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 4));
+        commitAll("more branches");
+        Path report = repo.resolve("gate-report.json");
+
+        // CC 2 -> 5, inside relaxed's cap of 5 and outside strict's cap of 2.
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        runGateIn(repo, err, "gate", "--base", "HEAD~1",
+                "-p", "strict", "-o", report.toString());
+        String strictJson = Files.readString(report);
+        JsonNode strict = mapper.readTree(strictJson);
+        assertEquals(2.0, finding(strict, "threshold-crossing").get("expectedMax").asDouble(),
+                "the finding must quote strict's own bound, not relaxed's: " + strictJson);
+
+        Path relaxedReport = repo.resolve("gate-relaxed.json");
+        runGateIn(repo, new ByteArrayOutputStream(), "gate", "--base", "HEAD~1",
+                "-p", "relaxed", "-o", relaxedReport.toString());
+        String relaxedJson = Files.readString(relaxedReport);
+        assertFalse(mapper.readTree(relaxedJson).get("violations").toString()
+                        .contains("threshold-crossing"),
+                "relaxed allows CC 5, so the same change must not cross: " + relaxedJson);
+    }
+
+    @Test
+    void unknownGateProfileIsAUsageError() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD", "-p", "paranoid");
+
+        assertEquals(2, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        assertTrue(err.toString(StandardCharsets.UTF_8).contains("paranoid"),
+                () -> err.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void explicitThresholdsBeatProfile() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 8));
+        commitAll("more branches");
+        Path thresholds = repo.resolve("only-cc.json");
+        Files.writeString(thresholds, "{ \"CC\": { \"max\": 1 } }");
+        Path report = repo.resolve("gate-report.json");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1",
+                "-p", "relaxed", "-t", thresholds.toString(), "-o", report.toString());
+        String reportJson = Files.readString(report);
+
+        assertEquals(1, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        JsonNode json = mapper.readTree(reportJson);
+        assertEquals(1, json.get("violations").size(), reportJson);
+        assertEquals("CC", json.get("violations").get(0).get("metric").asText(),
+                "-t replaces the profile: only CC is configured, so WMC must not be checked");
+    }
+    /**
+     * {@code --config} and {@code --no-config} cannot both be honoured. Silently preferring one means
+     * a build that reads no config can be made to look like one that read the file the author named.
+     */
+    @Test
+    void mutuallyExclusiveConfigOptionsExitTwo() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 1));
+        commitAll("base");
+        Path config = repo.resolve("custom-gate.yml");
+        Files.writeString(config, "profile: strict\n");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD",
+                "--config", config.toString(), "--no-config");
+
+        assertEquals(2, exitCode, () -> err.toString(StandardCharsets.UTF_8));
+        String stderr = err.toString(StandardCharsets.UTF_8);
+        assertTrue(stderr.contains("--config") && stderr.contains("--no-config"), stderr);
+    }
 }
