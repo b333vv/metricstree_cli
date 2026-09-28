@@ -29,44 +29,29 @@ class GateCommandTest {
     Path repo;
 
     // ------------------------------------------------------------------ fixture plumbing
+    //
+    // The repository helpers live in GitFixture, shared with GitOpsTest. This is a move, not a
+    // rewrite: no assertion below changed, and keeping one copy of the setup is what stops the two
+    // suites from drifting into subtly different repositories.
 
-    private void git(String... args) throws Exception {
-        List<String> command = new ArrayList<>(List.of(
-                "git", "-c", "user.email=gate@test", "-c", "user.name=gate"));
-        command.addAll(List.of(args));
-        ProcessBuilder builder = new ProcessBuilder(command)
-                .directory(repo.toFile());
-        builder.redirectErrorStream(true);
-        Process process = builder.start();
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue(process.waitFor(30, TimeUnit.SECONDS), "git timed out");
-        assertEquals(0, process.exitValue(), () -> "git " + String.join(" ", args) + " failed: " + output);
-    }
-
-    private void write(String relativePath, String content) throws Exception {
-        Path file = repo.resolve(relativePath);
-        Files.createDirectories(file.getParent() == null ? repo : file.getParent());
-        Files.writeString(file, content);
+    private GitFixture fixture() {
+        return new GitFixture(repo);
     }
 
     private void initRepo() throws Exception {
-        git("init", "-q");
+        fixture().init();
+    }
+
+    private void write(String relativePath, String content) throws Exception {
+        fixture().write(relativePath, content);
     }
 
     private void commitAll(String message) throws Exception {
-        git("add", "-A");
-        git("commit", "-q", "-m", message);
+        fixture().commitAll(message);
     }
 
-    /** A class whose {@code f} has {@code ifs} branches — WMC ≈ CC ≈ {@code ifs + 1}. */
     private static String classWithIfs(String name, int ifs) {
-        StringBuilder body = new StringBuilder();
-        for (int i = 1; i <= ifs; i++) {
-            body.append("        if (x == ").append(i).append(") return ").append(i).append(";\n");
-        }
-        return "package app;\npublic class " + name + " {\n"
-                + "    public int f(int x) {\n" + body
-                + "        return 0;\n    }\n}\n";
+        return GitFixture.classWithIfs(name, ifs);
     }
 
     private int runGate(String... extraArgs) throws Exception {

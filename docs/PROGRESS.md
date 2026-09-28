@@ -1,5 +1,70 @@
 # what has been done
 
+## Session: ML-003 — a NUL-safe, read-only Git access layer (2026-09-28)
+
+**A Java file with a space in its name was silently dropped from the gate.** The old layer listed the
+changed set with `git diff --name-only` and split the output on newlines, then read content with
+`git show ref:path` and returned *empty on any nonzero exit*. Both halves are wrong for filenames Git
+and Java both permit: a name with a space was truncated, a name with a newline became two records, a
+non-ASCII name could be mangled by an encoding round trip, and a leading dash looked like an option.
+Nothing errored. A file simply vanished from the analysis, and the gate published a verdict computed
+over an incomplete change set without saying so — which is the failure mode the whole plan exists to
+remove, arriving through the door marked "correctness of inputs".
+
+Everything is now NUL-delimited and parsed from raw bytes: `ls-tree -r -z`, `ls-files -s -z`,
+`ls-files --others --exclude-standard -z`, `diff --name-status -z -M`. NUL is the one byte git
+guarantees cannot appear in a path, which is exactly why it offers the `-z` form. Verified end to end
+against the installed distribution: a repository containing a space, a tab, a newline, a Cyrillic name
+and a leading dash now reports `PASSED: 5 changed files`, where the old parsing could not account for
+all five.
+
+**The second defect was more expensive than the first.** `fileAt` returned empty on *any* nonzero exit,
+so four completely different situations produced the identical answer "this file did not exist at the
+base revision": a file that was genuinely added, a corrupt repository, a missing object, and a broken
+git binary. The base pass then treated the entity as new, and the gate reported a **new violation for
+content it had never managed to read**. Absence now comes from the manifest — the caller already holds
+the tree or index listing, so "is this path there" is a lookup, not an inference from a failure — and
+`readBlob` returns bytes or throws.
+
+Two structural decisions carry most of the remaining value. `GitTreeEntry` keeps the entry **mode** as
+its own field, so a symlink, a gitlink or a subtree is a visible unsupported input rather than a read
+that fails somewhere else later. `GitPathChange` carries **both** paths for a rename, and that is a
+correctness requirement rather than fidelity: a renamed class's base content lives under the old path,
+so a single-path record would read the *new* path at the base revision, find nothing, and judge the
+class as brand new — failing it for changes it had already made.
+
+Process handling was rebuilt too. `ProcessBuilder` argument vectors throughout, with no shell string
+anywhere, so a ref containing `; rm -rf` or `$(...)` is data passed to git. `rev-parse --verify
+--end-of-options` means a ref like `--upload-pack=...` is a ref and not a flag. stdout and stderr are
+drained **concurrently on dedicated threads** — the old code read stdout to completion first, which
+deadlocks as soon as git fills the stderr pipe, a real risk now that this layer issues the large
+`ls-tree` output. A 60s bounded timeout kills only the child, the interrupt flag is restored rather than
+swallowed, and the error excerpt is bounded.
+
+Per the packet, behaviour is **not switched yet**: `changedFiles` and `fileAt` remain as thin
+compatibility wrappers and ML-006 replaces them. `changedFiles` collapses a rename to its new path, which
+is precisely the loss `pathChanges` fixes — that is why it is a wrapper and not a general method.
+
+`GitFixture` was extracted from `GateCommandTest` so `GitOpsTest` and it share one repository setup. No
+existing assertion changed. Git identity is passed per invocation (`-c user.name -c user.email -c
+commit.gpgsign=false`), so a test never depends on or writes to the developer's global Git config.
+
+- Tests added: 10 in `GitOpsTest`, including `roundTripsUnusualPaths` (all five awkward name shapes
+  through create → commit → manifest → read), `badRefAndUnreadableObjectAreErrors` (absent path vs.
+  failed read), `stageContentDiffersFromDisk`, `renameRecordKeepsBothPaths`, `unmergedIndexIsReported`.
+  The unmerged-index test produces a **real** merge conflict rather than fabricating an index, because
+  the point of the test is that the layer reads whatever git actually reports.
+- Verification: focused `GitOpsTest`/`GateCommandTest` green, `./gradlew check` green, and the
+  installed-distribution probe above.
+- One of my own assertions was wrong at first: I asserted the index blob equalled the *committed* blob
+  in a fixture where the staged content deliberately differs. The content assertion was the meaningful
+  one; it now also asserts the staged blob differs from the committed one, so the fixture cannot pass
+  vacuously.
+- Known limitation: blob content is read whole into memory — fine for source files, unbounded in
+  principle. The untracked/index/symlink APIs exist but are not consumed until ML-004 and ML-005 build
+  the staged and worktree snapshots.
+- Next ready task: ML-004 (explicit comparison modes and one merge base).
+
 ## Session: ML-002 — validate the gate config section, give `gate` a real `--profile` (2026-09-28)
 
 **The GitHub Action's own documented invocation did not work.** `action.yml` builds
