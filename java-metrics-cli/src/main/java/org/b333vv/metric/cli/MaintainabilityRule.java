@@ -42,7 +42,8 @@ record MaintainabilityRule(
         RuleSeverity severity,
         String documentationPath,
         MetricRequirements.Scope requiredScope,
-        Worsening worsening) {
+        Worsening worsening,
+        Map<MetricCode, Double> worseningBudgets) {
 
     /** Which element a rule is evaluated for. */
     enum RuleLevel {
@@ -158,6 +159,20 @@ record MaintainabilityRule(
         Objects.requireNonNull(severity, "severity");
         Objects.requireNonNull(requiredScope, "requiredScope");
         Objects.requireNonNull(worsening, "worsening");
+        worseningBudgets = worseningBudgets == null ? Map.of() : Map.copyOf(worseningBudgets);
+        if (worsening != Worsening.NONE && worseningBudgets.isEmpty()) {
+            throw new IllegalArgumentException("Rule " + id + " declares " + worsening
+                    + " but no worsening budget, so an existing match could never be called"
+                    + " worsened: the predicate would have nothing to compare against");
+        }
+        for (Map.Entry<MetricCode, Double> budget : worseningBudgets.entrySet()) {
+            if (budget.getValue() == null || budget.getValue().isNaN()
+                    || budget.getValue().isInfinite() || budget.getValue() < 0) {
+                throw new IllegalArgumentException("Rule " + id + " gives " + budget.getKey()
+                        + " a worsening budget of " + budget.getValue()
+                        + ", which is not a non-negative finite amount");
+            }
+        }
         if (version < 1) {
             throw new IllegalArgumentException("Rule " + id + " has version " + version
                     + "; a rule version is part of every fingerprint and has to start at 1");
@@ -191,6 +206,11 @@ record MaintainabilityRule(
     /** The metric codes this rule's conditions name. */
     List<MetricCode> metrics() {
         return List.copyOf(conditions.keySet());
+    }
+
+    /** The budget for one metric, or {@code null} when this rule does not track it. */
+    Double worseningBudget(MetricCode metric) {
+        return worseningBudgets.get(metric);
     }
 }
 

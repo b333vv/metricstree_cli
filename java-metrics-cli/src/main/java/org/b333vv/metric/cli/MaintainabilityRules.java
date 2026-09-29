@@ -125,7 +125,36 @@ final class MaintainabilityRules {
                 RuleSeverity.fromId(text(node, "severity")),
                 text(node, "documentationPath"),
                 scope(text(node, "requiredScope")),
-                MaintainabilityRule.Worsening.valueOf(text(node, "worsening")));
+                MaintainabilityRule.Worsening.valueOf(text(node, "worsening")),
+                budgets(node.get("worseningBudgets"), id));
+    }
+
+    /**
+     * The worsening budgets, one per metric.
+     *
+     * <p>Read strictly: a budget that is negative, non-numeric or infinite would make the predicate
+     * either never fire or always fire, and both look like a rule that works.
+     */
+    private static Map<MetricCode, Double> budgets(
+            com.fasterxml.jackson.databind.JsonNode node, String ruleId) {
+        Map<MetricCode, Double> budgets = new LinkedHashMap<>();
+        if (node == null || node.isNull()) {
+            return budgets;
+        }
+        if (!node.isObject()) {
+            throw new IllegalStateException("Rule " + ruleId
+                    + " must give worseningBudgets as a mapping of metric to amount");
+        }
+        var fields = node.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, com.fasterxml.jackson.databind.JsonNode> entry = fields.next();
+            if (!entry.getValue().isNumber()) {
+                throw new IllegalStateException("Rule " + ruleId + " gives a worsening budget of "
+                        + entry.getKey() + " as " + entry.getValue() + ", which is not a number");
+            }
+            budgets.put(metric(entry.getKey(), ruleId), entry.getValue().doubleValue());
+        }
+        return budgets;
     }
 
     private static List<MaintainabilityRule> validate(List<MaintainabilityRule> rules) {
@@ -214,6 +243,11 @@ final class MaintainabilityRules {
                     .append(rule.maturity().id()).append('\0')
                     .append(rule.requiredScope().name()).append('\0')
                     .append(rule.worsening().name()).append('\0');
+            rule.worseningBudgets().entrySet().stream()
+                    .sorted(java.util.Map.Entry.comparingByKey(
+                            java.util.Comparator.comparing(Enum::name)))
+                    .forEach(entry -> material.append("budget:").append(entry.getKey().name())
+                            .append('=').append(entry.getValue()).append('\0'));
             rule.applicableRoles().stream().map(EntityRole::id).sorted()
                     .forEach(role -> material.append("role:").append(role).append('\0'));
             // TreeMap so conditions hash in a fixed order rather than in map iteration order.

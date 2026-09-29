@@ -44,7 +44,8 @@ class MethodRuleEvaluatorTest {
             MaintainabilityRule.RuleLevel level) {
         return new MaintainabilityRule(id, 1, "title", "description", level, conditions,
                 Set.of(), RuleMaturity.CANDIDATE, RuleMode.WARN, RuleSeverity.WARNING,
-                "docs/rules/" + id + ".md", MetricRequirements.Scope.SYNTAX_LOCAL, worsening);
+                "docs/rules/" + id + ".md", MetricRequirements.Scope.SYNTAX_LOCAL, worsening,
+                Map.of(MetricCode.CC, 5.0));
     }
 
     // ---------------------------------------------------------------- boundaries

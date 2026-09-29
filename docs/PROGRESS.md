@@ -1,5 +1,50 @@
 # what has been done
 
+## Session: ML-018 — what changed, stated as a lifecycle (2026-09-29)
+
+**The delta table is implemented as one branch per row**, not derived from the two statuses with a
+formula. A formula produces the right answer for the rows somebody thought of and silently guesses
+for the ones nobody did; the table has eight rows precisely because each one removes a specific
+confusion, and each is now a test.
+
+**A base value is never invented.** When either side is unavailable the result is
+`COMPARISON_UNAVAILABLE` plus an issue — substituting a base of zero would make `was 0, now 18` look
+like a tripling and fire a growth budget on an entity whose history nobody measured. `unavailableBaseIsNotNew`
+asserts the dangerous direction specifically: a run whose base analysis failed must not report every
+entity in it as brand new, because that is the gate blocking on its own blindness.
+
+**New code is a finding, not a non-event.** There is no base value to grow from, so a growth-based
+comparison would answer `no` — and new code that is already too complex is exactly what a pull-request
+gate exists to catch. `newComplexMethodDetectedWithoutGrowthBase` covers it.
+
+**The budgets are inclusive and tested from both sides.** CC 16→20 is a rise of four against a budget
+of five: existing, not blocking. 16→21 is exactly the budget: worsened. Getting that off by one turns
+the first into a false alarm, and a false alarm on a method that merely grew a branch is how a gate
+gets ignored.
+
+**`RISES_BY_WHILE_OTHERS_HOLD` is the clause that stops a refactoring reading as progress.** A class
+being split drops NOM while WMC moves; calling that a regression would punish exactly what the rule
+should encourage. And the test corrected itself here: I first asserted a class whose NOM fell to 12
+was not worsened, but 12 is below the rule's own bound of 15, so the class had stopped matching
+entirely and the correct answer was `RESOLVED`. The fixture now uses a drop that worsens the metric
+while staying inside the rule.
+
+**Exact moves keep their lifecycle; renames do not.** A file relocation is not a change to the code,
+or every reorganisation would report the moved code as new. `EntityCorrespondence` verifies exactness
+by calling `EntityKey.movedTo`, which itself refuses a differing signature or qualified name — so a
+rename detected as high-similarity still produces removed-plus-new, and the old debt is not silently
+transferred onto the replacement.
+
+**A disabled rule is not a resolution.** `ruleDisabledIsNotResolved` exists because the alternative
+produces a report full of `resolved` entries every time somebody turned a rule off, which reads as a
+maintainer having fixed something.
+
+- New: `FindingDeltaEvaluator` (pure — no git, no filesystem, no clock), `EntityCorrespondence`.
+- Changed: `MaintainabilityRule` gained `worseningBudgets`, now read from the catalogue and hashed
+  into the policy digest rather than merely documented.
+- Tests: `FindingDeltaEvaluatorTest` (9). `./gradlew check` green.
+
+
 ## Session: ML-017 — a role decides which rules apply, not what gets measured (2026-09-29)
 
 **The distinction this task turns on is invisible from the outside unless a test says which one is
@@ -2304,9 +2349,9 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-017 are DONE.
-  Next ready task: **ML-018** (compare finding lifecycles across snapshots). Implement one packet per
-  commit. The prior roadmap below is completed history.
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-018 are DONE.
+  Next ready task: **ML-019** (wire the opt-in maintainability policy into gate and detect). Implement
+  one packet per commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.

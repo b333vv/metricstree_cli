@@ -128,7 +128,8 @@ class RuleConfigLoaderTest {
         MaintainabilityRule roleChanged = new MaintainabilityRule(base.id(), base.version(),
                 base.title(), base.description(), base.level(), base.conditions(),
                 Set.of(EntityRole.TEST), base.maturity(), base.defaultMode(), base.severity(),
-                base.documentationPath(), base.requiredScope(), base.worsening());
+                base.documentationPath(), base.requiredScope(), base.worsening(),
+                base.worseningBudgets());
         assertNotEquals(MaintainabilityRules.digestOf(List.of(base)),
                 MaintainabilityRules.digestOf(List.of(roleChanged)),
                 "a rule that now applies to different code is a different policy");
@@ -136,7 +137,8 @@ class RuleConfigLoaderTest {
         MaintainabilityRule reworded = new MaintainabilityRule(base.id(), base.version(),
                 "A different title entirely", base.description(), base.level(), base.conditions(),
                 base.applicableRoles(), base.maturity(), base.defaultMode(), base.severity(),
-                base.documentationPath(), base.requiredScope(), base.worsening());
+                base.documentationPath(), base.requiredScope(), base.worsening(),
+                base.worseningBudgets());
         assertEquals(MaintainabilityRules.digestOf(List.of(base)),
                 MaintainabilityRules.digestOf(List.of(reworded)),
                 "prose is not policy; rewording a title must not invalidate a stored baseline");
@@ -212,7 +214,7 @@ class RuleConfigLoaderTest {
         return new MaintainabilityRule(base.id(), base.version(), base.title(), base.description(),
                 base.level(), conditions, base.applicableRoles(), base.maturity(),
                 base.defaultMode(), base.severity(), base.documentationPath(),
-                base.requiredScope(), base.worsening());
+                base.requiredScope(), base.worsening(), base.worseningBudgets());
     }
 
     /** Method or class, so a rule can be checked against the level of its own conditions. */

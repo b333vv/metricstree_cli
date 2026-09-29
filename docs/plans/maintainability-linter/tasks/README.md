@@ -23,7 +23,7 @@ Dependencies are technical prerequisites. Milestone boundaries and external evid
 | [ML-015](ML-015.md) | Evaluate method rules and add legacy method-rule inputs | ML-014 | DONE |
 | [ML-016](ML-016.md) | Evaluate class rules with conservative evidence status | ML-014, ML-015 | DONE |
 | [ML-017](ML-017.md) | Apply explicit code roles and stable exclusion semantics | ML-016 | DONE |
-| [ML-018](ML-018.md) | Compare finding lifecycles across snapshots | ML-016, ML-017 | TODO |
+| [ML-018](ML-018.md) | Compare finding lifecycles across snapshots | ML-016, ML-017 | DONE |
 | [ML-019](ML-019.md) | Wire the opt-in maintainability policy into gate and detect | ML-018 | TODO |
 | [ML-020](ML-020.md) | Freeze version 2 JSON and logical source locations | ML-019 | TODO |
 | [ML-021](ML-021.md) | Render actionable agent Markdown and HTML from findings | ML-020 | TODO |

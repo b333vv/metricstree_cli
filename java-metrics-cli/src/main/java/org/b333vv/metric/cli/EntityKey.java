@@ -57,6 +57,12 @@ record EntityKey(String path, String qualifiedName, String signature) {
         return new EntityKey(path, qualifiedName, signature);
     }
 
+    /** A key from its three parts, choosing the right factory by whether a signature is present. */
+    static EntityKey ofKey(String path, String qualifiedName, String signature) {
+        return signature == null ? ofClass(path, qualifiedName)
+                : ofMethod(path, qualifiedName, signature);
+    }
+
     /** Whether this entity is a method rather than a class or package. */
     boolean isMethod() {
         return signature != null;
