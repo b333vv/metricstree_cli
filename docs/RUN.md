@@ -746,6 +746,8 @@ java-metrics-cli gate --base origin/main [--mode <worktree|staged|committed>] [-
 | Option | Description |
 |--------|-------------|
 | `--analysis-scope=<local\|project>` | How much of the project the analysis may use. `local` (**default**) measures only metrics provable from one file's syntax, so a run with no classpath is still trustworthy; `project` also resolves symbols and measures coupling, and needs a usable classpath. Overrides `gate.analysis.scope` in a project config. See [Analysis scope](#analysis-scope-local-or-project) |
+| `--source-root=<path>` | Source root to analyze per revision, repeatable. Recorded as a repository-relative path and re-pointed separately into the base and the current revision, so both sides are measured against their own sources. Replaces `gate.sourceRoots` |
+| `--classpath=<path>` | Classpath entry for symbol resolution in project scope, repeatable. Pinned for both revisions and hashed before and after the run. Replaces `gate.classpath` |
 | `--base=<ref>` | **Required.** Base ref to diff against. Resolved once, together with `HEAD`, and their single merge base supplies both the changed file set and the old content. An unknown ref, a history with no merge base, and a criss-cross history with several are all errors (exit 2) — the gate will not pick a revision arbitrarily |
 | `--mode=<worktree\|staged\|committed>` | Which revision state is the "after" side. `worktree` (**default**), `staged`, `committed`. Overrides `gate.mode` in a project config |
 | `-p, --profile=<name>` | Threshold profile for this run: `relaxed`, `standard`, `strict`. Overrides `profile:` in a project config; that config's inline `thresholds:` still merge on top. An unknown name is a usage error (exit 2) |
@@ -857,6 +859,68 @@ well as analysis scope 'project', or it cannot be measured at all
 Switching to `--analysis-scope project` makes the gate attempt those metrics — and makes the run
 depend on your classpath being right. It also does not make an unresolved value correct; that is a
 per-check status, reported separately.
+
+#### Declaring the project context: `--source-root` and `--classpath`
+
+In project scope the gate measures *the whole declared context of each revision*, not just the changed
+files. Two things must therefore be declared, and both can be given as flags or in the config:
+
+```bash
+java-metrics-cli gate --base origin/main \
+    --analysis-scope project \
+    --source-root src/main/java \
+    --classpath build/classes/java/main \
+    --classpath ~/.m2/repository/…/some-library.jar
+```
+
+```yaml
+gate:
+  analysis: project
+  sourceRoots:
+    - src/main/java
+  classpath:
+    - build/classes/java/main
+```
+
+Three properties are worth stating explicitly, because each of them prevents a specific wrong answer:
+
+- **Roots are repository-relative, not filesystem-absolute.** `src/main/java` is resolved once and
+  then re-pointed separately into the base snapshot and the current snapshot, so each revision is
+  measured against its *own* copy of that root. Pointing the base side at the working tree would
+  silently measure both sides against current content. Config values resolve against the config
+  file's own directory, so the command behaves the same from any subdirectory; flag values resolve
+  against the working directory.
+- **The classpath is pinned for both sides and verified.** The same entries are used for the base and
+  the current analysis, and their contents are hashed before and after the run. A jar or output
+  directory that changes underneath the analysis is an **environment error (exit 2)**, not a verdict:
+  one side was measured against something the other never saw.
+- **A missing root or entry is rejected, never dropped.** Discarding it would produce a smaller world
+  than the config declared with nothing in the output saying so, and every coupling number computed
+  in it would be understated by an amount nobody could reconstruct. Both are exit 2 with a message
+  naming the path.
+
+Findings still apply **only to the changed entities**. The context is what the analysis is allowed to
+see; it is never what the comparison is about, and an untouched file cannot become a finding however
+bad it is.
+
+#### What the gate cannot promise about your dependencies
+
+Declaring a classpath does not make the dependency versions behind it known. The gate does not run
+your build, so it cannot know which jar versions a `pom.xml` or a Gradle lockfile resolves to. When
+one of those files changes in the same diff, the semantic comparison is marked **partial** with the
+reason code `classpath-version-unverified`, and the run reports it. The change manifest is consulted
+in full for this — `pom.xml` is not a Java file, and filtering to `*.java` first would report a
+verified dependency set on exactly the commit that invalidated it.
+
+Similarly, a type the resolver could not see makes the affected file's semantic measurements
+partial (`unresolved-dependency`), attributed per file where the diagnostic names one and to the whole
+run otherwise. A missing dependency is never reported as a coupling of zero: `CBO` for a class whose
+callee type is absent means "the calls could not be seen", and it is reported as a gap rather than
+letting a `max` bound pass on an absence.
+
+This strictness applies only when a context was actually declared. In the default `local` scope, types
+outside the analysed files were never promised to be resolvable, so unresolved imports are not
+reported as gaps.
 
 **Execution order.** The gate analyses its snapshots on a single thread, visiting files in sorted path
 order. This is deliberate: the gate parses a whole snapshot to measure a handful of changed files, so the

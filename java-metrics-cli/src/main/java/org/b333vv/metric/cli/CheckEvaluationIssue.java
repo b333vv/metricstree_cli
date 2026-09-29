@@ -64,6 +64,27 @@ record CheckEvaluationIssue(
     /** Every changed file was excluded by configuration. */
     static final String ALL_CHANGED_FILES_EXCLUDED = "all-changed-files-excluded";
 
+    /**
+     * A build descriptor or lockfile changed, so the external dependencies behind a configured
+     * classpath may have changed with it.
+     *
+     * <p>This is a partial-comparison marker rather than a missing measurement: the semantic checks
+     * were still evaluated, against a dependency set this tool cannot verify because it does not run
+     * the project's build. Required, because a semantic check that silently trusts an unverifiable
+     * dependency set is exactly the "published a number nothing supports" case this type exists to
+     * remove.
+     */
+    static final String CLASSPATH_VERSION_UNVERIFIED = "classpath-version-unverified";
+
+    /**
+     * A file's semantic measurements depend on types the resolver could not see, so the values that
+     * were computed for it are not comparable.
+     *
+     * <p>Attributed per file where the diagnostic names one, and to the whole run otherwise: a
+     * coverage ratio does not identify which individual finding can be trusted.
+     */
+    static final String UNRESOLVED_DEPENDENCY = "unresolved-dependency";
+
     /** A check that was only advisory could not be evaluated. */
     static final String OPTIONAL_UNAVAILABLE = "optional-unavailable";
 
@@ -90,6 +111,22 @@ record CheckEvaluationIssue(
     static CheckEvaluationIssue nonFiniteValue(String file, MetricCode metric) {
         return new CheckEvaluationIssue(metric, file, NON_FINITE_VALUE, true,
                 file + ": " + metric + " has no finite value, so it cannot be compared to a bound");
+    }
+
+    /** A configured classpath whose dependency versions this run cannot verify. */
+    static CheckEvaluationIssue classpathVersionUnverified(String message) {
+        return new CheckEvaluationIssue(null, null, CLASSPATH_VERSION_UNVERIFIED, true, message);
+    }
+
+    /**
+     * A semantic measurement that depends on types the resolver never saw.
+     *
+     * <p>Kept distinct from {@link #NON_FINITE_VALUE} on purpose: the value may well be a finite
+     * number, and the problem is that the number was computed from a world the file's real
+     * dependencies were missing from.
+     */
+    static CheckEvaluationIssue unresolvedDependency(String file, String message) {
+        return new CheckEvaluationIssue(null, file, UNRESOLVED_DEPENDENCY, true, message);
     }
 
     static CheckEvaluationIssue optional(String file, String reasonCode, String message) {

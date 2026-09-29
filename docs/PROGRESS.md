@@ -1,5 +1,54 @@
 # what has been done
 
+## Session: ML-011 — a coupling number must name the world it was measured in (2026-09-29)
+
+**A project-mode gate that analyses only the changed file measures the wrong thing.** Coupling and
+cohesion are properties of a class *together with* its collaborators, so the context is the measurement.
+`GateAnalysisContext` now holds that context: declared source roots and a classpath, resolved once,
+applied to both revisions.
+
+**Roots are stored logically, which is the part that matters.** `src/main/java` is kept as a
+repository-relative string and re-pointed separately into the before snapshot and the after snapshot.
+An absolute path captured at resolve time would point the base analysis at the *current* revision's
+sources — a comparison that looks fine and is measured against the wrong side. Config values resolve
+against the config file's directory (the same rule `classRulesFile` already used); flags resolve
+against the working directory.
+
+**The classpath is pinned, hashed, and re-verified.** Both sides get the identical entry list, so one
+revision cannot resolve against different jars than the other. Because that list is shared rather than
+per-revision, it is hashed before and after the run: a jar or output directory rebuilt underneath the
+analysis is now an environment error (exit 2), not a verdict over two measurements that were not
+taken in the same world. Directory entries are hashed by their whole inventory — `build/classes/java/main`
+is exactly the entry most likely to change mid-build.
+
+**Nothing configured is silently dropped.** A missing root or classpath entry is exit 2 with the path
+named. Dropping it would produce a smaller world than the config declared, with every coupling number
+understated by an amount nobody could reconstruct afterwards.
+
+**What it still cannot promise, said out loud.** Declaring a classpath does not make dependency versions
+known — the gate does not run your build. So when a `pom.xml`, Gradle build file, lockfile or version
+catalogue changes in the diff, the semantic comparison is marked partial with the new reason code
+`classpath-version-unverified`. The manifest is consulted **in full** for this, not filtered to
+`*.java` first: `pom.xml` is not a Java file, and a Java-only filter would certify the dependency set
+on exactly the commit that invalidated it. Unresolvable types are attributed per file where the
+diagnostic names one and to the whole run otherwise (`unresolved-dependency`) — a coverage ratio does
+not identify which finding can be trusted. Both scans are skipped entirely when no context is declared,
+so every existing local-mode run is byte-identical to before.
+
+- New: `GateAnalysisContext` (logical roots, pinned classpath, content digest, descriptor detection).
+- Config: `gate.sourceRoots`, `gate.classpath` (config-relative, list-valued, unknown key rejected);
+  flags `--source-root`, `--classpath`. CLI replaces config rather than merging.
+- Completeness: `AnalysisCompleteness.of` takes the established context issues plus the context itself;
+  new reason codes and a conservative per-file/global attribution for resolution failures.
+- Tests: `GateProjectContextTest` (14 — unchanged neighbour in both snapshots, base reads the base
+  copy, roots from a subdirectory, findings limited to changed entities, classpath pinned/mutated/
+  directory-hashed, descriptor marks only the semantic comparison partial, missing dependency never
+  produces a CBO violation, config-relative resolution, typo rejection, descriptor matcher).
+- `./gradlew check` green. Docs: `docs/RUN.md` § "Declaring the project context" and § "What the gate
+  cannot promise about your dependencies".
+- Compatibility: additive. No existing golden moved; every pre-existing gate test passes unchanged.
+
+
 ## Session: ML-010 — a deterministic path exists; DEBT-11 is still open (2026-09-28)
 
 **A metric value that depends on thread scheduling is not a property of the code.** That is the whole
@@ -2021,8 +2070,9 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. All ML-001–ML-040 tasks are TODO.
-  Start with ML-001; implement one packet per commit. The prior roadmap below is completed history.
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-011 are DONE.
+  Next ready task: **ML-012** (document metric variants and qualify rule inputs). Implement one packet
+  per commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.

@@ -107,13 +107,14 @@ final class ProjectConfigLoader {
                 validate != null ? textOrNull(validate.get("format")) : null,
                 detect != null ? textOrNull(detect.get("format")) : null,
                 analyze != null ? textOrNull(analyze.get("format")) : null,
-                gate != null ? gateSettings(gate, file) : null,
+                gate != null ? gateSettings(gate, file, baseDir) : null,
                 List.copyOf(unknownKeys));
     }
 
     /** The keys the {@code gate:} section accepts. Anything else is a typo the user has to see. */
     private static final Set<String> GATE_KEYS = Set.of(
-            "growth", "failOn", "mode", "policy", "enforcement", "analysis");
+            "growth", "failOn", "mode", "policy", "enforcement", "analysis",
+            "sourceRoots", "classpath");
 
     /**
      * The {@code gate:} section, validated as a whole.
@@ -129,7 +130,7 @@ final class ProjectConfigLoader {
      * <p>The three later keys ({@code mode}, {@code policy}, {@code enforcement}, {@code analysis})
      * are carried but not yet acted on — see {@link GateSettings}.
      */
-    private static GateSettings gateSettings(JsonNode gate, Path file) {
+    private static GateSettings gateSettings(JsonNode gate, Path file, Path baseDir) {
         if (gate.isNull()) {
             return null;
         }
@@ -153,7 +154,36 @@ final class ProjectConfigLoader {
                 text(gate.get("mode"), file, "gate.mode"),
                 text(gate.get("policy"), file, "gate.policy"),
                 text(gate.get("enforcement"), file, "gate.enforcement"),
-                text(gate.get("analysis"), file, "gate.analysis"));
+                text(gate.get("analysis"), file, "gate.analysis"),
+                pathList(gate.get("sourceRoots"), baseDir, file, "gate.sourceRoots"),
+                pathList(gate.get("classpath"), baseDir, file, "gate.classpath"));
+    }
+
+    /**
+     * A list of paths inside the {@code gate:} section, resolved against the config file's directory.
+     *
+     * <p>Config-relative, not CWD-relative, for the reason {@link #resolveRef} already states: the
+     * same repository must behave the same way whichever subdirectory the command was started from.
+     * Existence is deliberately <em>not</em> checked here — a missing root or jar is reported by
+     * {@link GateAnalysisContext}, which can name it as the usage error it is.
+     */
+    private static List<Path> pathList(JsonNode node, Path baseDir, Path file, String key) {
+        if (node == null || node.isNull()) {
+            return List.of();
+        }
+        if (!node.isArray()) {
+            throw gateError(file, key,
+                    "must be a list of paths, not a " + kindOf(node));
+        }
+        List<Path> paths = new ArrayList<>();
+        for (JsonNode element : node) {
+            if (!element.isTextual()) {
+                throw gateError(file, key, "must contain only path strings, found: " + element);
+            }
+            Path path = Path.of(element.asText());
+            paths.add(path.isAbsolute() ? path.normalize() : baseDir.resolve(path).normalize());
+        }
+        return List.copyOf(paths);
     }
 
     /** {@code growth: {CC: 5}} → metric → budget. */

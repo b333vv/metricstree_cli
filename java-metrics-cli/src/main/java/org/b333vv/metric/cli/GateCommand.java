@@ -8,6 +8,7 @@ import org.b333vv.metric.library.core.AnalysisRequest;
 import org.b333vv.metric.library.core.ExclusionConfig;
 import org.b333vv.metric.library.core.MetricReport;
 import org.b333vv.metric.library.core.ProjectReport;
+import org.b333vv.metric.library.core.SourceRoot;
 import org.b333vv.metric.library.core.SourceUnit;
 import org.b333vv.metric.library.javaparser.JavaMetricsAnalyzer;
 import picocli.CommandLine;
@@ -83,8 +84,21 @@ final class GateCommand implements Callable<Integer> {
                     + "should use). Overrides gate.mode in a project config.")
     private ComparisonMode mode;
 
-    @CommandLine.Option(names = {"--analysis-scope"}, paramLabel = "SCOPE",
-            description = "How much of the project the analysis may use: local (default) measures only "
+    @CommandLine.Option(names = {"--source-root"}, paramLabel = "PATH",
+            description = "Source root to analyse per revision in project scope, repeatable. The root is "
+                    + "recorded as a repository-relative path and re-pointed separately into the base and "
+                    + "the current revision, so both sides are measured against their own sources. "
+                    + "Replaces gate.sourceRoots from a project config.")
+    private List<Path> sourceRoots = new java.util.ArrayList<>();
+
+    @CommandLine.Option(names = {"--classpath"}, paramLabel = "PATH",
+            description = "Classpath entry for symbol resolution in project scope, repeatable. Pinned for "
+                    + "both revisions and hashed before and after the run; a classpath that changes "
+                    + "underneath the analysis is reported as an error rather than measured around. "
+                    + "Replaces gate.classpath from a project config.")
+    private List<Path> classpathEntries = new java.util.ArrayList<>();
+
+    @CommandLine.Option(names = {"--analysis-scope"}, paramLabel = "SCOPE",            description = "How much of the project the analysis may use: local (default) measures only "
                     + "metrics provable from one file's syntax, so a run without a classpath is still "
                     + "trustworthy; project also resolves symbols and measures coupling, and needs a "
                     + "usable classpath. Overrides gate.analysis.scope in a project config.")
@@ -140,9 +154,11 @@ final class GateCommand implements Callable<Integer> {
         Path workingDirectory = currentWorkingDirectorySupplier.get();
         Path repoRoot;
         ComparisonPlan plan;
+        GateAnalysisContext analysisContext;
         try {
             repoRoot = GitOps.repoRoot(workingDirectory);
             plan = ComparisonPlanner.plan(repoRoot, base, resolveMode(config));
+            analysisContext = resolveAnalysisContext(repoRoot, config, workingDirectory, plan);
         } catch (GitOps.GitException | IllegalArgumentException exception) {
             stderr.println("Error: " + exception.getMessage());
             stderr.flush();
@@ -222,6 +238,7 @@ final class GateCommand implements Callable<Integer> {
         GateEvaluator.Result result;
         List<GateFinding> parseErrors;
         AnalysisCompleteness completeness;
+        List<CheckEvaluationIssue> contextIssues = new ArrayList<>();
         // Digests are captured inside the try-with-resources, while the roots still exist, and used
         // after it closes -- the snapshots are the evidence, the roots are an implementation detail.
         String[] digests = new String[2];
@@ -230,10 +247,17 @@ final class GateCommand implements Callable<Integer> {
 
             digests[0] = before.digest();
             digests[1] = after.digest();
+            // Project mode analyses the declared roots inside each snapshot, so both revisions are
+            // measured against their own complete source context. Findings are still filtered down to
+            // the changed entities afterwards: the context is what the analysis may see, never what
+            // the comparison is about. Local mode keeps passing explicit units, because a root would
+            // let the analyzer re-derive FQCNs from a layout the gate deliberately does not assume.
+            List<SourceRoot> beforeRoots = analysisContext.rootsFor(before);
+            List<SourceRoot> afterRoots = analysisContext.rootsFor(after);
             MetricReport currentReport = analyzer.analyze(new AnalysisRequest(
-                    "gate-current", List.of(), after.units(), List.of(), options));
+                    "gate-current", afterRoots, after.units(), analysisContext.classpath(), options));
             MetricReport baseReport = analyzer.analyze(new AnalysisRequest(
-                    "gate-base", List.of(), before.units(), List.of(), options));
+                    "gate-base", beforeRoots, before.units(), analysisContext.classpath(), options));
 
             parseErrors = parseErrors(currentReport, after, subjectPaths);
             Set<String> unparseableBase = unparseableBaseFiles(baseReport, before);
@@ -247,6 +271,22 @@ final class GateCommand implements Callable<Integer> {
                     growth,
                     failOn,
                     unparseableBase);
+
+            // The classpath is the one piece of context both revisions share. If it moved while the
+            // run was reading it, one of the two measurements was taken against something the other
+            // never saw, and no verdict over the pair would be supported.
+            List<String> classpathDrift = analysisContext.verifyUnchanged();
+            if (!classpathDrift.isEmpty()) {
+                throw new UnstableAnalysisContextException(classpathDrift.get(0));
+            }
+            if (analysisContext.classpathVersionUnverified()) {
+                contextIssues.add(CheckEvaluationIssue.classpathVersionUnverified(
+                        "a build descriptor or lockfile changed ("
+                                + String.join(", ", analysisContext.changedDescriptors())
+                                + "), so the dependency versions behind the configured classpath could"
+                                + " not be verified without running the project's build; the semantic"
+                                + " comparison is partial"));
+            }
 
             // What the run could not evaluate, decided from the report's own declaration inventory
             // rather than from the file list. A file that declares only enums has no classes to check,
@@ -265,11 +305,21 @@ final class GateCommand implements Callable<Integer> {
                     metricSelection.unavailable(),
                     plan.unsupported(),
                     excludedFiles,
-                    parseErrors.stream().map(GateFinding::file).distinct().toList());
+                    parseErrors.stream().map(GateFinding::file).distinct().toList(),
+                    contextIssues,
+                    analysisContext);
         } catch (SnapshotMaterializer.UnstableSourceException exception) {
             // The working tree moved while it was being read. Reporting this as a gate failure would
             // blame the code for an editor saving a file; reporting it as a pass would publish a
             // verdict over content nobody has. It is an environment error.
+            stderr.println("Error: " + exception.getMessage());
+            stderr.flush();
+            flushWarnings(warningBuffer);
+            return 2;
+        } catch (UnstableAnalysisContextException exception) {
+            // The dependency context stopped existing mid-run. Publishing a verdict over one side's
+            // measurement and the other's would be a number nothing supports; returning a pass would
+            // be worse than returning nothing.
             stderr.println("Error: " + exception.getMessage());
             stderr.flush();
             flushWarnings(warningBuffer);
@@ -323,6 +373,33 @@ final class GateCommand implements Callable<Integer> {
         }
         stdout.flush();
         return exitCode;
+    }
+
+    /**
+     * The declared analysis context for this run: the configured roots and classpath, resolved once,
+     * with the changed build descriptors already detected from the full manifest.
+     *
+     * <p>Resolved before anything is materialized, so a missing root or jar is reported as the usage
+     * error it is — before the run has created temporary directories and read a single blob.
+     */
+    private GateAnalysisContext resolveAnalysisContext(
+            Path repoRoot, ProjectConfig config, Path workingDirectory, ComparisonPlan plan) {
+        GateSettings settings = config.gate() != null ? config.gate() : GateSettings.EMPTY;
+        return GateAnalysisContext.resolve(
+                repoRoot,
+                settings.sourceRoots(),
+                settings.classpath(),
+                sourceRoots,
+                classpathEntries,
+                workingDirectory,
+                plan.pathChanges());
+    }
+
+    /** Thrown when the pinned classpath changed while the analysis was reading it. */
+    private static final class UnstableAnalysisContextException extends RuntimeException {
+        UnstableAnalysisContextException(String message) {
+            super(message);
+        }
     }
 
     /**

@@ -1,5 +1,6 @@
 package org.b333vv.metric.cli;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -36,6 +37,9 @@ import java.util.Map;
  * @param policy      policy name ({@code legacy} / {@code maintainability}); {@code null} until ML-019
  * @param enforcement enforcement level; {@code null} until ML-019
  * @param analysis    analysis mode ({@code local} / {@code project}); {@code null} until ML-007
+ * @param sourceRoots repository-relative-or-absolute source roots to analyse per revision, resolved
+ *                    against the config file's own directory (ML-011)
+ * @param classpath   classpath entries for symbol resolution in project scope, resolved the same way
  */
 record GateSettings(
         Map<String, Double> growth,
@@ -43,12 +47,17 @@ record GateSettings(
         String mode,
         String policy,
         String enforcement,
-        String analysis) {
+        String analysis,
+        List<Path> sourceRoots,
+        List<Path> classpath) {
 
-    static final GateSettings EMPTY = new GateSettings(null, null, null, null, null, null);
+    static final GateSettings EMPTY =
+            new GateSettings(null, null, null, null, null, null, List.of(), List.of());
 
     GateSettings {
         growth = growth == null ? null : Map.copyOf(growth);
         failOn = failOn == null ? null : List.copyOf(failOn);
+        sourceRoots = sourceRoots == null ? List.of() : List.copyOf(sourceRoots);
+        classpath = classpath == null ? List.of() : List.copyOf(classpath);
     }
 }

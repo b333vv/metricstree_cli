@@ -94,6 +94,11 @@ record AnalysisCompleteness(
      * @param unsupportedSources selected paths that could not be read as source at all
      * @param excluded      selected files that configuration excluded
      * @param parseErrors   changed files whose current content does not parse
+     * @param contextIssues issues already established by the caller, such as an unverifiable
+     *                      classpath version set
+     * @param analysisContext the declared per-revision context, whose size decides whether an
+     *                      unresolved external type is a real gap or merely the local scope working
+     *                      as designed
      */
     static AnalysisCompleteness of(
             MetricReport report,
@@ -104,9 +109,11 @@ record AnalysisCompleteness(
             List<GateMetricSelection.UnavailableMetric> unavailableMetrics,
             List<String> unsupportedSources,
             List<String> excluded,
-            List<String> parseErrors) {
+            List<String> parseErrors,
+            List<CheckEvaluationIssue> contextIssues,
+            GateAnalysisContext analysisContext) {
 
-        List<CheckEvaluationIssue> issues = new ArrayList<>();
+        List<CheckEvaluationIssue> issues = new ArrayList<>(contextIssues);
         List<String> parsed = new ArrayList<>();
 
         // 1. A file the comparison could not read at all. Not silent, and not merely a warning: the
@@ -191,6 +198,22 @@ record AnalysisCompleteness(
             }));
         }
 
+        // 6b. Resolution failures, attributed conservatively. A diagnostic that names a file makes
+        //     that file's semantic checks partial; one that names no file — a classpath-wide failure,
+        //     a per-class aggregate whose fallback location is the file — taints the run instead,
+        //     because a coverage ratio does not identify which individual finding can be trusted.
+        //
+        //     Only relevant when a context was actually declared. In local scope, types outside the
+        //     analysed files were never promised to be resolvable, so reporting every unresolved
+        //     import would make the default mode permanently INCOMPLETE and train a reader to
+        //     ignore the word. With a declared classpath, an unresolved external type is a genuine
+        //     loss of evidence, and it is reported rather than absorbed into a plausible number.
+        if (analysisContext.hasContext() && !analysisContext.sourceRoots().isEmpty()) {
+            for (CheckEvaluationIssue issue : unresolvedDependencyIssues(report, snapshot, subjectPaths)) {
+                issues.add(issue);
+            }
+        }
+
         // 7. Every changed file excluded by configuration. Not a failure and not a gap: exclusion is
         //    the user's own instruction. But the counts have to be reported, because "0 files checked"
         //    and "everything was fine" are different sentences and only one of them is true.
@@ -211,6 +234,67 @@ record AnalysisCompleteness(
      * bound happened to point. {@code UNDEFINED} is the same problem without the arithmetic. Treating
      * both as "not measured" is the only reading that does not depend on which bound is configured.
      */
+    /**
+     * The resolution failures in a report, as partial-comparison issues.
+     *
+     * <p>Attribution is deliberately coarse. A diagnostic that lands in a file the comparison is
+     * about taints that file. A diagnostic that lands nowhere the comparison is about, or that
+     * aggregates many failures into one record, taints the run — because the alternative is guessing
+     * which of the checked files its numbers can be trusted for, and a wrong guess here publishes a
+     * fabricated confidence.
+     *
+     * <p>Only <em>semantic</em> metrics are affected. A syntax measurement of a file that parsed does
+     * not depend on whether its imports resolved, and reporting it as partial would be exactly the
+     * over-reporting that makes an INCOMPLETE verdict stop meaning anything.
+     */
+    private static List<CheckEvaluationIssue> unresolvedDependencyIssues(
+            MetricReport report, SourceSnapshot snapshot, Set<String> subjectPaths) {
+        Set<String> taintedFiles = new java.util.LinkedHashSet<>();
+        boolean global = false;
+        int failures = 0;
+        for (AnalysisDiagnostic diagnostic : report.diagnostics()) {
+            if (!isResolutionDiagnostic(diagnostic)) {
+                continue;
+            }
+            failures++;
+            Optional<String> logical = diagnostic.location() == null
+                    ? Optional.empty()
+                    : snapshot.logicalPath(diagnostic.location().path());
+            if (logical.isPresent() && subjectPaths.contains(logical.get())) {
+                taintedFiles.add(logical.get());
+            } else if (logical.isEmpty()) {
+                global = true;
+            }
+        }
+
+        List<CheckEvaluationIssue> issues = new ArrayList<>();
+        for (String file : taintedFiles) {
+            issues.add(CheckEvaluationIssue.unresolvedDependency(file,
+                    file + " references types that could not be resolved, so its semantic"
+                            + " measurements were computed without them and cannot be compared"));
+        }
+        if (global) {
+            issues.add(CheckEvaluationIssue.unresolvedDependency(null,
+                    failures + " type or symbol resolution failure(s) could not be attributed to a"
+                            + " single file, so the semantic measurements of every checked file are"
+                            + " partial"));
+        }
+        return issues;
+    }
+
+    /**
+     * Whether a diagnostic says a symbol or a type could not be resolved.
+     *
+     * <p>The aggregate codes count, not just report: they mean the per-class cap suppressed further
+     * failures, so the run knows it has seen fewer problems than actually exist. Ignoring them would
+     * make the cap itself a way to hide evidence.
+     */
+    private static boolean isResolutionDiagnostic(AnalysisDiagnostic diagnostic) {
+        String code = diagnostic.code();
+        return code.startsWith("UNRESOLVED_TYPE") || code.startsWith("UNRESOLVED_SYMBOL")
+                || "CLASSPATH_PROBLEM".equals(code);
+    }
+
     static boolean isUnavailableValue(Value value) {
         if (value == null) {
             return true;
