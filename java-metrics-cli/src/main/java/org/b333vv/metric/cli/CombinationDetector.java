@@ -49,6 +49,31 @@ final class CombinationDetector {
             List<Violation> violations,
             Severity severity) {}
 
+    /**
+     * One matched method, with the class it belongs to.
+     *
+     * <p>The signature is carried rather than the method name because overloading is normal in Java:
+     * two {@code handle} methods with different parameters are different entities, and a match
+     * reported by name alone would point at whichever one the reader assumed.
+     */
+    record MethodEntityRef(
+            String className,
+            String qualifiedName,
+            String signature,
+            String sourcePath,
+            int startLine,
+            int endLine,
+            List<Violation> violations,
+            Severity severity) {}
+
+    record MethodMatch(String name, int matchCount, List<MethodEntityRef> matches) {
+        MethodMatch {
+            if (matchCount != matches.size()) {
+                throw new IllegalArgumentException("matchCount must equal matches.size()");
+            }
+        }
+    }
+
     record PackageEntityRef(String packageName, List<Violation> violations, Severity severity) {}
     record ClassMatch(String name, int matchCount, List<ClassEntityRef> matches) {
         ClassMatch {
@@ -145,6 +170,42 @@ final class CombinationDetector {
             }
             if (!matched.isEmpty()) {
                 results.add(new ClassMatch(rule.name(), matched.size(), matched));
+            }
+        }
+        return results;
+    }
+
+    /**
+     * Matches every method against every rule.
+     *
+     * <p>Conditions are ANDed and inclusive, exactly as at class level: the rule shape is the same,
+     * only the entity differs. Methods are visited in report order and their signatures are used as
+     * the identity, so overloads never collapse into one another.
+     */
+    List<MethodMatch> detectMethods(MetricReport report, List<CombinationDefinition> rules) {
+        List<MethodMatch> results = new ArrayList<>();
+        for (CombinationDefinition rule : rules) {
+            List<MethodEntityRef> matched = new ArrayList<>();
+            for (ClassReport cls : report.classes()) {
+                for (org.b333vv.metric.library.core.MethodReport method : cls.methods()) {
+                    List<Violation> violations = satisfiedConditions(method.metrics(), rule.conditions());
+                    if (violations == null) {
+                        continue;
+                    }
+                    org.b333vv.metric.library.core.SourceLocation location = method.sourceLocation();
+                    matched.add(new MethodEntityRef(
+                            cls.className(),
+                            cls.qualifiedName(),
+                            method.signature(),
+                            cls.sourcePath().toString(),
+                            location == null ? 0 : location.startLine(),
+                            location == null ? 0 : location.endLine(),
+                            violations,
+                            severityOf(violations)));
+                }
+            }
+            if (!matched.isEmpty()) {
+                results.add(new MethodMatch(rule.name(), matched.size(), matched));
             }
         }
         return results;

@@ -229,11 +229,26 @@ final class HtmlReportWriter {
             DetectResultWriter.RulesSummary classSummary,
             List<CombinationDetector.PackageMatch> packageMatches,
             DetectResultWriter.RulesSummary packageSummary) {
+        return forDetect(baseDir, classMatches, classSummary, packageMatches, packageSummary, null);
+    }
+
+    /** The detect report including method matches, when method rules were configured. */
+    String forDetect(
+            Path baseDir,
+            List<CombinationDetector.ClassMatch> classMatches,
+            DetectResultWriter.RulesSummary classSummary,
+            List<CombinationDetector.PackageMatch> packageMatches,
+            DetectResultWriter.RulesSummary packageSummary,
+            List<CombinationDetector.MethodMatch> methodMatches) {
         List<DetectResultWriter.ClassFinding> byClass = DetectResultWriter.byClass(baseDir, classMatches);
         List<DetectResultWriter.PackageFinding> byPackage = DetectResultWriter.byPackage(packageMatches);
+        int methodCount = methodMatches == null
+                ? 0
+                : methodMatches.stream().mapToInt(CombinationDetector.MethodMatch::matchCount).sum();
 
         StringBuilder cards = new StringBuilder();
-        card(cards, DetectResultWriter.totalFindings(classMatches, packageMatches), "Total findings");
+        card(cards, DetectResultWriter.totalFindings(classMatches, packageMatches) + methodCount,
+                "Total findings");
         card(cards, byClass.size(), "Classes affected");
         card(cards, byPackage.size(), "Packages affected");
         card(cards, classSummary.matched() + "/" + classSummary.total(), "Class rules fired");
@@ -270,7 +285,7 @@ final class HtmlReportWriter {
             body.append("</table></details>");
         }
 
-        appendDetectRuleSections(body, classMatches, packageMatches);
+        appendDetectRuleSections(body, classMatches, packageMatches, methodMatches);
 
         String subtitle = "Status: COMPLETED · class rules fired: " + classSummary.matched() + " of "
                 + classSummary.total() + " · package rules fired: " + packageSummary.matched() + " of "
@@ -297,6 +312,38 @@ final class HtmlReportWriter {
             StringBuilder body,
             List<CombinationDetector.ClassMatch> classMatches,
             List<CombinationDetector.PackageMatch> packageMatches) {
+        appendDetectRuleSections(body, classMatches, packageMatches, null);
+    }
+
+    private static void appendDetectRuleSections(
+            StringBuilder body,
+            List<CombinationDetector.ClassMatch> classMatches,
+            List<CombinationDetector.PackageMatch> packageMatches,
+            List<CombinationDetector.MethodMatch> methodMatches) {
+        if (methodMatches != null && !methodMatches.isEmpty()) {
+            body.append("<h2 class=\"group\">Method-level rules</h2>");
+            for (CombinationDetector.MethodMatch rule : methodMatches) {
+                body.append("<details class=\"section\" data-search=\"")
+                        .append(esc(rule.name().toLowerCase())).append("\"><summary><span>")
+                        .append(esc(rule.name())).append("</span><span class=\"count\">")
+                        .append(rule.matchCount()).append("</span></summary>");
+                body.append("<table><tr><th>Method</th><th>Lines</th>"
+                        + "<th>Metric values vs conditions</th><th>Severity</th></tr>");
+                for (CombinationDetector.MethodEntityRef ref : rule.matches()) {
+                    body.append("<tr data-search=\"").append(esc(ref.qualifiedName().toLowerCase()))
+                            .append("\"><td><b>").append(esc(ref.qualifiedName())).append("#")
+                            .append(esc(ref.signature())).append("</b></td><td>")
+                            .append(ref.startLine()).append("–").append(ref.endLine())
+                            .append("</td><td>");
+                    for (CombinationDetector.Violation v : ref.violations()) {
+                        body.append(violationText(v)).append("<br>");
+                    }
+                    body.append("</td><td>").append(severityBadge(ref.severity())).append("</td></tr>");
+                }
+                body.append("</table></details>");
+            }
+        }
+
         if (!classMatches.isEmpty()) {
             body.append("<h2 class=\"group\">Class-level rules</h2>");
             for (CombinationDetector.ClassMatch rule : classMatches) {

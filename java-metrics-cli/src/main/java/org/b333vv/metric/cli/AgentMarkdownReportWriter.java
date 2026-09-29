@@ -96,6 +96,17 @@ final class AgentMarkdownReportWriter {
                      DetectResultWriter.RulesSummary classRules,
                      List<CombinationDetector.PackageMatch> packages,
                      DetectResultWriter.RulesSummary packageRules) {
+        return forDetect(baseDir, classes, classRules, packages, packageRules, null);
+    }
+
+    /** The detect report including method matches, when method rules were configured. */
+    String forDetect(Path baseDir, List<CombinationDetector.ClassMatch> classes,
+                     DetectResultWriter.RulesSummary classRules,
+                     List<CombinationDetector.PackageMatch> packages,
+                     DetectResultWriter.RulesSummary packageRules,
+                     List<CombinationDetector.MethodMatch> methods) {
+        int methodFindingCount = methods == null ? 0
+                : methods.stream().mapToInt(CombinationDetector.MethodMatch::matchCount).sum();
         int classFindingCount = classes.stream()
                 .mapToInt(CombinationDetector.ClassMatch::matchCount).sum();
         int packageFindingCount = packages.stream()
@@ -106,6 +117,11 @@ final class AgentMarkdownReportWriter {
                 .append("- **Package findings:** ").append(packageFindingCount).append('\n')
                 .append("- **Affected classes:** ").append(DetectResultWriter.byClass(baseDir, classes).size()).append('\n')
                 .append("- **Affected packages:** ").append(DetectResultWriter.byPackage(packages).size()).append('\n');
+        if (methods != null) {
+            // Only when method rules actually ran: "0 method findings" in a run that never looked at
+            // methods would read as a clean scan of them.
+            out.append("- **Method findings:** ").append(methodFindingCount).append('\n');
+        }
 
         // Rendered before the findings, and unconditionally when non-empty: a run that evaluated fewer
         // rules than it was given has not searched the space those rules cover.
@@ -130,7 +146,21 @@ final class AgentMarkdownReportWriter {
                 appendViolations(out, ref.violations());
             }
         }
-        if (classes.isEmpty() && packages.isEmpty()) {
+        if (methods != null) {
+            for (CombinationDetector.MethodMatch match : methods) {
+                out.append("### Rule: `").append(escape(match.name())).append("`\n\n");
+                for (CombinationDetector.MethodEntityRef ref : match.matches()) {
+                    out.append("- `").append(escape(ref.sourcePath())).append(':')
+                            .append(ref.startLine()).append("` **")
+                            .append(escape(ref.qualifiedName())).append('#')
+                            .append(escape(ref.signature())).append(":** matched `")
+                            .append(escape(match.name())).append("`\n");
+                    appendViolations(out, ref.violations());
+                }
+            }
+        }
+        if (classes.isEmpty() && packages.isEmpty()
+                && (methods == null || methods.isEmpty())) {
             out.append("No matches.\n");
         }
         return out.toString();

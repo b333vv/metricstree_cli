@@ -1,0 +1,135 @@
+package org.b333vv.metric.cli;
+
+import org.b333vv.metric.library.core.MetricCode;
+import org.b333vv.metric.library.core.MethodReport;
+import org.b333vv.metric.model.metric.value.Value;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Evaluates the catalogue's method rules against measured method metrics.
+ *
+ * <h2>Pure, on purpose</h2>
+ * <p>No git, no filesystem, no analysis is initiated here. The evaluator is handed values that were
+ * already measured and returns a conclusion about them, which is what makes every boundary in it
+ * testable from a fixture of numbers rather than from a repository. It is also what lets the same
+ * evaluator run against the base revision, the current revision and a baseline entry without any of
+ * them being special cases.
+ *
+ * <h2>A missing input is unavailable, never a nonmatch</h2>
+ * <p>This is the rule the whole class exists to enforce. MT-M003 needs two conditions; if only one was
+ * measured, the rule has not been shown to fail — it has been shown to be unanswerable. Returning
+ * {@code COMPLETE_NONMATCH} there would make a rule whose inputs are missing indistinguishable from a
+ * rule that found nothing, and a gate would pass on the strength of a check that never ran. So the
+ * status is {@link EvaluationStatus#UNAVAILABLE} and an {@link EvaluationIssue} says which input was
+ * missing and why.
+ *
+ * <h2>Every condition is recorded, not only the breached one</h2>
+ * <p>A match on MT-M003 reports both the {@code LOC} and the {@code CC} observations. Reporting only
+ * the largest breach would make a finding whose other condition is barely satisfied read exactly like
+ * one where both are far past their bounds — and the two call for different amounts of work.
+ */
+final class MethodRuleEvaluator {
+
+    /**
+     * Evaluates one rule against one method.
+     *
+     * @param rule      the catalogue rule
+     * @param entityKey the method's identity, carrying path, class and signature
+     * @param metrics   what was measured for this method; absent codes are the missing inputs
+     */
+    RuleEvaluation evaluate(MaintainabilityRule rule, EntityKey entityKey,
+            Map<MetricCode, Value> metrics) {
+        List<FindingEvidence> evidence = new ArrayList<>(rule.conditions().size());
+        List<EvaluationIssue> issues = new ArrayList<>();
+        boolean allPresent = true;
+        boolean allSatisfied = true;
+
+        // Sorted by metric name rather than iterated in map order: the evidence list is part of a
+        // report, and a report whose condition order changed between two runs of the same code would
+        // read as two different evaluations.
+        for (Map.Entry<MetricCode, MaintainabilityRule.MetricBounds> condition
+                : sortedConditions(rule).entrySet()) {
+            MetricCode metric = condition.getKey();
+            MaintainabilityRule.MetricBounds bounds = condition.getValue();
+            Value measured = metrics.get(metric);
+
+            if (measured == null || !isFinite(measured)) {
+                allPresent = false;
+                evidence.add(new FindingEvidence(metric, null, null, bounds.min(), bounds.max(), null,
+                        unitOf(metric), List.of("the metric was not measured for this method")));
+                issues.add(EvaluationIssue.required(rule.id(), entityKey,
+                        CheckEvaluationIssue.METRIC_UNAVAILABLE_LOCAL,
+                        rule.id() + " needs " + metric + ", which was not measured for "
+                                + entityKey.render()
+                                + ". The rule has not been shown to fail; it could not be run."));
+                continue;
+            }
+
+            double value = measured.doubleValue();
+            allSatisfied &= bounds.matches(value);
+            evidence.add(FindingEvidence.currentOnly(metric, value, unitOf(metric)));
+        }
+
+        if (!allPresent) {
+            return RuleEvaluation.unavailable(rule.id(), entityKey, evidence, issues);
+        }
+        return allSatisfied
+                ? RuleEvaluation.match(rule.id(), entityKey, evidence)
+                : RuleEvaluation.nonmatch(rule.id(), entityKey, evidence);
+    }
+
+    /** Evaluates a rule against every method of a class, in source order. */
+    List<RuleEvaluation> evaluateAll(MaintainabilityRule rule, String path, String qualifiedName,
+            List<MethodReport> methods) {
+        List<RuleEvaluation> evaluations = new ArrayList<>(methods.size());
+        for (MethodReport method : methods) {
+            EntityKey key = EntityKey.ofMethod(path, qualifiedName, method.signature());
+            evaluations.add(evaluate(rule, key, method.metrics()));
+        }
+        return evaluations;
+    }
+
+    /** The rule's conditions in a fixed order, so evidence order never depends on map iteration. */
+    private static Map<MetricCode, MaintainabilityRule.MetricBounds> sortedConditions(
+            MaintainabilityRule rule) {
+        java.util.TreeMap<MetricCode, MaintainabilityRule.MetricBounds> sorted =
+                new java.util.TreeMap<>(java.util.Comparator.comparing(Enum::name));
+        sorted.putAll(rule.conditions());
+        return sorted;
+    }
+
+    /**
+     * Whether a measured value can be compared to a bound.
+     *
+     * <p>Identity rather than numeric comparison: {@code UNDEFINED} and {@code INFINITY} are
+     * singletons whose {@code doubleValue()} is a real number, so reading them arithmetically
+     * produces a measurement that was never taken.
+     */
+    private static boolean isFinite(Value value) {
+        if (value == Value.UNDEFINED || value == Value.INFINITY) {
+            return false;
+        }
+        double number = value.doubleValue();
+        return !Double.isNaN(number) && !Double.isInfinite(number);
+    }
+
+    /**
+     * How to read the number, so a report says "complexity 18" rather than just "18".
+     *
+     * <p>Stated per metric because the units differ in kind: complexity is a count of decision
+     * points, lines are lines, and TCC is a ratio where 1.0 is perfect cohesion and 0.0 is none.
+     */
+    static String unitOf(MetricCode metric) {
+        return switch (metric) {
+            case CC, CCM -> "complexity";
+            case MND, CND, LND -> "nesting levels";
+            case LOC, CLOC, NCSS -> "lines";
+            case NOM, NOO, NOA, NOPM -> "declarations";
+            case TCC, WOC, A, I -> "ratio";
+            default -> "value";
+        };
+    }
+}

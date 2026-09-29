@@ -32,38 +32,138 @@ final class DetectResultWriter {
             RulesSummary classRules,
             List<CombinationDetector.PackageMatch> packageMatches,
             RulesSummary packageRules) throws JsonProcessingException {
+        return toJson(baseDir, classMatches, classRules, packageMatches, packageRules, null, null);
+    }
+
+    /**
+     * The same report, optionally including method matches.
+     *
+     * <p>The method sections are <em>absent</em> rather than empty when no method rules ran, and
+     * that is deliberate. An always-present empty array would change the JSON payload of every
+     * existing detect run, and a golden that moves because a new feature was added is a golden
+     * nobody can review. Absent means "this run had no method rules"; empty would mean "method rules
+     * ran and matched nothing", which is the fact a reader actually needs.
+     */
+    String toJson(
+            Path baseDir,
+            List<CombinationDetector.ClassMatch> classMatches,
+            RulesSummary classRules,
+            List<CombinationDetector.PackageMatch> packageMatches,
+            RulesSummary packageRules,
+            List<CombinationDetector.MethodMatch> methodMatches,
+            RulesSummary methodRules) throws JsonProcessingException {
         List<ClassFinding> byClass = byClass(baseDir, classMatches);
         List<PackageFinding> byPackage = byPackage(packageMatches);
+        boolean withMethods = methodMatches != null;
+        List<MethodFinding> byMethod = withMethods ? byMethod(baseDir, methodMatches) : null;
         return CliObjectMapper.write(new DetectResultView(
                 "COMPLETED",
                 baseDir.toString(),
                 relativizeClasses(baseDir, classMatches),
                 packageMatches,
+                withMethods ? relativizeMethods(baseDir, methodMatches) : null,
                 byClass,
                 byPackage,
+                byMethod,
                 new SummaryView(
                         classRules,
                         packageRules,
-                        totalFindings(classMatches, packageMatches),
+                        withMethods ? methodRules : null,
+                        totalFindings(classMatches, packageMatches)
+                                + (withMethods ? totalMethodFindings(methodMatches) : 0),
                         byClass.size(),
-                        byPackage.size())), true);
+                        byPackage.size(),
+                        byMethod == null ? null : byMethod.size())), true);
     }
+
+    private List<MethodFinding> byMethod(Path baseDir, List<CombinationDetector.MethodMatch> matches) {
+        List<MethodFinding> findings = new ArrayList<>();
+        for (CombinationDetector.MethodMatch match : matches) {
+            for (CombinationDetector.MethodEntityRef entity : match.matches()) {
+                findings.add(new MethodFinding(
+                        entity.qualifiedName(),
+                        entity.signature(),
+                        relativize(baseDir, entity.sourcePath()),
+                        entity.startLine(),
+                        entity.endLine(),
+                        entity.severity(),
+                        match.name()));
+            }
+        }
+        findings.sort(java.util.Comparator
+                .comparing((MethodFinding finding) -> finding.worstSeverity().ordinal()).reversed()
+                .thenComparing(MethodFinding::qualifiedName)
+                .thenComparing(MethodFinding::signature));
+        return findings;
+    }
+
+    private static int totalMethodFindings(List<CombinationDetector.MethodMatch> matches) {
+        int total = 0;
+        for (CombinationDetector.MethodMatch match : matches) {
+            total += match.matches().size();
+        }
+        return total;
+    }
+
+    private static List<CombinationDetector.MethodMatch> relativizeMethods(
+            Path baseDir, List<CombinationDetector.MethodMatch> matches) {
+        List<CombinationDetector.MethodMatch> relativized = new ArrayList<>();
+        for (CombinationDetector.MethodMatch match : matches) {
+            List<CombinationDetector.MethodEntityRef> entities = new ArrayList<>();
+            for (CombinationDetector.MethodEntityRef entity : match.matches()) {
+                entities.add(new CombinationDetector.MethodEntityRef(
+                        entity.className(), entity.qualifiedName(), entity.signature(),
+                        relativize(baseDir, entity.sourcePath()),
+                        entity.startLine(), entity.endLine(), entity.violations(), entity.severity()));
+            }
+            relativized.add(new CombinationDetector.MethodMatch(
+                    match.name(), match.matchCount(), entities));
+        }
+        return relativized;
+    }
+
+    /**
+     * One method and the rule it matched.
+     *
+     * <p>Carries the signature rather than the name, so an overloaded {@code handle} stays two
+     * findings rather than collapsing into one ambiguous entry.
+     */
+    record MethodFinding(
+            @JsonProperty("qualifiedName") String qualifiedName,
+            @JsonProperty("signature") String signature,
+            @JsonProperty("sourcePath") String sourcePath,
+            @JsonProperty("startLine") int startLine,
+            @JsonProperty("endLine") int endLine,
+            @JsonProperty("worstSeverity") Severity worstSeverity,
+            @JsonProperty("rule") String rule) {}
 
     private record DetectResultView(
             @JsonProperty("status") String status,
             @JsonProperty("baseDir") String baseDir,
             @JsonProperty("classRules") List<CombinationDetector.ClassMatch> classRules,
             @JsonProperty("packageRules") List<CombinationDetector.PackageMatch> packageRules,
+            @JsonProperty("methodRules") @com.fasterxml.jackson.annotation.JsonInclude(
+                    com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                    List<CombinationDetector.MethodMatch> methodRules,
             @JsonProperty("byClass") List<ClassFinding> byClass,
             @JsonProperty("byPackage") List<PackageFinding> byPackage,
+            @JsonProperty("byMethod") @com.fasterxml.jackson.annotation.JsonInclude(
+                    com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                    List<MethodFinding> byMethod,
             @JsonProperty("summary") SummaryView summary) {}
 
     private record SummaryView(
             @JsonProperty("classRules") RulesSummary classRules,
             @JsonProperty("packageRules") RulesSummary packageRules,
+            @JsonProperty("methodRules") @com.fasterxml.jackson.annotation.JsonInclude(
+                    com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                    RulesSummary methodRules,
             @JsonProperty("totalFindings") int totalFindings,
             @JsonProperty("affectedClasses") int affectedClasses,
-            @JsonProperty("affectedPackages") int affectedPackages) {}
+            @JsonProperty("affectedPackages") int affectedPackages,
+            @JsonProperty("affectedMethods") @com.fasterxml.jackson.annotation.JsonInclude(
+                    com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                    Integer affectedMethods) {}
 
     /**
      * One class and every rule it matched, sorted worst-first. A consumer fixing code class by

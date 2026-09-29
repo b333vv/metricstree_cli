@@ -538,19 +538,30 @@ echo $?  # 1 if new or degraded violations found
 Detect metric rule matches (antipatterns / fitness functions) — find classes or packages whose metric values satisfy all given constraints.
 
 ```bash
-java-metrics-cli detect -s <source> --class-rules=<path> [--package-rules=<path>] -o <output> [--format=<json|sarif|html>] [--exclude-file=<path>]
+java-metrics-cli detect -s <source> [--class-rules=<path>] [--method-rules=<path>] [--package-rules=<path>] -o <output> [--format=<json|sarif|html|agent-md>] [--exclude-file=<path>]
 ```
 
 | Option | Description |
 |--------|-------------|
 | `-s, --source=<path>` | Java source file or directory to analyze (required) |
 | `--class-rules=<path>` | JSON file with class-level rule definitions |
-| `--package-rules=<path>` | JSON file with package-level rule definitions |
+| `--method-rules=<path>` | JSON or YAML file with method-level rule definitions |
+| `--package-rules=<path>` | JSON or YAML file with package-level rule definitions |
 | `-o, --output=<path>` | Path to write the report to, in the format selected by `--format` (required) |
 | `--format=<json\|sarif\|html>` | Report format, case-insensitive; default `json` — see [SARIF output](#sarif-output) and [HTML output](#html-output) |
 | `--exclude-file, -e, --ignore=<path>` | YAML file with exclusion patterns (see [Exclusions](#exclusions)) |
 
-At least one of `--class-rules` or `--package-rules` must be provided.
+At least one of `--class-rules`, `--method-rules` or `--package-rules` must be provided.
+
+Method rules may also be written inline in `.metrics-gate.yml` as `methodRules:` (a list) or
+referenced with `methodRulesFile:`. The precedence is the same as for class rules:
+**flag > inline config > config file reference**.
+
+A method match is reported per **signature**, not per name, so two overloads of `compute` stay two
+findings. The `byMethod` section and the `methodRules` / `affectedMethods` summary keys appear **only
+when method rules were configured**; without them those keys are absent, so an existing report stays
+byte-identical. `"methodRules": []` with a rule that matched nothing is different from the keys being
+absent, and the report can tell the two apart.
 
 #### Rules file format
 

@@ -1,5 +1,47 @@
 # what has been done
 
+## Session: ML-015 — a rule that could not run is not a rule that found nothing (2026-09-29)
+
+**The distinction this task exists for is a one-word difference in an enum.** If a rule with two
+conditions has one input measured, the options were "it did not match" or "it could not be run" — and
+the first produces a gate that passes on the strength of a check that never happened. So
+`EvaluationStatus` has **five** values, not three: `COMPLETE_MATCH`, `COMPLETE_NONMATCH`,
+`PARTIAL_NONMATCH`, `UNAVAILABLE`, `NOT_APPLICABLE`. A near-miss computed on partial evidence is a
+different claim from one computed on all of it, and a report that cannot tell them apart overstates
+one of them.
+
+**`UNDEFINED` counts as missing, deliberately.** It has a numeric reading — `doubleValue()` returns a
+real number for it — so an evaluator that read it arithmetically would produce a measurement that was
+never taken. Identity, not comparison.
+
+**Every condition is recorded, not only the largest breach.** A match on MT-M003 reports both `LOC`
+and `CC`, because a `LOC 61 / CC 40` method and a `LOC 200 / CC 11` method both match and call for
+different amounts of work. Evidence order is **sorted by metric name**, not map order — a report whose
+condition order changed between two runs of the same code would read as two different evaluations.
+(The test caught this: it asserted `[LOC, CC]` and got `[CC, LOC]` because the catalogue's YAML order
+is not the map's.)
+
+**Boundaries are tested at the boundary.** `cc15DoesNotMatchCc16Matches` and `depth4Vs5Boundary` test
+15/16 and 4/5 rather than 10/20. A rule whose author and reader disagree by one on the threshold is
+indefensible, and testing a value comfortably past the bound would never reveal it.
+
+**Legacy method rules arrived without moving a single existing golden.** `--method-rules`,
+`methodRules` / `methodRulesFile`, and the `methodRules` / `byMethod` / `affectedMethods` report keys
+are all **absent** unless method rules are configured — absent, not empty, because "no method rules
+ran" and "method rules ran and matched nothing" are different facts and the report has to tell them
+apart. `DetectionReportContext`, `DetectResultWriter.toJson`, `HtmlReportWriter` and
+`AgentMarkdownReportWriter` all kept backward-compatible overloads.
+
+**Method identity is the signature.** Two overloads that both match stay two findings; a report
+identifying methods by name alone would merge them and leave a reader not knowing which method was
+measured.
+
+- New: `RuleEvaluation`, `MethodRuleEvaluator` (pure — no git, no filesystem, no analysis), legacy
+  `detectMethods` with `MethodEntityRef`/`MethodMatch` carrying signature and line range.
+- Tests: `MethodRuleEvaluatorTest` (8), `DetectCommandTest` +5. `./gradlew check` green, existing
+  goldens unchanged.
+
+
 ## Session: ML-014 — the catalogue is data, and its digest means something (2026-09-29)
 
 **A rule is a shape, not a computation.** Five rules, each a set of metric bounds plus a worsening
@@ -2196,9 +2238,9 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-014 are DONE.
-  Next ready task: **ML-015** (evaluate method rules and add legacy method-rule inputs). Implement
-  one packet per commit. The prior roadmap below is completed history.
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-015 are DONE.
+  Next ready task: **ML-016** (evaluate class rules with conservative evidence status). Implement one
+  packet per commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.

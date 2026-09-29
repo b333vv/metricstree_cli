@@ -95,6 +95,11 @@ final class ConfigLoader {
             "class rules",
             "Provide a JSON or YAML file with class-level rule definitions.");
 
+    private static final ConfigSource METHOD_RULES = new ConfigSource(
+            "--method-rules",
+            "method rules",
+            "Provide a JSON or YAML file with method-level rule definitions.");
+
     private static final ConfigSource PACKAGE_RULES = new ConfigSource(
             "--package-rules",
             "package rules",
@@ -231,6 +236,17 @@ final class ConfigLoader {
      */
     static List<CombinationDefinition> classRules(Path file) {
         return rules(file, CLASS_RULES);
+    }
+
+    /**
+     * Reads a method-level rules file.
+     *
+     * <p>Separate from {@link #packageRules} only so the error message can name the right flag; the
+     * rule shape is identical, because a condition on a metric means the same thing whichever level
+     * it is evaluated at.
+     */
+    static List<CombinationDefinition> methodRules(Path file) {
+        return rules(file, METHOD_RULES);
     }
 
     /** Reads a package-level rules file. See {@link #classRules}. */

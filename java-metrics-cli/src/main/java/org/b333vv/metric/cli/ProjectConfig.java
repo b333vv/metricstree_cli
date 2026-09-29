@@ -20,6 +20,8 @@ import java.util.Map;
  * @param classRules       inline class-level rules, or {@code null}
  * @param classRulesFile   rules file reference, resolved against the config's directory
  * @param packageRules     inline package-level rules, or {@code null}
+ * @param methodRules      inline method-level rules, or {@code null}
+ * @param methodRulesFile  method rules file reference, resolved against the config's directory
  * @param packageRulesFile rules file reference, resolved against the config's directory
  * @param exclusions       inline exclusions; {@code null} means "section absent" (distinct from
  *                         an empty section, which means "exclude nothing, explicitly")
@@ -41,6 +43,8 @@ record ProjectConfig(
         Map<String, Threshold> thresholds,
         List<CombinationDefinition> classRules,
         Path classRulesFile,
+        List<CombinationDefinition> methodRules,
+        Path methodRulesFile,
         List<CombinationDefinition> packageRules,
         Path packageRulesFile,
         ExclusionConfig exclusions,
@@ -53,7 +57,7 @@ record ProjectConfig(
         List<String> unknownKeys) {
 
     static final ProjectConfig EMPTY = new ProjectConfig(
-            null, null, null, null, null, null, null, null,
+            null, null, null, null, null, null, null, null, null, null,
             null, null, null, null, null, null, List.of());
 
     boolean isEmpty() {

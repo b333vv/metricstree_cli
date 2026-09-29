@@ -6,6 +6,8 @@ final class DetectionJsonReportAdapter implements ReportAdapter {
     @Override public boolean supports(ReportType type) { return type == ReportType.DETECTION; }
     @Override public String render(ReportContext context) throws java.io.IOException {
         DetectionReportContext value = (DetectionReportContext) context;
-        return new DetectResultWriter().toJson(value.baseDir(), value.classMatches(), value.classRules(), value.packageMatches(), value.packageRules());
+        return new DetectResultWriter().toJson(value.baseDir(), value.classMatches(),
+                value.classRules(), value.packageMatches(), value.packageRules(),
+                value.methodMatches(), value.methodRules());
     }
 }

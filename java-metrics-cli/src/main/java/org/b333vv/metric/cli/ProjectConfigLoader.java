@@ -44,7 +44,8 @@ final class ProjectConfigLoader {
 
     private static final Set<String> KNOWN_KEYS = Set.of(
             "profile", "thresholds",
-            "classRules", "classRulesFile", "packageRules", "packageRulesFile",
+            "classRules", "classRulesFile", "methodRules", "methodRulesFile",
+            "packageRules", "packageRulesFile",
             "exclusions", "validate", "detect", "analyze", "gate");
 
     private ProjectConfigLoader() {
@@ -99,6 +100,8 @@ final class ProjectConfigLoader {
                 root.has("thresholds") ? ConfigLoader.thresholds(root.get("thresholds")) : null,
                 root.has("classRules") ? ConfigLoader.rulesFromNode(root.get("classRules")) : null,
                 resolveRef(root.get("classRulesFile"), baseDir),
+                root.has("methodRules") ? ConfigLoader.rulesFromNode(root.get("methodRules")) : null,
+                resolveRef(root.get("methodRulesFile"), baseDir),
                 root.has("packageRules") ? ConfigLoader.rulesFromNode(root.get("packageRules")) : null,
                 resolveRef(root.get("packageRulesFile"), baseDir),
                 root.has("exclusions") ? ConfigLoader.exclusions(root.get("exclusions"), file) : null,

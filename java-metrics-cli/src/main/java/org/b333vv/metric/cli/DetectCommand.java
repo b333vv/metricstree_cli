@@ -55,6 +55,10 @@ final class DetectCommand implements Callable<Integer> {
             description = "JSON file with class-level rule definitions.")
     private Path classRulesFile;
 
+    @CommandLine.Option(names = "--method-rules", paramLabel = "PATH",
+            description = "JSON or YAML file with method-level rule definitions.")
+    private Path methodRulesFile;
+
     @CommandLine.Option(names = "--package-rules", paramLabel = "PATH",
             description = "JSON file with package-level rule definitions.")
     private Path packageRulesFile;
@@ -99,6 +103,26 @@ final class DetectCommand implements Callable<Integer> {
         return null;
     }
 
+    /**
+     * The method-level rules, with the same flag &gt; inline &gt; file precedence as class rules.
+     *
+     * <p>Deliberately identical to the class/package resolution rather than a variant: three inputs
+     * with three orders is exactly where precedence bugs hide, and a method rule that resolved
+     * differently from a class rule at the same level would be indefensible.
+     */
+    private List<CombinationDefinition> resolveMethodRules(ProjectConfig config) {
+        if (methodRulesFile != null) {
+            return ConfigLoader.methodRules(methodRulesFile);
+        }
+        if (config.methodRules() != null) {
+            return config.methodRules();
+        }
+        if (config.methodRulesFile() != null) {
+            return ConfigLoader.methodRules(config.methodRulesFile());
+        }
+        return null;
+    }
+
     private List<CombinationDefinition> resolvePackageRules(ProjectConfig config) {
         if (packageRulesFile != null) {
             return ConfigLoader.packageRules(packageRulesFile);
@@ -120,10 +144,12 @@ final class DetectCommand implements Callable<Integer> {
 
         List<CombinationDefinition> classRules = resolveClassRules(config);
         List<CombinationDefinition> packageRules = resolvePackageRules(config);
-        if (classRules == null && packageRules == null) {
+        List<CombinationDefinition> methodRules = resolveMethodRules(config);
+        if (classRules == null && packageRules == null && methodRules == null) {
             throw new CommandLine.ExecutionException(spec.commandLine(),
-                    "At least one of --class-rules or --package-rules must be provided, "
-                            + "or classRules / packageRules set in a project config.");
+                    "At least one of --class-rules, --method-rules or --package-rules must be"
+                            + " provided, or classRules / methodRules / packageRules set in a"
+                            + " project config.");
         }
 
         List<SourceRoot> sourceRoots = new ArrayList<>();
@@ -166,7 +192,16 @@ final class DetectCommand implements Callable<Integer> {
                     packageRules.size(), packageMatches.size(), detector.validateRules(packageRules));
         }
 
-        String serializedReport = toReport(classMatches, classRulesSummary, packageMatches, packageRulesSummary);
+        List<CombinationDetector.MethodMatch> methodMatches = List.of();
+        DetectResultWriter.RulesSummary methodRulesSummary = emptyRulesSummary();
+        if (methodRules != null) {
+            methodMatches = detector.detectMethods(report, methodRules);
+            methodRulesSummary = new DetectResultWriter.RulesSummary(
+                    methodRules.size(), methodMatches.size(), detector.validateRules(methodRules));
+        }
+
+        String serializedReport = toReport(classMatches, classRulesSummary, packageMatches,
+                packageRulesSummary, methodRules == null ? null : methodMatches, methodRulesSummary);
 
         Path normalizedOutputFile = outputFile.toAbsolutePath().normalize();
         if (normalizedOutputFile.getParent() != null) {
@@ -187,9 +222,20 @@ final class DetectCommand implements Callable<Integer> {
             DetectResultWriter.RulesSummary classRulesSummary,
             List<CombinationDetector.PackageMatch> packageMatches,
             DetectResultWriter.RulesSummary packageRulesSummary) throws IOException {
+        return toReport(classMatches, classRulesSummary, packageMatches, packageRulesSummary,
+                null, emptyRulesSummary());
+    }
+
+    private String toReport(
+            List<CombinationDetector.ClassMatch> classMatches,
+            DetectResultWriter.RulesSummary classRulesSummary,
+            List<CombinationDetector.PackageMatch> packageMatches,
+            DetectResultWriter.RulesSummary packageRulesSummary,
+            List<CombinationDetector.MethodMatch> methodMatches,
+            DetectResultWriter.RulesSummary methodRulesSummary) throws IOException {
         return reportAdapters.render(ReportType.DETECTION, effectiveFormat,
                 new DetectionReportContext(baseDir(), classMatches, classRulesSummary,
-                        packageMatches, packageRulesSummary));
+                        packageMatches, packageRulesSummary, methodMatches, methodRulesSummary));
     }
 
     /**
