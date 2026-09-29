@@ -84,7 +84,7 @@ final class RuleConfigLoader {
         Map<String, MaintainabilitySettings.RuleOverride> overrides =
                 overrides(file, section.get("rules"));
         return new MaintainabilitySettings(file, enabled, overrides, digest(enabled, overrides),
-                roles(file, section.get("roles")));
+                roles(file, section.get("roles")), null);
 
     }
     /**

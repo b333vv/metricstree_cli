@@ -245,10 +245,11 @@ final class DetectCommand implements Callable<Integer> {
                             activePolicy.settings(), null, activePolicy.enforcement());
             Path target = outputFile.toAbsolutePath().normalize();
             Files.createDirectories(target.getParent() != null ? target.getParent() : Path.of("."));
+            FindingReport findings = new FindingReport(FindingReport.SCHEMA_VERSION,
+                    result.blocking().isEmpty() ? "PASSED" : "FAILED", activePolicy.settings(),
+                    result.findings(), result.issues());
             Files.writeString(target, new FindingJsonReportAdapter()
-                    .render(new FindingReportContext(new FindingReport(FindingReport.SCHEMA_VERSION,
-                            result.blocking().isEmpty() ? "PASSED" : "FAILED",
-                            activePolicy.settings(), result.findings(), result.issues()))));
+                    .render(new FindingReportContext(findings, null)));
             stderr.flush();
             return activePolicy.enforcement() == MaintainabilityAnalysisService.Enforcement.ENFORCE
                     && !result.blocking().isEmpty() ? 1 : 0;
@@ -301,10 +302,22 @@ final class DetectCommand implements Callable<Integer> {
         return Files.isDirectory(absolute) ? absolute : absolute.getParent();
     }
 
-    /** The report's absolute source path as a path relative to the analysed root. */
+    /**
+     * The report's source path as a repository-relative path.
+     *
+     * <p>Falls back to the path's own file name when it lies outside the analysed root. Relativizing
+     * such a path throws, and a path the analysis somehow reported from outside the directory it was
+     * asked to read is not a reason to abandon the run — but it must not silently become an absolute
+     * path either, because an absolute path in a report is a path that means nothing on another
+     * machine.
+     */
     private String logicalPathOf(Path physical) {
         Path absolute = physical.toAbsolutePath().normalize();
-        return baseDir().relativize(absolute).toString().replace('\\', '/');
+        Path base = baseDir().toAbsolutePath().normalize();
+        if (absolute.startsWith(base)) {
+            return base.relativize(absolute).toString().replace('\\', '/');
+        }
+        return absolute.getFileName().toString();
     }
 
     private static DetectResultWriter.RulesSummary emptyRulesSummary() {

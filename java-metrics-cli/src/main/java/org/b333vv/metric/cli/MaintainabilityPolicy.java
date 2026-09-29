@@ -102,7 +102,7 @@ final class MaintainabilityPolicy {
                                         configuredEnforcement));
 
         MaintainabilitySettings settings = RuleConfigLoader.load(
-                config == null ? null : config.file());
+                config == null ? null : config.file()).withEnforcement(enforcement.name());
         return new MaintainabilityPolicy(kind, settings, enforcement);
     }
 

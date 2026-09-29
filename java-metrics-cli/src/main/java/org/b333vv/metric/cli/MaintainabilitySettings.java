@@ -29,7 +29,8 @@ record MaintainabilitySettings(
         List<String> enabledRules,
         Map<String, RuleOverride> overrides,
         String digest,
-        List<RoleClassifier.Rule> roleRules) {
+        List<RoleClassifier.Rule> roleRules,
+        String enforcement) {
 
     /**
      * What a project's configuration changed about one rule.
@@ -48,6 +49,12 @@ record MaintainabilitySettings(
         enabledRules = enabledRules == null ? List.of() : List.copyOf(enabledRules);
         overrides = overrides == null ? Map.of() : Map.copyOf(overrides);
         roleRules = roleRules == null ? List.of() : List.copyOf(roleRules);
+        enforcement = enforcement == null ? "advisory" : enforcement;
+    }
+
+    /** The same settings with a different enforcement level recorded for the report. */
+    MaintainabilitySettings withEnforcement(String level) {
+        return new MaintainabilitySettings(file, enabledRules, overrides, digest, roleRules, level);
     }
 
     /** Whether the role rules were configured at all, as opposed to being absent. */
@@ -62,7 +69,7 @@ record MaintainabilitySettings(
     /** The settings a run gets with no configuration at all. */
     static MaintainabilitySettings defaults(java.nio.file.Path file) {
         return new MaintainabilitySettings(file, DEFAULT_ENABLED, Map.of(),
-                MaintainabilityRules.digest(), List.of());
+                MaintainabilityRules.digest(), List.of(), "advisory");
     }
 
     /** Whether {@code ruleId} should be evaluated. */

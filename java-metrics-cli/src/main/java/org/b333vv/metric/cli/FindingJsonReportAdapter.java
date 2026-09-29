@@ -1,11 +1,11 @@
 package org.b333vv.metric.cli;
 
 /**
- * JSON adapter for findings reports.
+ * JSON adapter for findings reports, rendering the frozen v2 projection.
  *
- * <p>ML-020 pins the field order and validates the output against a schema. This adapter renders
- * through the shared {@link CliObjectMapper} so the new policy cannot introduce a second set of JSON
- * rules; until ML-020 the shape is whatever the records declare, and the test suite is what says so.
+ * <p>The adapter is a pure renderer: it does not count anything, decide a verdict, or filter a
+ * finding. Everything it prints was decided by the policy service, so two adapters over the same
+ * report cannot disagree about what was found.
  */
 final class FindingJsonReportAdapter implements ReportAdapter {
 
@@ -21,6 +21,8 @@ final class FindingJsonReportAdapter implements ReportAdapter {
 
     @Override
     public String render(ReportContext context) throws java.io.IOException {
-        return CliObjectMapper.write(((FindingReportContext) context).report(), true);
+        FindingReportContext value = (FindingReportContext) context;
+        return CliObjectMapper.write(
+                FindingJsonReport.of(value.report(), value.comparison()), true);
     }
 }

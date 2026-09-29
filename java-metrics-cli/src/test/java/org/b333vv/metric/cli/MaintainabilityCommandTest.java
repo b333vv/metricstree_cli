@@ -67,7 +67,7 @@ class MaintainabilityCommandTest {
     }
 
     private static MaintainabilitySettings settings(List<String> enabled) {
-        return new MaintainabilitySettings(null, enabled, Map.of(), "digest", List.of());
+        return new MaintainabilitySettings(null, enabled, Map.of(), "digest", List.of(), "advisory");
     }
 
     private static EntityCorrespondence unchanged() {
@@ -205,7 +205,7 @@ class MaintainabilityCommandTest {
         MaintainabilitySettings off = new MaintainabilitySettings(null, List.of("MT-M001"),
                 Map.of("MT-M001", new MaintainabilitySettings.RuleOverride(
                         RuleMode.OFF, null, null, null)),
-                "digest", List.of());
+                "digest", List.of(), "advisory");
 
         assertTrue(MaintainabilityAnalysisService.requiredMetrics(off).isEmpty(),
                 "a rule in mode 'off' is not evaluated, so its metrics need not be measured");

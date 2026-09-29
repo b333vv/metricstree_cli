@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MetricsTree maintainability findings, version 2",
+  "type": "object",
+  "required": ["schemaVersion", "status", "summary", "findings", "issues"],
+  "properties": {
+    "schemaVersion": { "type": "string", "enum": ["v2"] },
+    "status": { "type": "string", "enum": ["PASSED", "FAILED", "INCOMPLETE"] },
+    "policyDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "enabledRules": { "type": "array", "items": { "type": "string" } },
+    "enforcement": { "type": "string", "enum": ["ADVISORY", "ENFORCE"] },
+    "comparison": {
+      "type": ["object", "null"],
+      "required": ["base", "mergeBase", "head"],
+      "properties": {
+        "base": { "type": "string" },
+        "mergeBase": { "type": "string" },
+        "head": { "type": "string" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["activeFindings", "blocking", "existing", "suppressed", "baselineAccepted",
+                   "resolved", "total", "entities", "issues", "requiredIssues"],
+      "properties": {
+        "activeFindings": { "type": "integer", "minimum": 0 },
+        "blocking": { "type": "integer", "minimum": 0 },
+        "existing": { "type": "integer", "minimum": 0 },
+        "suppressed": { "type": "integer", "minimum": 0 },
+        "baselineAccepted": { "type": "integer", "minimum": 0 },
+        "resolved": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 },
+        "entities": { "type": "integer", "minimum": 0 },
+        "issues": { "type": "integer", "minimum": 0 },
+        "requiredIssues": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "findings": { "type": "array", "items": { "$ref": "#/definitions/finding" } },
+    "issues": { "type": "array", "items": { "$ref": "#/definitions/issue" } }
+  },
+  "definitions": {
+    "finding": {
+      "type": "object",
+      "required": ["ruleId", "ruleVersion", "fingerprint", "ruleTitle", "message", "severity",
+                   "maturity", "evaluationStatus", "lifecycle", "disposition", "entityKey",
+                   "location", "evidence", "blocking"],
+      "properties": {
+        "ruleId": { "type": "string", "pattern": "^MT-[MC][0-9]{3}$" },
+        "ruleVersion": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "previousFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "ruleTitle": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "severity": { "type": "string", "enum": ["INFO", "WARNING", "ERROR"] },
+        "maturity": { "type": "string", "enum": ["CANDIDATE", "EXPERIMENTAL", "VALIDATED"] },
+        "evaluationStatus": { "type": "string",
+          "enum": ["COMPLETE_MATCH", "COMPLETE_NONMATCH", "PARTIAL_NONMATCH", "UNAVAILABLE",
+                   "NOT_APPLICABLE"] },
+        "lifecycle": { "type": "string",
+          "enum": ["NONE", "NEW_ENTITY", "INTRODUCED", "WORSENED", "EXISTING", "RESOLVED",
+                   "COMPARISON_UNAVAILABLE"] },
+        "disposition": { "type": "string",
+          "enum": ["ACTIVE", "EXISTING", "SUPPRESSED", "BASELINE_ACCEPTED", "RESOLVED",
+                   "NOT_MATCHED"] },
+        "dispositionReason": { "type": "string" },
+        "role": { "type": "string",
+          "enum": ["PRODUCTION", "TEST", "GENERATED", "DTO", "ADAPTER", "UNKNOWN"] },
+        "entityKey": {
+          "type": "object",
+          "required": ["path", "qualifiedName"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "qualifiedName": { "type": "string", "minLength": 1 },
+            "signature": { "type": ["string", "null"] }
+          }
+        },
+        "location": { "$ref": "#/definitions/location" },
+        "baseLocation": { "type": ["object", "null"] },
+        "evidence": { "type": "array", "items": { "$ref": "#/definitions/evidence" } },
+        "relatedLocations": { "type": "array", "items": { "$ref": "#/definitions/location" } },
+        "remediationHint": { "type": "string" },
+        "documentationPath": { "type": "string" },
+        "blocking": { "type": "boolean" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "required": ["path", "startLine", "endLine"],
+      "properties": {
+        "path": { "type": ["string", "null"] },
+        "startLine": { "type": "integer", "minimum": 1 },
+        "endLine": { "type": "integer", "minimum": 1 },
+        "column": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["metric", "unit"],
+      "properties": {
+        "metric": { "type": "string", "minLength": 1 },
+        "before": { "type": ["number", "null"] },
+        "after": { "type": ["number", "null"] },
+        "delta": { "type": ["number", "null"] },
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "unit": { "type": "string", "minLength": 1 },
+        "completenessReasons": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "required": ["reasonCode", "message", "required"],
+      "properties": {
+        "ruleId": { "type": ["string", "null"] },
+        "reasonCode": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "entityKey": { "type": ["object", "null"] },
+        "location": { "type": ["object", "null"] }
+      }
+    }
+  }
+}
