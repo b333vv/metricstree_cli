@@ -41,7 +41,8 @@ import java.util.Map;
  * <h2>What is not emitted</h2>
  * <p>Two optional identity fields are left out rather than guessed at:
  * <ul>
- *   <li><b>{@code tool.driver.version}.</b> The CLI has no runtime version identity today — the shadow
+ *   <li><b>{@code tool.driver.version}.</b> Now filled in from the generated build resource by
+ *   ML-028
  *       jar's manifest carries only {@code Main-Class}, and the subproject's Gradle version is
  *       {@code unspecified} — so a hard-coded duplicate of the release number would be wrong the first
  *       time it is not updated.</li>
@@ -109,8 +110,13 @@ record SarifLog(
     record Tool(Driver driver) {
     }
 
-    @JsonPropertyOrder({"name", "rules"})
-    record Driver(String name, List<Rule> rules) {
+    @JsonPropertyOrder({"name", "version", "rules"})
+    record Driver(String name, String version, List<Rule> rules) {
+
+        /** The pre-ML-028 shape, so existing SARIF renders exactly as it did. */
+        Driver(String name, List<Rule> rules) {
+            this(name, null, rules);
+        }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

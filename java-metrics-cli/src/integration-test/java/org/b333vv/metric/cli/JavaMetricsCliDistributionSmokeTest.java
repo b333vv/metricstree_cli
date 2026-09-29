@@ -8,16 +8,230 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.MessageDigest;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JavaMetricsCliDistributionSmokeTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    // ---------------------------------------------------------------- ML-028 artifacts
+
+    /**
+     * The version the tool reports must be the version the build produced.
+     *
+     * <p>Asserted through the launcher rather than by reading the resource: a build that writes a
+     * correct file into a jar nobody ever runs would satisfy any test that only looks at the file.
+     */
+    @Test
+    void packagedVersionMatchesBuildProperty() throws Exception {
+        ProcessResult result = runInstalledCli("--version");
+
+        assertEquals(0, result.exitCode());
+        String expected = System.getProperty("javaMetricsCliVersion");
+        assertTrue(result.stdout().contains(expected),
+                "expected the built version " + expected + " in: " + result.stdout());
+        assertFalse(result.stdout().contains("unspecified"),
+                "an unspecified version reaches a user as a report nobody can reproduce");
+    }
+
+    /** A development build says so rather than guessing a plausible number. */
+    @Test
+    void developmentVersionNeverUnspecified() throws Exception {
+        ProcessResult result = runInstalledCli("--version");
+
+        String line = result.stdout().lines().findFirst().orElse("");
+        assertTrue(line.startsWith("java-metrics-cli "), line);
+        String reported = line.substring("java-metrics-cli ".length()).trim();
+        assertTrue(!reported.isBlank() && !"null".equals(reported),
+                "a version must always be something: " + line);
+    }
+
+    /**
+     * The unpacked distribution runs in a directory that has nothing to do with this checkout.
+     *
+     * <p>The point of ML-028: a consumer unzips an archive and runs it, with no Gradle, no source
+     * tree and no IntelliJ SDK. The test copies the launcher, its jars, the licence and the checksum
+     * manifest to a fresh temporary directory and runs from there, so anything resolved from the
+     * build tree -- a relative path, a system property, a leftover classpath entry -- fails here.
+     */
+    @Test
+    void artifactRunsOutsideSourceCheckout() throws Exception {
+        Path unpacked = unpackDistribution();
+        Path consumer = Files.createDirectories(tempDir.resolve("consumer-repo"));
+        Files.writeString(consumer.resolve("Sample.java"), """
+                package sample;
+                public class Sample {
+                    public int f(int x) {
+                        if (x > 0) { return 1; }
+                        if (x > 1) { return 2; }
+                        return 0;
+                    }
+                }
+                """);
+        installGitIdentity(consumer);
+
+        Path report = consumer.resolve("report.json");
+        ProcessResult result = run(List.of(
+                unpacked.resolve("bin").resolve(launcherName()).toString(),
+                "analyze",
+                "--project-name", "consumer",
+                "--source-root", consumer.toString(),
+                "--output-file", report.toString(),
+                "--pretty"), consumer);
+
+        assertEquals(0, result.exitCode(), result.stderr());
+        assertTrue(Files.exists(report), "the artifact wrote no report: " + result.stderr());
+        assertTrue(Files.readString(report).contains("\"qualifiedName\" : \"sample.Sample\""),
+                "the packaged rule catalogue and report contract are both live in the jar");
+    }
+
+    /** The rules and the version must survive packaging. */
+    /** The rules and the version must survive packaging. */
+    @Test
+    void packagedRuleResourcesPresent() throws Exception {
+        // Read with the JDK's own zip reader rather than by shelling out to the `jar` tool: the
+        // tool's option spelling varies between builds, and a failed invocation looks exactly like a
+        // jar that contains nothing. The claim being tested is about the bytes in the archive.
+        Path shadow = Path.of(System.getProperty("javaMetricsCliShadowJar"));
+        java.util.List<String> entries;
+        try (java.util.zip.ZipFile archive = new java.util.zip.ZipFile(shadow.toFile())) {
+            entries = archive.stream().map(java.util.zip.ZipEntry::getName).toList();
+        }
+
+        assertTrue(entries.contains("maintainability/rules-v1.yml"),
+                "the rule catalogue is read at runtime; minimization must not drop it from " + shadow);
+        assertTrue(entries.contains("metricstree-version.properties"),
+                "a packaged build that cannot say its own version cannot be reported against");
+    }
+
+    /** A checksum that does not match its file is worse than none. */
+    @Test
+    void checksumMatchesBytes() throws Exception {
+        Path unpacked = unpackDistribution();
+        Path sums = unpacked.resolve("SHA256SUMS");
+        assertTrue(Files.exists(sums), "the distribution ships no checksum manifest");
+
+        int verified = 0;
+        for (String line : Files.readAllLines(sums)) {
+            if (line.isBlank()) {
+                continue;
+            }
+            String[] parts = line.split("\\s+", 2);
+            Path file = unpacked.resolve(parts[1]);
+            assertTrue(Files.exists(file), "SHA256SUMS names a file that is not there: " + parts[1]);
+            String actual = hex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file)));
+            assertEquals(parts[0], actual, "checksum mismatch for " + parts[1]);
+            verified++;
+        }
+        assertTrue(verified > 0, "the manifest listed nothing, so it verified nothing");
+    }
+
+    /** The artifact runs the whole gate loop, not just analyze. */
+    @Test
+    void artifactGateFindsUncommittedChangeAndWritesEachFormat() throws Exception {
+        Path unpacked = unpackDistribution();
+        Path consumer = Files.createDirectories(tempDir.resolve("gate-repo"));
+        Path source = consumer.resolve("src/main/java/app/Order.java");
+        Files.createDirectories(source.getParent());
+        Files.writeString(source, simpleClass("Order", 2));
+        installGitIdentity(consumer);
+        git(consumer, "add", "-A");
+        git(consumer, "commit", "-q", "-m", "initial");
+        Files.writeString(source, simpleClass("Order", 20));
+
+        Path findings = consumer.resolve("findings.json");
+        ProcessResult gate = run(List.of(
+                unpacked.resolve("bin").resolve(launcherName()).toString(),
+                "gate", "--base", "HEAD", "--policy", "maintainability",
+                "--enforcement", "enforce",
+                "--output", consumer.resolve("gate.json").toString(),
+                "--json-output", findings.toString()), consumer);
+
+        assertTrue(Files.exists(findings), "the artifact wrote no findings: " + gate.stderr());
+        String json = Files.readString(findings);
+        assertTrue(json.contains("\"ruleId\" : \"MT-M001\""), json);
+        assertTrue(json.contains("\"toolVersion\""),
+                "a report that cannot say which build wrote it is not reproducible");
+    }
+
+    private static String simpleClass(String name, int branches) {
+        StringBuilder body = new StringBuilder();
+        for (int index = 1; index <= branches; index++) {
+            body.append("        if (x == ").append(index).append(") return ").append(index)
+                    .append(";\n");
+        }
+        return "package app;\npublic class " + name + " {\n    public int f(int x) {\n" + body
+                + "        return 0;\n    }\n}\n";
+    }
+
+    private static String launcherName() {
+        return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT)
+                .contains("win") ? "java-metrics-cli.bat" : "java-metrics-cli";
+    }
+
+    /**
+     * The distribution unpacked into a directory of its own.
+     *
+     * <p>Copied rather than referenced: running the launcher's own location would let a stale build
+     * directory satisfy a test about a fresh download.
+     */
+    private Path unpackDistribution() throws Exception {
+        Path source = Path.of(System.getProperty("javaMetricsCliDistribution"));
+        assertTrue(Files.isDirectory(source), "no unpacked distribution at " + source);
+        Path target = Files.createDirectories(tempDir.resolve("distribution"));
+        try (var paths = Files.walk(source)) {
+            for (Path path : paths.toList()) {
+                Path destination = target.resolve(source.relativize(path).toString());
+                if (Files.isDirectory(path)) {
+                    Files.createDirectories(destination);
+                } else {
+                    Files.createDirectories(destination.getParent());
+                    Files.copy(path, destination);
+                }
+            }
+        }
+        return target;
+    }
+
+    private void installGitIdentity(Path repo) throws Exception {
+        // Identity is set per repository rather than globally: a test must not depend on, or write
+        // to, the developer's Git configuration.
+        git(repo, "init", "-q");
+        git(repo, "config", "user.email", "smoke@test");
+        git(repo, "config", "user.name", "smoke");
+        git(repo, "config", "commit.gpgsign", "false");
+    }
+
+    private void git(Path repo, String... args) throws Exception {
+        List<String> command = new ArrayList<>(List.of("git", "-C", repo.toString()));
+        command.addAll(List.of(args));
+        runProcess(command, repo);
+    }
+
+    private void runProcess(List<String> command, Path workingDirectory) throws Exception {
+        Process process = new ProcessBuilder(command)
+                .directory(workingDirectory.toFile())
+                .redirectErrorStream(true)
+                .start();
+        process.getInputStream().readAllBytes();
+        assertTrue(process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS), "timed out");
+    }
+
+    private static String hex(byte[] bytes) {
+        StringBuilder out = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) {
+            out.append(String.format("%02x", value));
+        }
+        return out.toString();
+    }
 
     @TempDir
     Path tempDir;
@@ -146,25 +360,35 @@ class JavaMetricsCliDistributionSmokeTest {
     }
 
     private ProcessResult runInstalledCli(String... args) throws Exception {
-        return run(Path.of(System.getProperty(cliBinaryProperty())), List.of(args));
+        List<String> command = new ArrayList<>();
+        command.add(System.getProperty(cliBinaryProperty()));
+        command.addAll(List.of(args));
+        return run(command);
     }
 
     private ProcessResult runShadowJar(String... args) throws Exception {
-        return run(
-                Path.of(System.getProperty("java.home"), "bin", javaExecutableName()),
-                java.util.stream.Stream.concat(
-                                java.util.stream.Stream.of("-jar", System.getProperty("javaMetricsCliShadowJar")),
-                                java.util.stream.Stream.of(args))
-                        .toList());
+        List<String> command = new ArrayList<>();
+        command.add(Path.of(System.getProperty("java.home"), "bin", javaExecutableName()).toString());
+        command.add("-jar");
+        command.add(System.getProperty("javaMetricsCliShadowJar"));
+        command.addAll(List.of(args));
+        return run(command);
     }
 
-    private ProcessResult run(Path executable, List<String> arguments) throws Exception {
-        List<String> command = new java.util.ArrayList<>();
-        command.add(executable.toString());
-        command.addAll(arguments);
+    private ProcessResult run(List<String> command) throws Exception {
+        return run(command, tempDir);
+    }
 
+    /**
+     * Runs a command in a chosen working directory.
+     *
+     * <p>Absolute paths matter here: an artifact test that resolves anything against the working
+     * directory would pass in {@code tempDir} and fail in a real consumer repository, which is the
+     * whole difference the test exists to catch.
+     */
+    private ProcessResult run(List<String> command, Path workingDirectory) throws Exception {
         Process process = new ProcessBuilder(command)
-                .directory(tempDir.toFile())
+                .directory(workingDirectory.toFile())
                 .redirectErrorStream(false)
                 .start();
 

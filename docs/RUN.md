@@ -363,6 +363,43 @@ Three things are worth knowing about how it behaves:
   policy has never seen, and if it is itself complex it is reported. The tool does not claim to
   detect that complexity merely moved — it claims only not to pretend the debt is gone.
 
+### Downloading and verifying a release
+
+Two artifacts ship, and they are the same tool:
+
+- **`metricstree-cli-<version>.zip`** — the ready-to-run distribution. Unzip it and run
+  `bin/java-metrics-cli` (or `java-metrics-cli.bat` on Windows). No Gradle, no source checkout, no
+  IntelliJ SDK: a Java 17 or newer runtime is the only requirement.
+- **`java-metrics-<version>.jar`** — a single self-contained jar for a container or a one-line CI
+  step: `java -jar java-metrics-<version>.jar gate --base origin/main ...`.
+
+**Verifying what you downloaded.** The archive carries `SHA256SUMS`, listing every file it contains:
+
+```sh
+unzip metricstree-cli-2026.0.0.zip
+cd metricstree-cli
+shasum -a 256 -c SHA256SUMS        # macOS / Linux
+```
+
+The release publishes a `metricstree-cli.sha256` beside the archive itself, for checking the single
+file you downloaded. Verify both: the archive's checksum says you got what was published, and
+`SHA256SUMS` says the contents are what the archive claims.
+
+**Which build produced a report.** Every report carries the version that wrote it:
+
+```sh
+java-metrics-cli --version
+```
+
+and the same string appears as `toolVersion` in the findings JSON and as
+`tool.driver.version` in SARIF. A development run reports `0.0.0-dev` rather than guessing, so a
+report that is not reproducible says so on its face.
+
+**Building the artifacts yourself.** `./gradlew :java-metrics-cli:distributionZip` produces the
+archive and the checksum manifest; `archiveChecksum` produces the archive's own checksum. Releases
+are built by `.github/workflows/release.yml` on a `v*` tag, across Ubuntu, macOS and Windows on JDK
+17 and 21. Creating and pushing the tag is deliberately a human step.
+
 ## Project configuration (`.metrics-gate.yml`)
 
 A single YAML or JSON file at the repository root can hold thresholds, rules, exclusions and

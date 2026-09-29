@@ -2,9 +2,14 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "MetricsTree maintainability findings, version 2",
   "type": "object",
-  "required": ["schemaVersion", "status", "summary", "findings", "issues"],
+  "required": ["schemaVersion", "toolVersion", "status", "summary", "findings", "issues"],
   "properties": {
     "schemaVersion": { "type": "string", "enum": ["v2"] },
+    "toolVersion": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Which build produced this report. Present in every document so a bug report can be matched to the run that made it; '0.0.0-dev' is the honest value for an unversioned run."
+    },
     "status": { "type": "string", "enum": ["PASSED", "FAILED", "INCOMPLETE"] },
     "policyDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "enabledRules": { "type": "array", "items": { "type": "string" } },

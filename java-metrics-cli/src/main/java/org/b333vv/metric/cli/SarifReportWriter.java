@@ -164,7 +164,7 @@ final class SarifReportWriter {
                 SarifLog.SCHEMA_URI,
                 SarifLog.VERSION,
                 List.of(new SarifLog.Run(
-                        new SarifLog.Tool(new SarifLog.Driver(DRIVER_NAME, rules.rules())),
+                        new SarifLog.Tool(new SarifLog.Driver(DRIVER_NAME, ToolVersion.current(), rules.rules())),
                         results)));
     }
 
@@ -260,7 +260,7 @@ final class SarifReportWriter {
         // a successful execution with results.
         boolean complete = !report.hasRequiredGaps();
         SarifLog.Run run = new SarifLog.Run(
-                new SarifLog.Tool(new SarifLog.Driver(DRIVER_NAME, rules.rules())),
+                new SarifLog.Tool(new SarifLog.Driver(DRIVER_NAME, ToolVersion.current(), rules.rules())),
                 List.of(new SarifLog.Invocation(complete, notifications)),
                 results);
         return new SarifLog(SarifLog.SCHEMA_URI, SarifLog.VERSION, List.of(run));

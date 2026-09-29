@@ -1,0 +1,81 @@
+# Builds the ready-to-run artifacts for a release tag and attaches them with their checksums.
+#
+# This workflow builds and uploads. It does not create tags and it does not publish to a package
+# registry: a release is a decision someone makes, and a workflow that could trigger itself on its
+# own output would make that decision for them.
+name: release
+
+on:
+  push:
+    # Tag only. A workflow that ran on every main commit would build artifacts nobody asked for and
+    # train everyone to ignore the notifications.
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify artifacts
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Java 17 is the floor the tool supports, so 17 and 21 both have to work: a distribution
+        # that only builds on the newest JDK is one that half its users cannot run.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        java: ['17', '21']
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Set up Java ${{ matrix.java }}
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - name: Verify the build
+        # `check` includes the distribution smoke tests, so a release is refused for the same
+        # reasons a local build is: including for a minimize() regression that would break every
+        # user's first run.
+        run: ./gradlew check
+
+      - name: Build the distribution
+        run: ./gradlew :java-metrics-cli:distributionZip :java-metrics-cli:archiveChecksum
+
+      - name: Upload the artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: metricstree-cli-${{ matrix.os }}-jdk${{ matrix.java }}
+          path: |
+            java-metrics-cli/build/distributions/metricstree-cli-*.zip
+            java-metrics-cli/build/dist-checksums/metricstree-cli.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Attach assets to the release
+    needs: build
+    # Only after every matrix job passed: a release with one platform's artifacts missing is worse
+    # than no release, because it looks complete.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download every artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish
+        # SHA NOT YET VERIFIED against the upstream tag: the GitHub API rate limit was exhausted
+        # when this was written, so this pin is unconfirmed and must be checked before the workflow
+        # is trusted. The other three pins were verified.
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1 (UNVERIFIED)
+        with:
+          files: artifacts/**
+          fail_on_unmatched_files: true

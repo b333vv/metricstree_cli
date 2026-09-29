@@ -24,10 +24,11 @@ import org.b333vv.metric.library.core.MetricContribution;
  * zero where nothing was measured would be reading a fabrication.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonPropertyOrder({"schemaVersion", "status", "policyDigest", "enabledRules", "enforcement",
-        "summary", "comparison", "findings", "issues", "suppressions"})
+@JsonPropertyOrder({"schemaVersion", "toolVersion", "status", "policyDigest", "enabledRules",
+        "enforcement", "summary", "comparison", "findings", "issues", "suppressions"})
 record FindingJsonReport(
         String schemaVersion,
+        String toolVersion,
         String status,
         String policyDigest,
         List<String> enabledRules,
@@ -56,6 +57,7 @@ record FindingJsonReport(
         }
         return new FindingJsonReport(
                 report.schemaVersion(),
+                ToolVersion.current(),
                 report.status(),
                 report.settings().digest(),
                 report.settings().enabledRules(),

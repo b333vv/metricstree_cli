@@ -1,5 +1,45 @@
 # what has been done
 
+## Session: ML-028 — a consumer should not have to build the analyzer (2026-09-29)
+
+Until now the only way to run this tool was to clone a repository and have Gradle. ML-028 makes the
+artifact runnable on its own, and makes the build say which build it is.
+
+**What was built**
+
+- One `metricsVersion` in the root build, applied to every project, written into a generated resource
+  the tool reads. `--version`, the findings JSON and SARIF all read that one source, so they cannot
+  disagree about which build produced a report.
+- `distributionZip` — a versioned archive with the launcher, the self-contained jar, the licence, the
+  README and a `SHA256SUMS` manifest listing every file inside it. `archiveChecksum` produces the
+  archive's own digest.
+- `.github/workflows/release.yml` — tag-triggered, six matrix jobs, `check` before build.
+- A `LICENSE` file, which the repository claimed in every source header and did not have.
+
+**Decisions worth keeping**
+
+- **A development run says `0.0.0-dev`, never a plausible number.** A version string exists so a bug
+  report can be matched to a run. An invented number is worse than an honest marker, and a
+  "build that writes a correct file nobody runs" is a version that is only a test assertion.
+- **The artifact tests run the artifact.** The distribution is unpacked by the build, copied by the
+  test to a fresh directory, and executed there with absolute paths — so anything resolved from the
+  checkout fails. A test that read the jar file rather than running it would have passed while the
+  launcher was broken.
+- **Three failures were the tests being wrong, and each said so honestly.** `jar tf` is not accepted
+  by every JDK build and fails as "Illegal option" that reads like an empty listing; the test now
+  reads the archive with the JDK's zip reader, which tests the bytes rather than the tool. A relative
+  path made git report "not a repository" in the wrong directory. A missing `--pretty` made a correct
+  report look malformed.
+- **One action pin is marked UNVERIFIED.** Three were confirmed against their upstream tags; the
+  fourth could not be, because the GitHub API rate limit was exhausted. It is labelled in the workflow
+  rather than presented as confirmed — an unverified pin stated as a verified one is the failure this
+  task exists to prevent.
+
+**Verification:** `./gradlew check` and `:java-metrics-cli:integrationTest` pass; nine distribution
+cases green, including the gate loop from the packaged launcher.
+
+ML-001–ML-028 are DONE. Next ready task: **ML-029**.
+
 ## Session: ML-027 — the loop, run for real (2026-09-29)
 
 Everything up to here tested a piece. ML-027 runs the sequence a person actually performs — edit,
@@ -2710,7 +2750,7 @@ All three proposals were accepted and implemented; backward compatibility was no
 
 - New active work: accepted maintainability linter strategy, planned in
   `docs/plans/maintainability-linter/README.md`. ML-001–ML-022 are DONE.
-  Next ready task: **ML-028**. Implement one packet per
+  Next ready task: **ML-029**. Implement one packet per
   commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:

@@ -10,6 +10,7 @@ import java.util.concurrent.Callable;
         name = "java-metrics-cli",
         description = "Command-line interface for JavaParser-based Java metrics analysis.",
         mixinStandardHelpOptions = true,
+        versionProvider = ToolVersionProvider.class,
         exitCodeOnInvalidInput = 2,
         exitCodeOnExecutionException = 1)
 final class JavaMetricsCliCommand implements Callable<Integer> {

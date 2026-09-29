@@ -28,6 +28,23 @@ fun properties(key: String) = project.findProperty(key).toString()
 group = properties("pluginGroup")
 version = properties("pluginVersion")
 
+// The version every artifact in this build reports, derived once so nothing can disagree with
+// anything else. `metricsVersion` may be supplied by a release build; without it the build falls
+// back to the plugin version, and without that to an explicit development marker.
+//
+// The fallback matters: an "unspecified" version reaches a user as a report whose `schemaVersion`
+// is real and whose tool identity is not, and that is exactly the report nobody can reproduce.
+val metricsVersion: String = (project.findProperty("metricsVersion") as String?)
+    ?.takeIf { it.isNotBlank() }
+    ?: properties("pluginVersion").takeIf { it.isNotBlank() && it != "unspecified" }
+    ?: "0.0.0-dev"
+
+allprojects {
+    group = rootProject.group
+    version = metricsVersion
+    extra["metricsVersion"] = metricsVersion
+}
+
 // Configure project's dependencies
 repositories {
     mavenCentral()
