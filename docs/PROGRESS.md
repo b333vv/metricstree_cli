@@ -1,5 +1,38 @@
 # what has been done
 
+## Session: ML-020 — the v2 report is frozen, and it has to add up (2026-09-29)
+
+**A schema nobody checks is a comment.** `finding-report.schema.json` and a test-side validator
+(implementing only the keywords the schema actually uses, and listing them so the file can be checked
+against it) mean the shape is enforced rather than described. The negative tests matter as much as
+the positive ones: a finding with no fingerprint is rejected, and a non-numeric evidence value is
+rejected *naming the field*, which is what proves the validator is doing something rather than
+accepting whatever the record serialised.
+
+**The counters are a contract, not decoration.** `blocking + existing + suppressed + baselineAccepted
+== activeFindings`, and the projection throws rather than printing a summary that does not reconcile.
+This was found by a test failing with an exit code rather than by reading the code: advisory
+re-dispositions an eligible finding to `EXISTING`, my invariant counted only `ACTIVE`, and the
+projection threw an `IllegalStateException`. The fix made the concept right — "active" means "found
+and not resolved", and the disposition decides only how it is counted.
+
+**Evidence numbers are numbers; absence is null.** Not strings, never zero. A consumer reading zero
+where nothing was measured is reading a fabrication, and that is the same failure ML-008 removed from
+the legacy gate, restated for a new contract.
+
+**`-o -` and `--json-output` came with a registry constraint worth recording.** The registry resolves
+one adapter per format, and JSON already belongs to the primary report, so the sidecar is rendered
+directly rather than registered. Registering it would have made every gate run fail at construction
+with "Duplicate report adapter format" — which is exactly what the existing gate tests caught the
+moment it was tried.
+
+**Colliding destinations are refused.** Two paths resolving to one is not a harmless duplicate: one
+write silently replaces the other. A sidecar aimed at stdout is the same failure — two documents on
+one stream is a document neither can be parsed out of. Writes go through a temporary file in the same
+directory and move into place, so a reader watching a CI artefact directory never sees a report
+truncated by a killed process.
+
+
 ## Session: ML-019 (complete) — detect closes the loop (2026-09-29)
 
 `detect --policy maintainability` is wired, and the packet is DONE.
@@ -2411,8 +2444,8 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-019 are DONE.
-  Next ready task: **ML-020** (freeze version 2 JSON and logical source locations). Implement one
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-020 are DONE.
+  Next ready task: **ML-021** (render actionable agent Markdown and HTML from findings). Implement one
   packet per commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:

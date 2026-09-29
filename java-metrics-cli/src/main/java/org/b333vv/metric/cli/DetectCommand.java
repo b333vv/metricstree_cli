@@ -80,6 +80,12 @@ final class DetectCommand implements Callable<Integer> {
             description = "Path to write the report to, in the format selected by --format.")
     private Path outputFile;
 
+    @CommandLine.Option(names = {"--json-output"}, paramLabel = "PATH",
+            description = "Also write the version 2 findings JSON here when --policy maintainability "
+                    + "is in force, rendered from the same analysis as the primary report. Cannot be "
+                    + "the same path as --output, and cannot be stdout.")
+    private Path jsonOutputFile;
+
     @CommandLine.Option(names = {"--format"}, converter = OutputFormatConverter.class, paramLabel = "FORMAT",
             description = "Report format: ${COMPLETION-CANDIDATES} (default: json, or the format "
                     + "set in the project config). "
@@ -243,13 +249,31 @@ final class DetectCommand implements Callable<Integer> {
                             null, report, this::logicalPathOf,
                             org.b333vv.metric.library.core.MetricRequirements.Scope.SYNTAX_LOCAL,
                             activePolicy.settings(), null, activePolicy.enforcement());
-            Path target = outputFile.toAbsolutePath().normalize();
-            Files.createDirectories(target.getParent() != null ? target.getParent() : Path.of("."));
+            if (jsonOutputFile != null
+                    && outputFile.toAbsolutePath().normalize()
+                            .equals(jsonOutputFile.toAbsolutePath().normalize())) {
+                stderr.println("Error: --json-output and --output are the same path. One would"
+                        + " overwrite the other and there would be no way to tell which report a"
+                        + " reader had. Give the findings JSON its own path.");
+                stderr.flush();
+                return 2;
+            }
             FindingReport findings = new FindingReport(FindingReport.SCHEMA_VERSION,
                     result.blocking().isEmpty() ? "PASSED" : "FAILED", activePolicy.settings(),
                     result.findings(), result.issues());
-            Files.writeString(target, new FindingJsonReportAdapter()
-                    .render(new FindingReportContext(findings, null)));
+            String rendered = new FindingJsonReportAdapter()
+                    .render(new FindingReportContext(findings, null));
+            if (jsonOutputFile != null) {
+                writeAtomically(jsonOutputFile, rendered);
+            }
+            if ("-".equals(outputFile.toString())) {
+                // The report goes to stdout; the verdict and every error stay on stderr, so a
+                // pipeline reading one stream gets JSON and nothing else.
+                stdout.println(rendered);
+                stdout.flush();
+            } else {
+                writeAtomically(outputFile, rendered);
+            }
             stderr.flush();
             return activePolicy.enforcement() == MaintainabilityAnalysisService.Enforcement.ENFORCE
                     && !result.blocking().isEmpty() ? 1 : 0;
@@ -318,6 +342,23 @@ final class DetectCommand implements Callable<Integer> {
             return base.relativize(absolute).toString().replace('\\', '/');
         }
         return absolute.getFileName().toString();
+    }
+
+    /** Writes through a temporary file in the same directory and moves it into place. */
+    private static void writeAtomically(Path target, String content) throws IOException {
+        Path normalized = target.toAbsolutePath().normalize();
+        Path directory = normalized.getParent();
+        if (directory != null) {
+            Files.createDirectories(directory);
+        }
+        Path temporary = Files.createTempFile(directory == null ? Path.of(".") : directory,
+                normalized.getFileName().toString(), ".tmp");
+        try {
+            Files.writeString(temporary, content);
+            Files.move(temporary, normalized, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
     }
 
     private static DetectResultWriter.RulesSummary emptyRulesSummary() {

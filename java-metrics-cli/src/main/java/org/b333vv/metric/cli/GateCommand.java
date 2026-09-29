@@ -48,6 +48,9 @@ final class GateCommand implements Callable<Integer> {
      * Zero-setup default so the gate is useful before any config exists — the PRD's answer to
      * "ship a default budget or require explicit config": ship it.
      */
+    /** The path that means "write to stdout" rather than to a file. */
+    private static final String STDOUT = "-";
+
     private static final Map<String, Double> DEFAULT_GROWTH = Map.of(
             "CC", 5.0,
             "WMC", 20.0);
@@ -57,6 +60,11 @@ final class GateCommand implements Callable<Integer> {
     private final PrintWriter stdout;
     private final PrintWriter stderr;
     private final ReportAdapterRegistry reportAdapters;
+
+    /** The findings report for this run, kept so the sidecar renders the same document. */
+    private FindingReport maintainabilityReport;
+    private MaintainabilityPolicy activePolicy;
+    private ComparisonPlan plan;
 
     GateCommand(
             JavaMetricsAnalyzer analyzer,
@@ -139,6 +147,12 @@ final class GateCommand implements Callable<Integer> {
             description = "Path to write the full report to. Without it only the verdict line is printed.")
     private Path outputFile;
 
+    @CommandLine.Option(names = {"--json-output"}, paramLabel = "PATH",
+            description = "Also write the version 2 findings JSON here, rendered from the same "
+                    + "analysis as the primary report — never a second scan. Cannot be the same "
+                    + "path as --output, and cannot be stdout.")
+    private Path jsonOutputFile;
+
     @CommandLine.Option(names = {"--format"}, converter = OutputFormatConverter.class, paramLabel = "FORMAT",
             description = "Report format: json (default) or html. SARIF is rejected: the gate's "
                     + "output is a verdict over a diff, not a findings list. agent-md is available for compact agent output.")
@@ -187,6 +201,9 @@ final class GateCommand implements Callable<Integer> {
             repoRoot = GitOps.repoRoot(workingDirectory);
             plan = ComparisonPlanner.plan(repoRoot, base, resolveMode(config));
             analysisContext = resolveAnalysisContext(repoRoot, config, workingDirectory, plan);
+            this.activePolicy = activePolicy;
+            this.plan = plan;
+            checkOutputPaths();
         } catch (GitOps.GitException | IllegalArgumentException exception) {
             stderr.println("Error: " + exception.getMessage());
             stderr.flush();
@@ -377,7 +394,7 @@ final class GateCommand implements Callable<Integer> {
         String status;
         int exitCode;
         if (activePolicy.isMaintainability()) {
-            maintainability = runMaintainabilityPolicy(activePolicy, policyInput, plan,
+            maintainabilityReport = runMaintainabilityPolicy(activePolicy, policyInput, plan,
                     resolveAnalysisScope(config), completeness);
         }
 
@@ -389,7 +406,7 @@ final class GateCommand implements Callable<Integer> {
         // changes that. Only when nothing failed can incompleteness matter, and then it is INCOMPLETE
         // rather than PASSED, because "no finding" and "no finding could be established" are different
         // answers and a gate that conflates them is worse than one that does not run.
-        if (maintainability != null && !maintainability.blocking().isEmpty()) {
+        if (maintainabilityReport != null && !maintainabilityReport.blocking().isEmpty()) {
             status = "FAILED";
             exitCode = 1;
         } else if (!violations.isEmpty()) {
@@ -878,14 +895,95 @@ final class GateCommand implements Callable<Integer> {
         return views;
     }
 
+    /**
+     * Writes the primary report, and the findings sidecar when one was asked for.
+     *
+     * <p>Both are rendered from the <em>same</em> analysis. A second scan would be a second chance
+     * for the world to change between the two documents, and a report and its sidecar that disagree
+     * about the same run are worse than no sidecar.
+     *
+     * <p>A bare {@code -} sends the report to stdout. The verdict line and every error still go to
+     * stderr, so a pipeline reading stdout gets JSON and nothing else — the two streams stay
+     * separable, which is the whole reason the split exists.
+     */
     private void writeReport(OutputFormat format, String status, GateReportView view)
             throws IOException {
         String content = reportAdapters.render(ReportType.GATE, format, new GateReportContext(view));
-        Path normalizedOutputFile = outputFile.toAbsolutePath().normalize();
-        if (normalizedOutputFile.getParent() != null) {
-            Files.createDirectories(normalizedOutputFile.getParent());
+        if (STDOUT.equals(outputFile.toString())) {
+            stdout.println(content);
+            stdout.flush();
+        } else {
+            writeAtomically(outputFile.toAbsolutePath().normalize(), content);
         }
-        Files.writeString(normalizedOutputFile, content);
+        if (jsonOutputFile != null) {
+            // Rendered directly rather than through the registry: the registry resolves one adapter
+            // per format, and JSON already belongs to the gate report. The sidecar is a second
+            // document about the same run, not a second rendering choice for --format.
+            writeAtomically(jsonOutputFile.toAbsolutePath().normalize(),
+                    new FindingJsonReportAdapter().render(new FindingReportContext(
+                            findingsForSidecar(), sidecarComparison())));
+        }
+    }
+
+    /** The findings report the sidecar renders, from the same run as the primary report. */
+    private FindingReport findingsForSidecar() {
+        return maintainabilityReport != null
+                ? maintainabilityReport
+                : FindingReport.empty(activePolicy.settings());
+    }
+
+    /** The comparison the findings were made against, or {@code null} for a current-only run. */
+    private Comparison sidecarComparison() {
+        return plan == null ? null
+                : new Comparison(base, plan.mergeBaseSha(), plan.headSha());
+    }
+
+    /**
+     * Writes through a temporary file in the same directory and moves it into place.
+     *
+     * <p>A reader watching a CI artefact directory must never see a half-written report: a report
+     * truncated by a killed process looks like a report that says something different from what the
+     * run actually found.
+     */
+    private static void writeAtomically(Path target, String content) throws IOException {
+        Path directory = target.getParent();
+        if (directory != null) {
+            Files.createDirectories(directory);
+        }
+        Path temporary = Files.createTempFile(
+                directory == null ? Path.of(".") : directory, target.getFileName().toString(), ".tmp");
+        try {
+            Files.writeString(temporary, content);
+            Files.move(temporary, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    /**
+     * Rejects output destinations that would overwrite each other.
+     *
+     * <p>Two destinations resolving to one path is not a harmless duplicate: one write silently
+     * replaces the other, and a reader is left with whichever landed last and no way to tell which
+     * was intended. A sidecar aimed at stdout is the same failure — two documents interleaved on one
+     * stream is a document neither of them can be parsed out of.
+     */
+    private void checkOutputPaths() {
+        if (jsonOutputFile == null || outputFile == null) {
+            return;
+        }
+        if (STDOUT.equals(jsonOutputFile.toString())) {
+            throw new IllegalArgumentException("--json-output cannot be stdout: the findings JSON"
+                    + " needs a file so a verdict line can still go to stderr and be read"
+                    + " separately. Use --output - to print the primary report instead.");
+        }
+        Path primary = outputFile.toAbsolutePath().normalize();
+        Path sidecar = jsonOutputFile.toAbsolutePath().normalize();
+        if (primary.equals(sidecar)) {
+            throw new IllegalArgumentException("--json-output and --output are the same path ("
+                    + primary + "). One would overwrite the other and there would be no way to tell"
+                    + " which report a reader had. Give the findings JSON its own path.");
+        }
     }
 
     private static void deleteRecursively(Path root) throws IOException {

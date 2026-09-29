@@ -25,7 +25,7 @@ Dependencies are technical prerequisites. Milestone boundaries and external evid
 | [ML-017](ML-017.md) | Apply explicit code roles and stable exclusion semantics | ML-016 | DONE |
 | [ML-018](ML-018.md) | Compare finding lifecycles across snapshots | ML-016, ML-017 | DONE |
 | [ML-019](ML-019.md) | Wire the opt-in maintainability policy into gate and detect | ML-018 | DONE |
-| [ML-020](ML-020.md) | Freeze version 2 JSON and logical source locations | ML-019 | PARTIAL (sidecar/-o - outstanding) |
+| [ML-020](ML-020.md) | Freeze version 2 JSON and logical source locations | ML-019 | DONE |
 | [ML-021](ML-021.md) | Render actionable agent Markdown and HTML from findings | ML-020 | TODO |
 | [ML-022](ML-022.md) | Support finding-based SARIF including incomplete runs | ML-020, ML-021 | TODO |
 | [ML-023](ML-023.md) | Attach bounded complexity contribution traces | ML-021 | TODO |
