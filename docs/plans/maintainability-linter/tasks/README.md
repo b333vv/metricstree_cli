@@ -27,7 +27,7 @@ Dependencies are technical prerequisites. Milestone boundaries and external evid
 | [ML-019](ML-019.md) | Wire the opt-in maintainability policy into gate and detect | ML-018 | DONE |
 | [ML-020](ML-020.md) | Freeze version 2 JSON and logical source locations | ML-019 | DONE |
 | [ML-021](ML-021.md) | Render actionable agent Markdown and HTML from findings | ML-020 | DONE |
-| [ML-022](ML-022.md) | Support finding-based SARIF including incomplete runs | ML-020, ML-021 | TODO |
+| [ML-022](ML-022.md) | Support finding-based SARIF including incomplete runs | ML-020, ML-021 | DONE |
 | [ML-023](ML-023.md) | Attach bounded complexity contribution traces | ML-021 | TODO |
 | [ML-024](ML-024.md) | Add narrow suppressions with rationale and expiry | ML-020, ML-021 | TODO |
 | [ML-025](ML-025.md) | Add a versioned finding baseline and cumulative regression checks | ML-024, ML-018 | TODO |

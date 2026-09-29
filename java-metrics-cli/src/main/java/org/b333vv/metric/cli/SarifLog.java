@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * A hand-built SARIF 2.1.0 log, and the subset of the format this tool emits.
@@ -61,8 +62,47 @@ record SarifLog(
     /** The only value the format allows: the schema declares {@code "const": "2.1.0"}. */
     static final String VERSION = "2.1.0";
 
-    @JsonPropertyOrder({"tool", "results"})
-    record Run(Tool tool, List<Result> results) {
+    /**
+     * @param invocations how the run went, or {@code null} for a log that says nothing about it.
+     *                    This is where an incomplete analysis is recorded: a consumer reading
+     *                    {@code results} alone cannot tell "nothing found" from "could not look", and
+     *                    that difference is the whole question a code-scanning consumer asks.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonPropertyOrder({"tool", "invocations", "results"})
+    record Run(Tool tool, List<Invocation> invocations, List<Result> results) {
+
+        /** The pre-ML-022 shape, kept so the existing validate/detect logs are byte-identical. */
+        Run(Tool tool, List<Result> results) {
+            this(tool, null, results);
+        }
+    }
+
+    /**
+     * How one execution of the tool went.
+     *
+     * <p>{@code executionSuccessful} is false for an incomplete or errored run and **true for a
+     * quality violation**. A gate that did its job and found a problem executed successfully; setting
+     * this false for every failing build would tell a consumer the tool itself broke, which is a
+     * different and much louder claim than the one being made.
+     */
+    @JsonPropertyOrder({"executionSuccessful", "toolExecutionNotifications"})
+    record Invocation(Boolean executionSuccessful, List<Notification> toolExecutionNotifications) {
+    }
+
+    /**
+     * Something about the run that is not a finding.
+     *
+     * <p>Used for checks that could not be evaluated. These must not become results: a result is a
+     * claim about code, and `MT-C001 could not run` is a claim about the analysis.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonPropertyOrder({"descriptor", "message", "properties"})
+    record Notification(String descriptor, Message message, Map<String, String> properties) {
+
+        Notification {
+            properties = properties == null ? Map.of() : Map.copyOf(properties);
+        }
     }
 
     @JsonPropertyOrder({"driver"})
@@ -73,8 +113,21 @@ record SarifLog(
     record Driver(String name, List<Rule> rules) {
     }
 
-    @JsonPropertyOrder({"id", "name", "shortDescription", "defaultConfiguration"})
-    record Rule(String id, String name, Message shortDescription, DefaultConfiguration defaultConfiguration) {
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonPropertyOrder({"id", "name", "shortDescription", "fullDescription",
+            "defaultConfiguration", "properties"})
+    record Rule(String id, String name, Message shortDescription, Message fullDescription,
+            DefaultConfiguration defaultConfiguration, Map<String, String> properties) {
+
+        Rule {
+            properties = properties == null ? Map.of() : Map.copyOf(properties);
+        }
+
+        /** The pre-ML-022 shape, so the existing rule entries render exactly as before. */
+        Rule(String id, String name, Message shortDescription,
+                DefaultConfiguration defaultConfiguration) {
+            this(id, name, shortDescription, null, defaultConfiguration, null);
+        }
     }
 
     @JsonPropertyOrder({"level"})
@@ -93,8 +146,22 @@ record SarifLog(
      * specification recommends alongside {@code ruleId} so a consumer need not search the array.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    @JsonPropertyOrder({"ruleId", "ruleIndex", "level", "message", "locations"})
-    record Result(String ruleId, Integer ruleIndex, String level, Message message, List<Location> locations) {
+    @JsonPropertyOrder({"ruleId", "ruleIndex", "level", "message", "locations", "partialFingerprints",
+            "relatedLocations", "properties"})
+    record Result(String ruleId, Integer ruleIndex, String level, Message message,
+            List<Location> locations, Map<String, String> partialFingerprints,
+            List<Location> relatedLocations, Map<String, String> properties) {
+
+        Result {
+            partialFingerprints = partialFingerprints == null ? null : Map.copyOf(partialFingerprints);
+            properties = properties == null ? null : Map.copyOf(properties);
+        }
+
+        /** The pre-ML-022 shape, so existing results render exactly as before. */
+        Result(String ruleId, Integer ruleIndex, String level, Message message,
+                List<Location> locations) {
+            this(ruleId, ruleIndex, level, message, locations, null, null, null);
+        }
     }
 
     @JsonPropertyOrder({"text"})
@@ -117,8 +184,18 @@ record SarifLog(
     record ArtifactLocation(String uri) {
     }
 
-    @JsonPropertyOrder({"startLine"})
-    record Region(int startLine) {
+    /**
+     * @param endLine omitted when the finding covers one line, because SARIF treats a region with
+     *                only a start line as that line, and writing {@code endLine} equal to it would be
+     *                a claim about a span that was never measured
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonPropertyOrder({"startLine", "endLine"})
+    record Region(Integer startLine, Integer endLine) {
+
+        Region(int startLine) {
+            this(startLine, null);
+        }
     }
 
     /** The {@code result.level} values the format allows. */

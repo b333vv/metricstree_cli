@@ -1,5 +1,35 @@
 # what has been done
 
+## Session: ML-022 — SARIF has to say whether the analysis happened (2026-09-29)
+
+**A quality violation is a successful tool execution.** `executionSuccessful` is false only when the
+analysis itself was incomplete or errored. A gate that did its job and found a problem executed
+successfully — reporting otherwise tells a code-scanning consumer the tool itself broke, which is a
+much louder and different claim than the one being made.
+
+**A check that could not run is a notification, not a result.** A result is a claim about code;
+`MT-C001 could not run` is a claim about the analysis. Putting it in `results` would have a consumer
+show a maintainer a finding against a file that is perfectly fine.
+
+**Existing, suppressed and baseline-accepted debt is deliberately not re-alerted.** A code-scanning
+consumer cannot tell `new` from `already known`, so re-reporting known debt on every run makes the tool
+look like it is reporting the same thing endlessly. Only findings that would block become results.
+
+**Every configured rule is declared, whether or not it matched.** `driver.rules` is how a consumer
+learns what a tool can check; a rule appearing only when it fires describes the last run rather than
+the tool.
+
+**Two schema errors the tests caught, one of them mine and expensive.** SARIF requires a notification's
+`descriptor` to be an object, so it cannot carry a reason-code string — the reason travels in
+properties, because inventing a descriptor *object* for a check that never ran would declare a rule
+the tool does not have. And adding components to `SarifLog.Run` and `Rule` silently broke **every
+existing** SARIF log by emitting `fullDescription: null`, which the official schema rejects. The
+pre-existing `SarifReportWriterTest` caught it the moment the change compiled — which is the argument
+for validating against the real schema rather than against a golden.
+
+Both the complete and the incomplete logs validate against the bundled official SARIF 2.1.0 schema.
+
+
 ## Session: ML-021 — one preparation, two renderings (2026-09-29)
 
 **Markdown and HTML must not disagree about what was found**, so the grouping, the ordering and the
@@ -2474,9 +2504,9 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-021 are DONE.
-  Next ready task: **ML-022** (finding-based SARIF, including incomplete runs). Implement one packet
-  per commit. The prior roadmap below is completed history.
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-022 are DONE.
+  Next ready task: **ML-023** (bounded complexity contribution traces). Implement one packet per
+  commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.

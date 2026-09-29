@@ -185,6 +185,112 @@ final class SarifReportWriter {
                 + result.expectedMax();
     }
 
+    /**
+     * A findings report as SARIF.
+     *
+     * <p>Three properties this has to get right, and each is a way a code-scanning consumer is misled:
+     *
+     * <ul>
+     *   <li><b>A quality violation is a successful run.</b> {@code executionSuccessful} is false only
+     *       when the analysis itself was incomplete or errored. A gate that did its job and found a
+     *       problem executed successfully; reporting otherwise tells a consumer the tool broke.</li>
+     *   <li><b>A check that could not run is a notification, not a result.</b> A result is a claim
+     *       about code. `MT-C001 could not run` is a claim about the analysis, and putting it in
+     *       {@code results} would have a consumer show a maintainer a finding against a file that is
+     *       perfectly fine.</li>
+     *   <li><b>Rules are declared even when they matched nothing.</b> A consumer reads
+     *       {@code driver.rules} to learn what this tool can check, and a rule that appears only when
+     *       it fires makes that list describe the last run rather than the tool.</li>
+     * </ul>
+     *
+     * <p>Only findings that would block are emitted as results. Existing, suppressed and
+     * baseline-accepted debt is deliberately <em>not</em> re-reported as a fresh alert on every run:
+     * a code-scanning consumer cannot tell "new" from "already known", and re-alerting existing debt
+     * makes the tool look like it is reporting the same thing endlessly.
+     */
+    SarifLog forFindings(FindingReport report) {
+        RuleSet rules = new RuleSet("");
+        List<SarifLog.Result> results = new ArrayList<>();
+
+        for (MaintainabilityRule rule : MaintainabilityRules.catalog()) {
+            if (!report.settings().isEnabled(rule.id())) {
+                continue;
+            }
+            rules.ruleFor(rule.id(), rule.title(), rule.title(),
+                    new SarifLog.Message(rule.description()), Map.of(
+                            "maturity", rule.maturity().id(),
+                            "level", rule.level().id()));
+        }
+
+        for (Finding finding : report.findings()) {
+            if (!finding.blocks()) {
+                continue;
+            }
+            String ruleId = rules.ruleFor(finding.ruleId(), finding.title(), finding.title(),
+                    null, null);
+            results.add(new SarifLog.Result(
+                    ruleId,
+                    rules.indexOf(ruleId),
+                    levelFor(finding),
+                    new SarifLog.Message(finding.message()),
+                    finding.location().path() == null
+                            ? null
+                            : List.of(locationOf(finding.location())),
+                    Map.of("metricstreeFingerprint/v1", finding.fingerprint()),
+                    finding.relatedLocations().stream().map(SarifReportWriter::locationOf).toList(),
+                    Map.of("lifecycle", finding.lifecycle().id(),
+                            "disposition", finding.disposition().id(),
+                            "evidence", describeEvidence(finding))));
+        }
+
+        List<SarifLog.Notification> notifications = new ArrayList<>();
+        for (EvaluationIssue issue : report.issues()) {
+            // No reportingDescriptor: the SARIF schema requires one to be an object, and inventing a
+            // descriptor object for a check that never ran would declare a rule the tool does not
+            // have. The reason code travels as a property instead, where it is still machine-readable.
+            notifications.add(new SarifLog.Notification(
+                    null,
+                    new SarifLog.Message(issue.message()),
+                    Map.of("reasonCode", issue.reasonCode(),
+                            "required", Boolean.toString(issue.required()),
+                            "ruleId", issue.ruleId() == null ? "" : issue.ruleId())));
+        }
+
+        // False only when the analysis could not do its job. A failing quality gate that completed is
+        // a successful execution with results.
+        boolean complete = !report.hasRequiredGaps();
+        SarifLog.Run run = new SarifLog.Run(
+                new SarifLog.Tool(new SarifLog.Driver(DRIVER_NAME, rules.rules())),
+                List.of(new SarifLog.Invocation(complete, notifications)),
+                results);
+        return new SarifLog(SarifLog.SCHEMA_URI, SarifLog.VERSION, List.of(run));
+    }
+
+    /** The SARIF level for a finding, from the rule's own severity rather than from its magnitude. */
+    private static String levelFor(Finding finding) {
+        return switch (finding.severity()) {
+            case ERROR -> SarifLog.Level.ERROR;
+            case WARNING -> SarifLog.Level.WARNING;
+            case INFO -> SarifLog.Level.NOTE;
+        };
+    }
+
+    private static SarifLog.Location locationOf(FindingLocation location) {
+        return new SarifLog.Location(new SarifLog.PhysicalLocation(
+                new SarifLog.ArtifactLocation(toUri(location.path())),
+                new SarifLog.Region(location.startLine(), location.endLine())));
+    }
+
+    /** The measured values, so a consumer can see what the claim rests on without re-running. */
+    private static String describeEvidence(Finding finding) {
+        List<String> parts = new ArrayList<>();
+        for (FindingEvidence evidence : finding.evidence()) {
+            parts.add(evidence.metric().name() + "="
+                    + (evidence.after() == null ? "not measured" : evidence.after()));
+        }
+        return String.join(", ", parts);
+    }
+
     private static List<SarifLog.Location> locationsFor(String file) {
         return List.of(new SarifLog.Location(new SarifLog.PhysicalLocation(
                 new SarifLog.ArtifactLocation(toUri(file)),
@@ -234,12 +340,19 @@ final class SarifReportWriter {
         }
 
         String ruleFor(String key, String name, String description) {
+            return ruleFor(key, name, description, null, null);
+        }
+
+        String ruleFor(String key, String name, String description, SarifLog.Message fullDescription,
+                Map<String, String> properties) {
             String id = prefix + key;
             byId.computeIfAbsent(id, ignored -> new SarifLog.Rule(
                     id,
                     name,
                     new SarifLog.Message(description),
-                    new SarifLog.DefaultConfiguration(defaultLevel())));
+                    fullDescription,
+                    new SarifLog.DefaultConfiguration(defaultLevel()),
+                    properties));
             return id;
         }
 

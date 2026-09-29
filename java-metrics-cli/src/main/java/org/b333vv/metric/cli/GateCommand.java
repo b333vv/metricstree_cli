@@ -187,10 +187,9 @@ final class GateCommand implements Callable<Integer> {
 
         Set<GateFinding.Type> failOn = resolveFailOn(config);
 
-        if (format == OutputFormat.SARIF) {
-            throw new CommandLine.ParameterException(spec.commandLine(),
-                    "gate does not support --format sarif. Accepted values: json, html.");
-        }
+        // Rejected for the legacy policy only: the new policy's findings are a real result list,
+        // which is exactly what SARIF is for. Decided after the config is read, below.
+        boolean sarifRequested = format == OutputFormat.SARIF;
         OutputFormat effectiveFormat = format != null ? format : OutputFormat.JSON;
 
         Path workingDirectory = currentWorkingDirectorySupplier.get();
@@ -203,6 +202,12 @@ final class GateCommand implements Callable<Integer> {
             analysisContext = resolveAnalysisContext(repoRoot, config, workingDirectory, plan);
             this.activePolicy = activePolicy;
             this.plan = plan;
+            if (sarifRequested && !activePolicy.isMaintainability()) {
+                throw new CommandLine.ParameterException(spec.commandLine(),
+                        "gate does not support --format sarif with the legacy policy: its output is"
+                                + " a verdict over a diff, not a findings list. Use --policy"
+                                + " maintainability, which produces findings.");
+            }
             checkOutputPaths();
         } catch (GitOps.GitException | IllegalArgumentException exception) {
             stderr.println("Error: " + exception.getMessage());
