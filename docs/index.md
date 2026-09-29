@@ -11,6 +11,7 @@
 - **Master plan:** [Maintainability linter](plans/maintainability-linter/README.md) — milestones, compatibility and scope
 - **Execution instructions:** [One-task workflow](plans/maintainability-linter/execution.md) — implementation and handoff protocol
 - **Ordered tasks:** [ML-001–ML-040](plans/maintainability-linter/tasks/README.md) — detailed task packets with dependencies and tests
+- **Metric semantics:** `docs/reference/metric-semantics.md` — what each rule input measures here, and what is known about its thresholds
 - **Contracts and examples:** linked from the master plan; read the contracts named by each task
 
 ## Earlier Implementation Work

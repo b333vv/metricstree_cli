@@ -1,5 +1,45 @@
 # what has been done
 
+## Session: ML-012 — a threshold is only the number after the definition (2026-09-29)
+
+**"ATFD ≥ 5" is not a rule until you know which ATFD.** The paper's version and this library's
+version disagree about whether the metric counts distinct foreign classes or foreign *accesses*, and
+nothing in a gate verdict would ever tell a maintainer which one produced the 7 they are looking at.
+`docs/reference/metric-semantics.md` and `library.core.MetricSemantics` now state, per rule input: the
+variant implemented, the level, the visitor that produces it, what context it needs, where it stops
+being the textbook metric, and a semantic version a future policy digest can hash.
+
+**And the honest part is the provenance column.** Every entry is `UNVERIFIED`, because nothing in this
+repository has validated a threshold against evidence. That is a fact about the project, not a hedge,
+so it is an enum a program can branch on rather than a sentence in prose — and the contract test fails
+if anyone promotes an entry without a cited matching source in the same change.
+
+**`TCC` and `ATFD` are experimental: measured, reported, never blocking.** Both move for reasons that
+are not the property they name. TCC's denominator is *every* method pair, so adding a method that shares
+no fields lowers a cohesion ratio without cohesion changing; ATFD's cross-class walk turns one
+unresolvable access into `UNDEFINED` for the whole project rather than a slightly lower number.
+
+**The part worth reading is what the fixtures corrected.** Four of my documented claims were wrong and
+the hand-computed tests said so rather than agreeing with me: `MND` counts a conditional as a nesting
+level (a top-level `if` makes it 1, not 0); LCOM's graph has only field-using methods as vertices, so a
+field-less method is not a component of its own; a nested type is measured as its own class, so the
+enclosing class's `NOM` excludes it; and `TCC`/`ATFD` are classified `PROJECT_GLOBAL`, not
+`SYMBOL_CONTEXT`. The metadata now states what the analyzer actually does.
+
+**Two catalogue contradictions resolved by correcting the documentation, not the formula.** `FDP` was
+described as "classes whose fields *this* class accesses" — the calculator counts the opposite
+direction, who reads *this* class's fields. `NOC` claimed to count `implements` edges; it reads
+`extends` only, and an interface's implementers are descendants, not children. Both descriptions now
+say what happens, with a test that pins the direction rather than just the magnitude — a magnitude
+alone would pass for the inverted description too. `LCOM` was already correct and is pinned too.
+
+- New: `MetricSemantics` (variant, implementation, semantic version, requirement, limitations,
+  `ThresholdProvenance`, `experimental`), used by nothing yet — ML-014 reads it.
+- Corrected: `MetricDefinitions` descriptions for `FDP` and `NOC` (text only; no value changed).
+- Tests: `MetricSemanticContractTest` (9). `./gradlew check` green; legacy report goldens unchanged.
+- Docs: `docs/reference/metric-semantics.md`, `docs/tech-debt-tracker.md`.
+
+
 ## Session: ML-011 — a coupling number must name the world it was measured in (2026-09-29)
 
 **A project-mode gate that analyses only the changed file measures the wrong thing.** Coupling and
@@ -2070,8 +2110,8 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-011 are DONE.
-  Next ready task: **ML-012** (document metric variants and qualify rule inputs). Implement one packet
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-012 are DONE.
+  Next ready task: **ML-013** (immutable findings and stable entity identity). Implement one packet
   per commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:

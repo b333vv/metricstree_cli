@@ -17,7 +17,7 @@ Dependencies are technical prerequisites. Milestone boundaries and external evid
 | [ML-009](ML-009.md) | Repair existing agent detection evidence and misleading text | ML-001 | DONE |
 | [ML-010](ML-010.md) | Add ordered analysis and bounded reproducibility checks | ML-007, ML-008 | DONE |
 | [ML-011](ML-011.md) | Analyze full per-revision semantic context in project mode | ML-008, ML-010 | DONE |
-| [ML-012](ML-012.md) | Document metric variants and qualify rule inputs | ML-007, ML-010, ML-011 | TODO |
+| [ML-012](ML-012.md) | Document metric variants and qualify rule inputs | ML-007, ML-010, ML-011 | DONE |
 | [ML-013](ML-013.md) | Introduce immutable findings and stable entity identity | ML-008, ML-012 | TODO |
 | [ML-014](ML-014.md) | Load a versioned rule catalog and strict policy overrides | ML-002, ML-013 | TODO |
 | [ML-015](ML-015.md) | Evaluate method rules and add legacy method-rule inputs | ML-014 | TODO |

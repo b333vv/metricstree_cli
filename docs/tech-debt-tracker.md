@@ -350,3 +350,22 @@
 
 ## Tracking Rule
 Close a debt item only when automated checks prove the replacement path is active and stable.
+
+## Metric semantic provenance (ML-012)
+
+Every threshold any rule in this tool applies is **`UNVERIFIED`** in
+`docs/reference/metric-semantics.md`: no boundary here has been validated against maintainer feedback
+or labelled evidence. A configured threshold may still be perfectly reasonable for a specific codebase
+— it is simply not a claim this tool can make on the reader's behalf. `MetricSemanticContractTest`
+fails if any entry is promoted without a cited matching source in the same change.
+
+`TCC` and `ATFD` are additionally marked **experimental**: measurable and reportable, but not allowed
+to produce a blocking verdict. Both are computed over symbol-resolved state whose movement is not
+always a movement in the property they name — TCC's denominator counts every method pair, so adding
+an unrelated method lowers it, and ATFD's cross-class walk turns one unresolvable access into an
+undefined value for the whole project. A gate that blocks on findings a maintainer learns to ignore
+is a gate that gets switched off.
+
+No formula was changed in ML-012. Where a description and the implementation disagreed — FDP's
+direction, NOC's `implements` claim — the description was corrected to the observed, tested behaviour
+and the formula was left alone; changing it would be a separately scoped task with its own evidence.

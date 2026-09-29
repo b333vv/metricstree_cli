@@ -76,7 +76,9 @@ public final class MetricDefinitions {
                     "Fraction of a class's methods and constructors that access no field of another class; "
                             + "1.0 when the class has none."),
             def(MetricCode.FDP, "Foreign Data Providers", MetricLevel.CLASS, MetricCategory.COUPLING,
-                    "Number of other classes whose fields this class's methods access."),
+                    "Number of other classes in the analysed project whose methods read this class's "
+                            + "fields. Note the direction: it counts who depends on this class, not "
+                            + "which classes this one depends on."),
             def(MetricCode.CLOC, "Class Lines of Code", MetricLevel.CLASS, MetricCategory.SIZE,
                     "Sum of the lines of code of the class's methods."),
             def(MetricCode.CCC, "Class Cognitive Complexity", MetricLevel.CLASS, MetricCategory.COMPLEXITY,
@@ -106,7 +108,9 @@ public final class MetricDefinitions {
                     "Number of connected components in the class's method-field graph: 1 means every method "
                             + "reaches every other through shared fields."),
             def(MetricCode.NOC, "Number of Children", MetricLevel.CLASS, MetricCategory.INHERITANCE,
-                    "Number of classes that directly extend or implement this one."),
+                    "Number of classes that directly extend this one. Types declared with "
+                            + "\u0060implements\u0060 are not counted: an interface's implementers are its "
+                            + "descendants, not its children."),
             def(MetricCode.NOA, "Number of Attributes", MetricLevel.CLASS, MetricCategory.SIZE,
                     "Number of fields the class declares."),
             def(MetricCode.NOO, "Number of Operations", MetricLevel.CLASS, MetricCategory.SIZE,
