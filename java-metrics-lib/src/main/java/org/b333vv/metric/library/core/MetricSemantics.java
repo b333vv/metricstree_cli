@@ -17,7 +17,7 @@ import java.util.Objects;
  *
  * <p>Those are different questions because they have different failure modes. A wrong description is
  * confusing. A threshold transferred from a paper whose <em>definition</em> differs is a number that
- * looks authoritative and is not: {@code ATFD \u2265 5} means one thing under one definition of
+ * looks authoritative and is not: {@code ATFD ≥ 5} means one thing under one definition of
  * "foreign data access" and something else entirely under another, and nobody reading a gate verdict
  * can tell which one produced it.
  *

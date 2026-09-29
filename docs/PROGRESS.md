@@ -1,5 +1,47 @@
 # what has been done
 
+## Session: ML-014 — the catalogue is data, and its digest means something (2026-09-29)
+
+**A rule is a shape, not a computation.** Five rules, each a set of metric bounds plus a worsening
+predicate — so the catalogue ships as `maintainability/rules-v1.yml`, not as five constructors' worth
+of positional arguments. The shape of those arguments is exactly the one that hides a swapped `min`
+and `max` in review, and a reader who wants to know what a threshold *is* should not have to read a
+class to learn it.
+
+**Everything is validated on load, not on use.** An inverted bound, a condition with no bound at
+all (which matches every value and looks configured), a rule with no conditions, a duplicated ID —
+all rejected when the catalogue is first read, with tests asserting the shipped file's own invariants
+so the failure happens in this build rather than in a consumer's CI.
+
+**Overrides replace; they never merge.** Retuning one condition of MT-M003 while leaving `LOC` out
+would, under merge semantics, silently keep the catalogued `LOC >= 61`. The author would believe they
+had written a single condition and would be running a two-condition rule. So `limits` must name
+exactly the metrics the catalogue rule declares, and a partial map is an error. Same reasoning behind
+the empty-`roles` rejection: a rule that applies to nothing while appearing configured is worse than
+one that visibly does not apply.
+
+**`mode: error` on MT-C001 is refused, not downgraded.** The user asked for something and deserves to
+be told it is unavailable rather than left wondering why the build still passes. The message names
+the rule, its maturity, and why.
+
+**The digest covers meaning and nothing else.** Sorted, so reordering the YAML changes nothing;
+threshold, role, mode, severity, maturity, scope and predicate all change it; titles and descriptions
+do not — prose is not policy, and rewording a rule must not invalidate a stored baseline. Report
+format and output path are excluded for the same reason.
+
+**One decision worth recording.** `severity` is *not* accepted as a rule override key. The contract
+says all catalog severities start as warning, and letting a config raise one would promote a
+candidate threshold to a blocking-sounding label without ever qualifying it. A test asserts the
+rejection, so adding it later is a deliberate change.
+
+- New: `MaintainabilityRule` (+ `RuleLevel`, `MetricBounds`, `Worsening`), `MaintainabilityRules`
+  (load, validate, digest), `MaintainabilitySettings`, `RuleConfigLoader`,
+  `src/main/resources/maintainability/rules-v1.yml`, `docs/rules/` (five rule docs with evidence,
+  counterexamples and candidate status).
+- Tests: `RuleConfigLoaderTest` (9). `./gradlew check` green; verified the catalogue resource is
+  present in the packaged jar.
+
+
 ## Session: ML-013 — identity you can store (2026-09-29)
 
 **A finding that cannot be named cannot be baselined, deduplicated or compared.** ML-013 introduces
@@ -2154,9 +2196,9 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-013 are DONE.
-  Next ready task: **ML-014** (versioned rule catalog and strict policy overrides). Implement one
-  packet per commit. The prior roadmap below is completed history.
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-014 are DONE.
+  Next ready task: **ML-015** (evaluate method rules and add legacy method-rule inputs). Implement
+  one packet per commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.

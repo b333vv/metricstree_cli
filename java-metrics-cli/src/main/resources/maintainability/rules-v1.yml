@@ -1,0 +1,120 @@
+catalogVersion: 1
+
+# Maintainability rule catalog, version 1.
+#
+# Every threshold here is a CANDIDATE: no boundary in this catalog has been validated against
+# maintainer feedback or labelled evidence. `docs/reference/metric-semantics.md` explains what each
+# metric measures in this implementation and where it stops being the textbook metric — read it
+# before retuning anything, because a threshold means nothing until the definition behind it does.
+#
+# `maturity: experimental` rules can be measured and reported but never block; configuring them with
+# mode `error` is rejected rather than silently downgraded.
+
+rules:
+  - id: MT-M001
+    version: 1
+    title: High method complexity
+    description: >-
+      A method with many independent decision points. Observed structure, not a proven defect:
+      generated parsers and dispatch tables look exactly like this. Inspect the branches for
+      decisions that could be table-driven, and for early returns that flatten nesting.
+    level: method
+    maturity: candidate
+    defaultMode: warn
+    severity: warning
+    documentationPath: docs/rules/mt-m001-high-method-complexity.md
+    requiredScope: syntax-local
+    worsening: RISES_BY
+    worseningBudgets:
+      CC: 5
+    conditions:
+      CC:
+        min: 16
+
+  - id: MT-M002
+    version: 1
+    title: Deep nesting
+    description: >-
+      A method whose control structures nest several levels deep. Inspect whether the inner levels
+      could be extracted, and whether guard clauses would read better than the nesting.
+    level: method
+    maturity: candidate
+    defaultMode: warn
+    severity: warning
+    documentationPath: docs/rules/mt-m002-deep-nesting.md
+    requiredScope: syntax-local
+    worsening: RISES_BY
+    worseningBudgets:
+      MND: 2
+    conditions:
+      MND:
+        min: 5
+
+  - id: MT-M003
+    version: 1
+    title: Large method with branching
+    description: >-
+      A method that is both long and branchy, which is the combination that makes a method hard to
+      hold in mind. Inspect for responsibilities that could move to their own types. Advisory only:
+      the two conditions interact, so a threshold on either alone would misread this.
+    level: method
+    maturity: candidate
+    defaultMode: warn
+    severity: warning
+    documentationPath: docs/rules/mt-m003-large-method-with-branching.md
+    requiredScope: syntax-local
+    worsening: RISES_BY_WHILE_OTHERS_HOLD
+    worseningBudgets:
+      LOC: 20
+    conditions:
+      LOC:
+        min: 61
+      CC:
+        min: 11
+
+  - id: MT-C001
+    version: 1
+    title: Concentrated class complexity with foreign data access
+    description: >-
+      A class whose total complexity is concentrated in methods that reach into several other
+      classes' data. Inspect whether the foreign access can be replaced by a collaborator the class
+      owns. Experimental: both inputs move for reasons unrelated to cohesion, so this rule is
+      advisory only and cannot be made blocking.
+    level: class
+    maturity: experimental
+    defaultMode: warn
+    severity: warning
+    documentationPath: docs/rules/mt-c001-concentrated-class-complexity.md
+    requiredScope: project-global
+    worsening: RISES_BY_WHILE_OTHERS_HOLD
+    worseningBudgets:
+      WMC: 20
+    conditions:
+      WMC:
+        min: 47
+      ATFD:
+        min: 6
+      TCC:
+        max: 0.33
+
+  - id: MT-C002
+    version: 1
+    title: Large class complexity and method count
+    description: >-
+      A class with both many methods and a high total complexity, which usually means several
+      responsibilities share one type. Inspect for types that want extracting. Note that NOM counts
+      constructors, which NOO does not.
+    level: class
+    maturity: candidate
+    defaultMode: warn
+    severity: warning
+    documentationPath: docs/rules/mt-c002-large-class.md
+    requiredScope: syntax-local
+    worsening: RISES_BY_WHILE_OTHERS_HOLD
+    worseningBudgets:
+      WMC: 20
+    conditions:
+      WMC:
+        min: 80
+      NOM:
+        min: 15

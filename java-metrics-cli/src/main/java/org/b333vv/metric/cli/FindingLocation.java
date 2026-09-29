@@ -10,7 +10,7 @@ package org.b333vv.metric.cli;
  * and it changes on every run, so two reports of the same change differ for no reason.
  *
  * <p>So a finding's location carries the logical repository-relative path, plus the actual line range
- * the finding covers. The line range <em>is</em> kept even though it is not part of identity \u2014 it
+ * the finding covers. The line range <em>is</em> kept even though it is not part of identity — it
  * moves, and that is fine, because it is display data rather than a key.
  *
  * @param path      repository-relative POSIX path, or {@code null} for a whole-run location
