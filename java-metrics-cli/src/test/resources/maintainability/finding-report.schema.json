@@ -36,7 +36,8 @@
       }
     },
     "findings": { "type": "array", "items": { "$ref": "#/definitions/finding" } },
-    "issues": { "type": "array", "items": { "$ref": "#/definitions/issue" } }
+    "issues": { "type": "array", "items": { "$ref": "#/definitions/issue" } },
+    "suppressions": { "type": "array", "items": { "$ref": "#/definitions/suppression" } }
   },
   "definitions": {
     "finding": {
@@ -119,6 +120,17 @@
             }
           }
         }
+      }
+    },
+    "suppression": {
+      "type": "object",
+      "required": ["ruleId", "entity", "reason", "state"],
+      "properties": {
+        "ruleId": { "type": "string", "minLength": 1 },
+        "entity": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "expiresOn": { "type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "state": { "type": "string", "enum": ["applied", "expired", "stale", "unused"] }
       }
     },
     "issue": {

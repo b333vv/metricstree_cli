@@ -93,6 +93,42 @@ class FindingReportJsonTest {
         assertEquals(0, second.size());
     }
 
+    /**
+     * A configured exception reaches the report as its own record, whatever became of it.
+     *
+     * <p>The three states are the whole point: an entry that applied, one that lapsed, and one that
+     * matches nothing. A reader reviewing their config has to be able to see all three, or an
+     * exception that quietly stopped working is indistinguishable from a finding that quietly came
+     * back.
+     */
+    @Test
+    void suppressionsAreReportedWithTheirState() throws Exception {
+        EntityKey key = EntityKey.ofMethod("src/main/java/app/Order.java", "app.Order", "total(int)");
+        FindingSuppression inForce = new FindingSuppression("MT-M001", key, "accepted",
+                java.time.LocalDate.parse("2026-12-31"));
+        FindingSuppression lapsed = new FindingSuppression("MT-M001", key, "old exception",
+                java.time.LocalDate.parse("2020-01-01"));
+        List<FindingSuppressionFilter.SuppressionStatus> statuses = List.of(
+                new FindingSuppressionFilter.SuppressionStatus(inForce,
+                        FindingSuppressionFilter.SuppressionStatus.State.APPLIED,
+                        inForce.ruleId(), key.render()),
+                new FindingSuppressionFilter.SuppressionStatus(lapsed,
+                        FindingSuppressionFilter.SuppressionStatus.State.STALE,
+                        lapsed.ruleId(), key.render()));
+
+        FindingReport report = new FindingReport(FindingReport.SCHEMA_VERSION, "PASSED",
+                MaintainabilitySettings.defaults(null).withEnforcement("ADVISORY"),
+                List.of(), List.of(), statuses);
+        JsonNode document = render(report, null);
+
+        JsonNode emitted = document.get("suppressions");
+        assertEquals(2, emitted.size());
+        assertEquals("applied", emitted.get(0).get("state").asText());
+        assertEquals("stale", emitted.get(1).get("state").asText());
+        assertEquals("2026-12-31", emitted.get(0).get("expiresOn").asText());
+        assertEquals(List.of(), violations(document));
+    }
+
     /** What both commands emit satisfies the schema. */
     @Test
     void gateAndDetectMatchSchema() throws Exception {

@@ -22,14 +22,22 @@ record FindingReport(
         String status,
         MaintainabilitySettings settings,
         List<Finding> findings,
-        List<EvaluationIssue> issues) {
+        List<EvaluationIssue> issues,
+        List<FindingSuppressionFilter.SuppressionStatus> suppressions) {
 
     /** The v2 schema marker. ML-020 freezes the shape; this is the version it will freeze. */
     static final String SCHEMA_VERSION = "v2";
 
+    /** The pre-ML-024 shape: a report with no configured exceptions. */
+    FindingReport(String schemaVersion, String status, MaintainabilitySettings settings,
+            List<Finding> findings, List<EvaluationIssue> issues) {
+        this(schemaVersion, status, settings, findings, issues, List.of());
+    }
+
     FindingReport {
         findings = findings == null ? List.of() : List.copyOf(findings);
         issues = issues == null ? List.of() : List.copyOf(issues);
+        suppressions = suppressions == null ? List.of() : List.copyOf(suppressions);
     }
 
     /** A report for a run that produced nothing at all. */
@@ -49,6 +57,7 @@ record FindingReport(
 
     /** A copy with a different status, used when the verdict is decided outside this type. */
     FindingReport withStatus(String newStatus) {
-        return new FindingReport(schemaVersion, newStatus, settings, findings, issues);
+        return new FindingReport(schemaVersion, newStatus, settings, findings, issues,
+                suppressions);
     }
 }

@@ -487,7 +487,7 @@ final class GateCommand implements Callable<Integer> {
         String status = !result.blocking().isEmpty() ? "FAILED"
                 : issues.stream().anyMatch(EvaluationIssue::required) ? "INCOMPLETE" : "PASSED";
         return new FindingReport(FindingReport.SCHEMA_VERSION, status, activePolicy.settings(),
-                result.findings(), issues);
+                result.findings(), issues, result.suppressions());
     }
 
     /** The analysed reports plus the path translation, carried past the snapshot lifecycle. */

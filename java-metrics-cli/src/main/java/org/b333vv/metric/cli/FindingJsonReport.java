@@ -25,7 +25,7 @@ import org.b333vv.metric.library.core.MetricContribution;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonPropertyOrder({"schemaVersion", "status", "policyDigest", "enabledRules", "enforcement",
-        "summary", "comparison", "findings", "issues"})
+        "summary", "comparison", "findings", "issues", "suppressions"})
 record FindingJsonReport(
         String schemaVersion,
         String status,
@@ -35,7 +35,8 @@ record FindingJsonReport(
         Summary summary,
         Comparison comparison,
         List<FindingView> findings,
-        List<IssueView> issues) {
+        List<IssueView> issues,
+        List<SuppressionView> suppressions) {
 
     /**
      * Builds the projection from a report and the comparison it was made against.
@@ -61,7 +62,30 @@ record FindingJsonReport(
                 summary,
                 comparison,
                 views,
-                report.issues().stream().map(IssueView::of).toList());
+                report.issues().stream().map(IssueView::of).toList(),
+                report.suppressions().stream().map(SuppressionView::of).toList());
+    }
+}
+
+/**
+ * What one configured exception did on this run.
+ *
+ * <p>Emitted for every entry, not only the effective ones: a reader reviewing their config needs to
+ * see which exceptions are currently doing nothing, and an exception that silently stopped applying
+ * is indistinguishable from a finding that silently reappeared.
+ */
+@JsonPropertyOrder({"ruleId", "entity", "reason", "expiresOn", "state"})
+record SuppressionView(
+        String ruleId,
+        String entity,
+        String reason,
+        String expiresOn,
+        String state) {
+
+    static SuppressionView of(FindingSuppressionFilter.SuppressionStatus status) {
+        return new SuppressionView(status.ruleId(), status.entity(), status.entry().reason(),
+                status.entry().expiresOn() == null ? null : status.entry().expiresOn().toString(),
+                status.id());
     }
 }
 

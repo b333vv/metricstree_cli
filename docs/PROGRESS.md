@@ -1,5 +1,49 @@
 # what has been done
 
+## Session: ML-024 — exceptions you can review (2026-09-29)
+
+A suppression is the one thing a project can do to make a finding stop counting. ML-024 gives it
+that power and takes away everything it does not need: one exact rule, on one exact entity, with a
+written reason, optionally expiring.
+
+**What was built**
+
+- `FindingSuppression` — rule ID, `EntityKey`, required reason, optional UTC expiry. Unknown rules and
+  blank reasons are rejected at construction. A missing expiry is permitted and deliberate: a missing
+  reason is an oversight, a missing date is a decision to revisit.
+- `FindingSuppressionFilter` — marks dispositions, deletes nothing. The raw finding, its evidence and
+  its lifecycle survive; only the disposition moves to `suppressed` with the matching entry named as
+  the reason. That is what keeps "how many things am I suppressing?" answerable, and it is why the
+  summary counters still reconcile.
+- `RuleConfigLoader` reads `maintainability.suppressions`, already an accepted key but previously
+  unread. Every entry is validated as strictly as a rule override: the rule must exist, the identity
+  must be complete, the reason written, the date parseable — a silently ignored exception would leave
+  an author believing a finding was handled when it was not.
+- Every entry reaches the report as a `suppressions[]` record with the state it ended in: `applied`,
+  `expired`, `stale` or `unused`. An exception that quietly stopped working is otherwise
+  indistinguishable from a finding that quietly came back.
+
+**Decisions worth keeping**
+
+- **Structural, not defensive.** The filter's signature takes findings and returns findings. There is
+  no overload accepting issues, so a suppression *cannot* silence a parse error or an incomplete
+  analysis — that is the task's central guarantee, enforced by a shape rather than a check that could
+  be forgotten later.
+- **Applied after evaluation, before enforcement.** Suppressing earlier would mean the entity was never
+  evaluated, and a broken check would look clean rather than exempt.
+- **No wildcard form.** `**/*.java` and `*` are ordinary strings that match nothing: matching is
+  field-by-field and never a pattern, and a test asserts exactly that. A glob that could cover a family
+  of entities is a policy change wearing the costume of an exception.
+- **Digest sorts the entries.** Reordering a list is a whitespace edit, not a policy change; two
+  policies that judge differently must not share an identity.
+- **The clock is injected.** Expiry is the only time-dependent decision in the policy, so the boundary
+  is tested rather than waited for, including a zone eight hours ahead of UTC.
+
+**Verification:** `./gradlew check` passes. New: `FindingSuppressionTest` (28 cases) and
+`FindingReportJsonTest.suppressionsAreReportedWithTheirState`. Command tests unchanged.
+
+ML-001–ML-024 are DONE. Next ready task: **ML-025**.
+
 ## Session: ML-023 — a number should say where it came from (2026-09-29)
 
 `CC = 18` used to be the whole story: the finding named a method, and the reader had to go and
@@ -2546,7 +2590,7 @@ All three proposals were accepted and implemented; backward compatibility was no
 
 - New active work: accepted maintainability linter strategy, planned in
   `docs/plans/maintainability-linter/README.md`. ML-001–ML-022 are DONE.
-  Next ready task: **ML-024**. Implement one packet per
+  Next ready task: **ML-025**. Implement one packet per
   commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:

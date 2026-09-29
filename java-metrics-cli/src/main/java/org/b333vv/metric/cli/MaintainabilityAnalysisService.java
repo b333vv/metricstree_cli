@@ -7,6 +7,7 @@ import org.b333vv.metric.library.core.MetricRequirements;
 import org.b333vv.metric.library.core.MethodReport;
 
 import java.nio.file.Path;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -58,12 +59,28 @@ final class MaintainabilityAnalysisService {
     record Result(
             List<Finding> findings,
             List<EvaluationIssue> issues,
-            Set<MetricCode> requiredMetrics) {
+            Set<MetricCode> requiredMetrics,
+            List<FindingSuppressionFilter.SuppressionStatus> suppressions) {
 
         Result {
             findings = findings == null ? List.of() : List.copyOf(findings);
             issues = issues == null ? List.of() : List.copyOf(issues);
             requiredMetrics = requiredMetrics == null ? Set.of() : Set.copyOf(requiredMetrics);
+            suppressions = suppressions == null ? List.of() : List.copyOf(suppressions);
+        }
+
+        /** The pre-ML-024 shape: a run that configured no exceptions. */
+        Result(List<Finding> findings, List<EvaluationIssue> issues,
+                Set<MetricCode> requiredMetrics) {
+            this(findings, issues, requiredMetrics, List.of());
+        }
+
+        /** Entries that lapsed or match nothing, which the author has to act on. */
+        List<FindingSuppressionFilter.SuppressionStatus> ineffectiveSuppressions() {
+            return suppressions.stream()
+                    .filter(status -> status.state()
+                            != FindingSuppressionFilter.SuppressionStatus.State.APPLIED)
+                    .toList();
         }
 
         /** The findings eligible to block, in a deterministic order. */
@@ -95,6 +112,20 @@ final class MaintainabilityAnalysisService {
     Result evaluate(MetricReport base, MetricReport current, Function<Path, String> logicalPath,
             MetricRequirements.Scope scope, MaintainabilitySettings settings,
             EntityCorrespondence correspondence, Enforcement enforcement) {
+        return evaluate(base, current, logicalPath, scope, settings, correspondence, enforcement,
+                Clock.systemUTC());
+    }
+
+    /**
+     * The same evaluation with the clock it should read expiry against.
+     *
+     * <p>Overloaded rather than parameterised everywhere: expiry is the only time-dependent decision
+     * in the policy, and the alternative would be a clock threaded through the whole evaluator for
+     * the sake of one boundary check.
+     */
+    Result evaluate(MetricReport base, MetricReport current, Function<Path, String> logicalPath,
+            MetricRequirements.Scope scope, MaintainabilitySettings settings,
+            EntityCorrespondence correspondence, Enforcement enforcement, Clock clock) {
 
         List<Finding> findings = new ArrayList<>();
         List<EvaluationIssue> issues = new ArrayList<>();
@@ -123,8 +154,17 @@ final class MaintainabilityAnalysisService {
             }
         }
 
-        return new Result(applyEnforcement(findings, enforcement), issues,
-                requiredMetrics(settings));
+        // Suppressions land after evaluation and before enforcement, which is the only order that
+        // makes them a disposition rather than a deletion: the findings are already decided, so
+        // marking one changes what counts without changing what was found. Doing it earlier would
+        // mean a suppressed entity never being evaluated at all, and a broken check would look
+        // clean rather than exempt. The issues are not passed in and cannot be affected.
+        FindingSuppressionFilter filter = new FindingSuppressionFilter(
+                settings.suppressions(), clock);
+        FindingSuppressionFilter.Result filtered = filter.apply(findings);
+
+        return new Result(applyEnforcement(filtered.findings(), enforcement), issues,
+                requiredMetrics(settings), filtered.status());
 
     }
     /**

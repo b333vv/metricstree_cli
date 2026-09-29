@@ -242,6 +242,54 @@ Accepted roles: `production`, `test`, `generated`, `dto`, `adapter`, `unknown`. 
 mean what it says. Paths are logical repository-relative POSIX paths, so a temporary checkout
 directory cannot change a file's role.
 
+### Suppressions (`maintainability.suppressions`)
+
+A suppression is the one thing a project can do to make a finding stop counting, so it is deliberately
+narrow: **one exact rule, on one exact entity, with a written reason, optionally expiring.**
+
+```yaml
+maintainability:
+  suppressions:
+    - ruleId: MT-M001
+      entity:
+        path: src/main/java/app/Order.java
+        class: app.Order
+        signature: total(int)
+      reason: >-
+        Legacy hot path. Splitting is tracked in ISSUE-42; re-check after that lands.
+      expiresOn: '2026-12-31'
+```
+
+**Getting the identity right.** Copy `entityKey` verbatim from a finding's JSON — `path`, `class` and
+`signature` are the three fields it carries. Matching is field-by-field, never textual, and never a
+pattern: `**/*.java` or `*` are ordinary strings that match nothing, because a glob that could cover a
+family of entities is a policy change, not an exception. A sibling method and a different rule on the
+same method are both left alone.
+
+**What a suppression does and does not do.**
+
+- It changes the finding's `disposition` to `suppressed` and names the entry as its reason. The raw
+  finding, its evidence and its lifecycle all remain in the report, so "how many things am I
+  suppressing?" stays answerable.
+- It never touches an evaluation issue. A parse error, a missing metric or an incomplete analysis
+  cannot be suppressed by any entry — there is no configuration that turns a failed analysis into a
+  clean report.
+- It stops the finding blocking, and the summary counts still reconcile: suppressed findings are
+  counted, not dropped.
+
+**Expiry** is a UTC date, valid *through* that day, written as `YYYY-MM-DD`. Omit it and the entry
+does not expire — a deliberate asymmetry with `reason`, because a missing expiry is a decision to
+revisit while a missing reason is an oversight.
+
+**Reviewing.** Every entry appears in the report's `suppressions` array with the state it ended in:
+`applied`, `expired`, `stale` (its date passed *and* it matched nothing) or `unused` (in force, matching
+nothing). An exception that quietly stopped working is otherwise indistinguishable from a finding that
+quietly came back. Review config diffs the way you review code: a suppression has no effect on the diff
+itself, so the only signal in a pull request is the added line.
+
+There is no automatic suppression generation, and none will be added: a tool that writes its own
+exceptions cannot review them.
+
 ## Project configuration (`.metrics-gate.yml`)
 
 A single YAML or JSON file at the repository root can hold thresholds, rules, exclusions and

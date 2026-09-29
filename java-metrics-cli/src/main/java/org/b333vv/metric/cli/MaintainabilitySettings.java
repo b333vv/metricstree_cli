@@ -22,7 +22,9 @@ import java.util.Map;
  * @param file           the config this came from, or {@code null} for the defaults
  * @param enabledRules   rule IDs to evaluate; empty-but-present means explicitly none
  * @param overrides      per-rule effective behaviour, keyed by rule ID
- * @param digest         the hash of the effective policy data
+ * @param digest         the hash of the effective policy data, suppressions included: a run governed
+ *                       by different exceptions is governed by a different policy
+ * @param suppressions   exact rule/entity exceptions, applied after evaluation and never to issues
  */
 record MaintainabilitySettings(
         java.nio.file.Path file,
@@ -30,7 +32,8 @@ record MaintainabilitySettings(
         Map<String, RuleOverride> overrides,
         String digest,
         List<RoleClassifier.Rule> roleRules,
-        String enforcement) {
+        String enforcement,
+        List<FindingSuppression> suppressions) {
 
     /**
      * What a project's configuration changed about one rule.
@@ -50,11 +53,20 @@ record MaintainabilitySettings(
         overrides = overrides == null ? Map.of() : Map.copyOf(overrides);
         roleRules = roleRules == null ? List.of() : List.copyOf(roleRules);
         enforcement = enforcement == null ? "advisory" : enforcement;
+        suppressions = suppressions == null ? List.of() : List.copyOf(suppressions);
+    }
+
+    /** The pre-ML-024 shape: a policy with no configured exceptions. */
+    MaintainabilitySettings(java.nio.file.Path file, List<String> enabledRules,
+            Map<String, RuleOverride> overrides, String digest,
+            List<RoleClassifier.Rule> roleRules, String enforcement) {
+        this(file, enabledRules, overrides, digest, roleRules, enforcement, List.of());
     }
 
     /** The same settings with a different enforcement level recorded for the report. */
     MaintainabilitySettings withEnforcement(String level) {
-        return new MaintainabilitySettings(file, enabledRules, overrides, digest, roleRules, level);
+        return new MaintainabilitySettings(file, enabledRules, overrides, digest, roleRules, level,
+                suppressions);
     }
 
     /** Whether the role rules were configured at all, as opposed to being absent. */
@@ -69,7 +81,7 @@ record MaintainabilitySettings(
     /** The settings a run gets with no configuration at all. */
     static MaintainabilitySettings defaults(java.nio.file.Path file) {
         return new MaintainabilitySettings(file, DEFAULT_ENABLED, Map.of(),
-                MaintainabilityRules.digest(), List.of(), "advisory");
+                MaintainabilityRules.digest(), List.of(), "advisory", List.of());
     }
 
     /** Whether {@code ruleId} should be evaluated. */
