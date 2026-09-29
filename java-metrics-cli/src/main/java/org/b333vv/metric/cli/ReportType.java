@@ -5,5 +5,8 @@ enum ReportType {
     ANALYSIS,
     VALIDATION,
     DETECTION,
-    GATE
+    GATE,
+
+    /** Findings from the maintainability policy. ML-020 freezes its JSON schema. */
+    FINDINGS
 }

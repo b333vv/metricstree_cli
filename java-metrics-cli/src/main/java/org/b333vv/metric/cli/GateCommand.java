@@ -98,6 +98,19 @@ final class GateCommand implements Callable<Integer> {
                     + "Replaces gate.classpath from a project config.")
     private List<Path> classpathEntries = new java.util.ArrayList<>();
 
+    @CommandLine.Option(names = {"--policy"}, paramLabel = "POLICY",
+            description = "Which policy decides the verdict: legacy (default) uses thresholds, "
+                    + "profiles and growth budgets; maintainability uses the versioned rule catalogue "
+                    + "and compares findings across the revision. Defaults to gate.policy in a "
+                    + "project config. Cannot be combined with -t, gate.growth or gate.failOn.")
+    private String policy;
+
+    @CommandLine.Option(names = {"--enforcement"}, paramLabel = "LEVEL",
+            description = "For --policy maintainability: advisory (default) reports findings without "
+                    + "failing the build; enforce makes eligible findings fail it. Overrides "
+                    + "gate.enforcement. Parse errors and completeness gaps are unaffected either way.")
+    private String enforcement;
+
     @CommandLine.Option(names = {"--analysis-scope"}, paramLabel = "SCOPE",            description = "How much of the project the analysis may use: local (default) measures only "
                     + "metrics provable from one file's syntax, so a run without a classpath is still "
                     + "trustworthy; project also resolves symbols and measures coupling, and needs a "
@@ -137,6 +150,21 @@ final class GateCommand implements Callable<Integer> {
         StringWriter warningBuffer = new StringWriter();
         ProjectConfig config = ProjectConfigs.resolve(
                 parentCommand, currentWorkingDirectorySupplier, new PrintWriter(warningBuffer));
+
+        // Resolved before anything is read or analysed, so a migration error is reported without a
+        // temporary directory ever being created.
+        MaintainabilityPolicy activePolicy;
+        try {
+            activePolicy = MaintainabilityPolicy.resolve(policy,
+                    config.gate() == null ? null : config.gate().policy(),
+                    enforcement,
+                    config.gate() == null ? null : config.gate().enforcement(),
+                    config, thresholdsFile != null);
+        } catch (IllegalArgumentException exception) {
+            stderr.println("Error: " + exception.getMessage());
+            stderr.flush();
+            return 2;
+        }
 
         Map<String, Threshold> thresholds = resolveThresholds(config);
         Map<String, Double> growth = config.gateGrowth() != null
@@ -238,6 +266,9 @@ final class GateCommand implements Callable<Integer> {
         GateEvaluator.Result result;
         List<GateFinding> parseErrors;
         AnalysisCompleteness completeness;
+        // Null when the legacy policy ran; the new policy's findings decide the verdict instead.
+        FindingReport maintainability = null;
+        PolicyInput policyInput = null;
         List<CheckEvaluationIssue> contextIssues = new ArrayList<>();
         // Digests are captured inside the try-with-resources, while the roots still exist, and used
         // after it closes -- the snapshots are the evidence, the roots are an implementation detail.
@@ -308,6 +339,15 @@ final class GateCommand implements Callable<Integer> {
                     parseErrors.stream().map(GateFinding::file).distinct().toList(),
                     contextIssues,
                     analysisContext);
+
+            if (activePolicy.isMaintainability()) {
+                // The path translation is captured, not the snapshot: it maps by the snapshot's root
+                // string, which stays valid after the temporary tree is deleted, and the policy run
+                // happens below so it can see the analysis-level completeness as well.
+                policyInput = new PolicyInput(baseReport, currentReport,
+                        physical -> after.logicalPath(physical).orElse(physical.toString()),
+                        before, after);
+            }
         } catch (SnapshotMaterializer.UnstableSourceException exception) {
             // The working tree moved while it was being read. Reporting this as a gate failure would
             // blame the code for an editor saving a file; reporting it as a pass would publish a
@@ -331,6 +371,16 @@ final class GateCommand implements Callable<Integer> {
             return 2;
         }
 
+        // The policy decides the verdict, and it is applied after the analysis so a parse error and
+        // a completeness gap keep their own exit codes whatever the policy says. A policy is not a
+        // licence to publish a pass over code that did not compile.
+        String status;
+        int exitCode;
+        if (activePolicy.isMaintainability()) {
+            maintainability = runMaintainabilityPolicy(activePolicy, policyInput, plan,
+                    resolveAnalysisScope(config), completeness);
+        }
+
         List<GateFinding> violations = new ArrayList<>(parseErrors);
         violations.addAll(result.violations());
 
@@ -339,9 +389,10 @@ final class GateCommand implements Callable<Integer> {
         // changes that. Only when nothing failed can incompleteness matter, and then it is INCOMPLETE
         // rather than PASSED, because "no finding" and "no finding could be established" are different
         // answers and a gate that conflates them is worse than one that does not run.
-        String status;
-        int exitCode;
-        if (!violations.isEmpty()) {
+        if (maintainability != null && !maintainability.blocking().isEmpty()) {
+            status = "FAILED";
+            exitCode = 1;
+        } else if (!violations.isEmpty()) {
             status = "FAILED";
             exitCode = 1;
         } else if (completeness.hasRequiredGaps()) {
@@ -382,6 +433,90 @@ final class GateCommand implements Callable<Integer> {
      * <p>Resolved before anything is materialized, so a missing root or jar is reported as the usage
      * error it is — before the run has created temporary directories and read a single blob.
      */
+    /**
+     * Runs the maintainability policy over the two analysed snapshots.
+     *
+     * <p>Entity correspondence is built from both sides' own keys plus the plan's detected file
+     * relocations. Deriving the base key from the current path instead would report every moved file
+     * as new code, which is how a mechanical reorganisation ends up looking like a large regression.
+     */
+    private FindingReport runMaintainabilityPolicy(MaintainabilityPolicy activePolicy,
+            PolicyInput input, ComparisonPlan plan,
+            org.b333vv.metric.library.core.MetricRequirements.Scope scope,
+            AnalysisCompleteness completeness) {
+        EntityCorrespondence correspondence = EntityCorrespondence.between(
+                entityKeys(input.baseReport(), input.before()),
+                entityKeys(input.currentReport(), input.after()), fileMoves(plan));
+
+        MaintainabilityAnalysisService.Result result = new MaintainabilityAnalysisService().evaluate(
+                input.baseReport(), input.currentReport(), input.logicalPath(), scope,
+                activePolicy.settings(), correspondence, activePolicy.enforcement());
+
+        // A gap the analysis already established is a gap under this policy too: a policy is not a
+        // licence to publish a pass over a check that did not run.
+        List<EvaluationIssue> issues = new java.util.ArrayList<>(result.issues());
+        issues.addAll(policyIssues(completeness));
+        String status = !result.blocking().isEmpty() ? "FAILED"
+                : issues.stream().anyMatch(EvaluationIssue::required) ? "INCOMPLETE" : "PASSED";
+        return new FindingReport(FindingReport.SCHEMA_VERSION, status, activePolicy.settings(),
+                result.findings(), issues);
+    }
+
+    /** The analysed reports plus the path translation, carried past the snapshot lifecycle. */
+    private record PolicyInput(
+            MetricReport baseReport,
+            MetricReport currentReport,
+            java.util.function.Function<Path, String> logicalPath,
+            SourceSnapshot before,
+            SourceSnapshot after) {
+    }
+
+    /**
+     * Every class and method key a report contains, in logical paths.
+     *
+     * <p>Taken from the report rather than from the snapshot's file names: the report carries the
+     * resolved qualified name and the method signatures, and a key derived from a file name would
+     * match nothing on the other side.
+     */
+    private static Set<EntityKey> entityKeys(MetricReport report, SourceSnapshot snapshot) {
+        Set<EntityKey> keys = new java.util.LinkedHashSet<>();
+        for (org.b333vv.metric.library.core.ClassReport classReport : report.classes()) {
+            String path = snapshot.logicalPath(classReport.sourcePath())
+                    .orElse(classReport.sourcePath().toString());
+            keys.add(EntityKey.ofClass(path, classReport.qualifiedName()));
+            for (org.b333vv.metric.library.core.MethodReport method : classReport.methods()) {
+                keys.add(EntityKey.ofMethod(path, classReport.qualifiedName(), method.signature()));
+            }
+        }
+        return keys;
+    }
+
+    /** The analysis-level gaps, restated as evaluation issues the new report can carry. */
+    private static List<EvaluationIssue> policyIssues(AnalysisCompleteness completeness) {
+        List<EvaluationIssue> issues = new java.util.ArrayList<>();
+        if (completeness == null) {
+            return issues;
+        }
+        for (CheckEvaluationIssue issue : completeness.issues()) {
+            issues.add(new EvaluationIssue(null, null,
+                    issue.file() == null ? null : FindingLocation.of(issue.file(), 1),
+                    issue.reasonCode(), issue.message(), issue.required()));
+        }
+        return issues;
+    }
+
+    /** The detected exact file relocations, keyed by the old path. */
+    private static Map<String, String> fileMoves(ComparisonPlan plan) {
+        Map<String, String> moves = new java.util.LinkedHashMap<>();
+        for (GitPathChange change : plan.pathChanges()) {
+            if (change.oldPath() != null && change.newPath() != null
+                    && GitOps.isJavaPath(change.newPath())) {
+                moves.put(change.oldPath(), change.newPath());
+            }
+        }
+        return moves;
+    }
+
     private GateAnalysisContext resolveAnalysisContext(
             Path repoRoot, ProjectConfig config, Path workingDirectory, ComparisonPlan plan) {
         GateSettings settings = config.gate() != null ? config.gate() : GateSettings.EMPTY;

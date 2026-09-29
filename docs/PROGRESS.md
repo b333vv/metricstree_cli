@@ -1,5 +1,41 @@
 # what has been done
 
+## Session: ML-019 (part 2) — the new policy, opt-in (2026-09-29)
+
+**`gate --policy maintainability` now exists, and nothing changes without it.** Every existing gate
+test passes unchanged, and one of them asserts exactly that: no flag means growth budgets, exactly as
+before. That is the whole compatibility argument for an opt-in policy — a team whose CI runs
+`gate --base origin/main` today has to get the same verdict tomorrow.
+
+**Legacy inputs are refused, not outranked.** `-t`, `gate.growth`, `gate.failOn` or `thresholds`
+alongside `--policy maintainability` is exit 2 naming the conflicting input. Honouring them while the
+new rules decided would mean a project whose threshold table had quietly stopped being enforced — the
+author would have no way to tell from the verdict. The message says what to remove.
+
+**Advisory is the default, because a policy nobody has evaluated should not start failing builds.**
+Under advisory the findings are *re-dispositioned* rather than ignored, so the report says plainly
+that they exist and did not block. A finding that looks active and then passes the build with nothing
+said is the exact confusion the mode has to remove.
+
+**Completeness and parse errors are decided from the analysis, not from the policy.** A gap the
+analysis already established is carried into the findings report as an evaluation issue, so a policy
+can never publish a pass over a check that did not run — the quietest failure mode becomes the
+default otherwise.
+
+**Two bugs the compiler and the tests caught.** The path translation returns `Optional`, not a string;
+and my first attempt at entity keys derived the qualified name from a *file name*, which matches
+nothing on the other side — so every entity looked new. Keys now come from the report, which carries
+the resolved qualified name and the method signatures.
+
+- New: `FindingReport`, `FindingReportContext`, `FindingJsonReportAdapter`, `MaintainabilityPolicy`
+  (resolution, precedence, migration errors), `ReportType.FINDINGS`.
+- `GateCommand`: `--policy`, `--enforcement`, policy run, correspondence from the plan's file moves.
+- Tests: `MaintainabilityCommandTest` (8), `GateCommandTest` +5 end-to-end. `./gradlew check` green.
+
+**Not done:** `detect --policy` (detect still runs only the legacy rule files), the `--json-output`
+sidecar, and HTML/Markdown/SARIF adapters for findings — the last two belong to ML-020/021/022.
+
+
 ## Session: ML-018 — what changed, stated as a lifecycle (2026-09-29)
 
 **The delta table is implemented as one branch per row**, not derived from the two statuses with a
@@ -2349,9 +2385,9 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-018 are DONE.
-  Next ready task: **ML-019** (wire the opt-in maintainability policy into gate and detect). Implement
-  one packet per commit. The prior roadmap below is completed history.
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-018 DONE; ML-019 PARTIAL — gate wired and
+  tested, `detect --policy` outstanding and recorded in the packet.
+  Next ready task: finish `detect --policy` (ML-019 remainder), then **ML-020** (freeze v2 JSON). The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.

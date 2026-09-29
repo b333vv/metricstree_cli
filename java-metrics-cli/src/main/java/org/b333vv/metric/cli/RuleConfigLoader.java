@@ -49,8 +49,16 @@ final class RuleConfigLoader {
     private RuleConfigLoader() {
     }
 
-    /** The effective policy described by {@code file}, or the defaults when the file says nothing. */
+    /**
+     * The effective policy described by {@code file}, or the defaults when the file says nothing.
+     *
+     * <p>{@code null} means "this run read no config file at all" — a {@code --no-config} invocation —
+     * and yields the catalogue defaults rather than being an error.
+     */
     static MaintainabilitySettings load(Path file) {
+        if (file == null) {
+            return MaintainabilitySettings.defaults(null);
+        }
         JsonNode root = ConfigLoader.projectConfigTree(file);
         JsonNode section = root == null ? null : root.get("maintainability");
         if (section == null || section.isNull()) {
