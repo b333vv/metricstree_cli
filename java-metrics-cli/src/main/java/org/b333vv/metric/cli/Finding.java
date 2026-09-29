@@ -1,0 +1,111 @@
+package org.b333vv.metric.cli;
+
+import org.b333vv.metric.library.core.MetricCode;
+
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * One rule's verdict about one entity: what was matched, on what evidence, and what should be done
+ * about it.
+ *
+ * <h2>Immutable, and really so</h2>
+ * <p>Every collection is copied in the compact constructor, not merely wrapped. A finding is built
+ * once and then handed to the evaluator, the policy filter, the deduplicator and up to four report
+ * adapters. If any of those could add an element to the evidence list it would mutate the finding
+ * every other holder already has, and the four adapters would disagree about what they were
+ * rendering.
+ *
+ * <h2>The fingerprint is derived, never supplied</h2>
+ * <p>{@link #fingerprint()} computes itself from the rule ID, the rule version and the entity key. A
+ * caller cannot pass one in, so a finding can never claim an identity that does not match its content
+ * — which is the failure a stored baseline would then accept forever.
+ *
+ * <h2>Nothing here is a threshold verdict</h2>
+ * <p>A finding records what a rule observed. Whether that observation blocks is {@link #disposition()}
+ * combined with the rule's mode, decided by policy in a separate step. Keeping the two apart is what
+ * makes "show me everything" and "show me only what blocks" the same computation with a different
+ * filter, rather than two different runs.
+ */
+record Finding(
+        String ruleId,
+        int ruleVersion,
+        EntityKey entityKey,
+        String title,
+        String message,
+        FindingLocation location,
+        FindingLocation baseLocation,
+        RuleSeverity severity,
+        RuleMaturity maturity,
+        EvaluationStatus evaluationStatus,
+        FindingLifecycle lifecycle,
+        List<FindingEvidence> evidence,
+        List<FindingLocation> relatedLocations,
+        String remediationHint,
+        String documentationPath,
+        EntityRole role,
+        FindingDisposition disposition,
+        String dispositionReason) {
+
+    Finding {
+        ruleId = requireText(ruleId, "ruleId");
+        Objects.requireNonNull(entityKey, "entityKey");
+        Objects.requireNonNull(location, "location");
+        Objects.requireNonNull(severity, "severity");
+        Objects.requireNonNull(maturity, "maturity");
+        Objects.requireNonNull(evaluationStatus, "evaluationStatus");
+        Objects.requireNonNull(lifecycle, "lifecycle");
+        Objects.requireNonNull(disposition, "disposition");
+        evidence = evidence == null ? List.of() : List.copyOf(evidence);
+        relatedLocations = relatedLocations == null ? List.of() : List.copyOf(relatedLocations);
+        if (lifecycle == FindingLifecycle.RESOLVED && disposition == FindingDisposition.ACTIVE) {
+            // A resolved finding is not an active one. Allowing both would let a run report
+            // something as blocking after claiming it just stopped matching.
+            throw new IllegalArgumentException(
+                    "A resolved finding cannot be active; that is how a gate ends up blocking on"
+                            + " something it just reported as fixed");
+        }
+        if (evaluationStatus.isUnavailable() && disposition.isBlocking()) {
+            throw new IllegalArgumentException(
+                    "Finding " + ruleId + " on " + entityKey.render() + " is unavailable and cannot"
+                            + " be active; an unevaluated check has nothing to block with");
+        }
+    }
+
+    private static String requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("A finding needs a " + field);
+        }
+        return value;
+    }
+
+    /**
+     * The stable identity of this finding.
+     *
+     * <p>Derived, never stored: a caller that could supply it could supply one that does not match
+     * the content, and every stored reference to it — a baseline entry, a previous fingerprint —
+     * would then be wrong in a way nothing downstream could detect.
+     */
+    String fingerprint() {
+        return FindingFingerprint.of(ruleId, ruleVersion, entityKey);
+    }
+
+    /** Whether this finding may block a build under the policy that produced it. */
+    boolean blocks() {
+        return disposition.isBlocking()
+                && lifecycle.eligibleForBlocking()
+                && evaluationStatus == EvaluationStatus.COMPLETE_MATCH;
+    }
+
+    /** The metrics this finding's evidence is about, in evidence order and deduplicated. */
+    List<MetricCode> metrics() {
+        return evidence.stream().map(FindingEvidence::metric).distinct().toList();
+    }
+
+    /** The same finding with a different disposition and an optional reason. */
+    Finding withDisposition(FindingDisposition newDisposition, String reason) {
+        return new Finding(ruleId, ruleVersion, entityKey, title, message, location, baseLocation,
+                severity, maturity, evaluationStatus, lifecycle, evidence, relatedLocations,
+                remediationHint, documentationPath, role, newDisposition, reason);
+    }
+}

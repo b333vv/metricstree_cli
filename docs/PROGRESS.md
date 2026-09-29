@@ -1,5 +1,49 @@
 # what has been done
 
+## Session: ML-013 — identity you can store (2026-09-29)
+
+**A finding that cannot be named cannot be baselined, deduplicated or compared.** ML-013 introduces
+that name: an `EntityKey` of logical path, qualified name and signature, and a fingerprint that is
+SHA-256 over a canonical JSON array of exactly those fields plus the rule ID and rule version.
+
+**What is deliberately not in the hash is the point.** Line numbers move when an import is added
+above a method; metric values change precisely when the code does. Either one in the fingerprint would
+mean every unrelated edit above a flagged method retires its baseline entry, and the ratchet would
+stop working for a reason nobody could see. What *is* in it is the rule version — MT-M001 at CC 16
+and at CC 20 are different claims about different code, so a rule change has to produce new
+fingerprints or an old baseline would silently accept matches made under new thresholds.
+
+**Identity is a value, never a formatted string.** The obvious implementation is to render a key and
+compare strings, and it fails exactly where it matters: a path containing a separator or a signature
+containing a comma makes two different entities render identically. `EntityKey` is compared field by
+field, and only rendered for hashing and for display — nothing parses a rendered key back. The
+fingerprint's canonical form escapes every character JSON treats specially, so a crafted signature
+cannot imitate the array's structure and collide with another finding's bytes.
+
+**Only exact moves link.** A file relocation keeps the old fingerprint reachable as
+`previousFingerprint`; a changed signature or a changed qualified name is refused outright by
+`movedTo`. Matching across a rename would transfer a method's debt onto its replacement with nothing
+having improved, and would do it silently.
+
+**Four things the types refuse to build.** A finding whose fingerprint a caller supplied rather than
+derived; a resolved finding marked active (blocking on something just reported as fixed); an
+unavailable evaluation marked blocking (a check that did not run has nothing to block with); and
+non-finite or one-sided-delta evidence, because `before=null, after=18, delta=7` is a change between
+an unknown and a number, not a measurement.
+
+**Four axes kept apart.** Severity (what the rule means), mode (what this project configured),
+maturity (what evidence stands behind the rule) and lifecycle (what changed across revisions) are four
+types, not three. The conflation that hurts most is lifecycle versus disposition: a pre-existing
+finding stays `existing` forever and is suppressed by disposition, because “was this here before?”
+is a question about the code while “does this block?” is a question about policy that a suppression
+can change without the code changing at all.
+
+- New (all internal to the CLI, none wired to a command yet): `Finding`, `EntityKey`,
+  `FindingFingerprint`, `FindingEvidence`, `FindingLocation`, `EvaluationIssue`, `EvaluationStatus`,
+  `FindingLifecycle`, `FindingDisposition`, `RuleSeverity`, `RuleMode`, `RuleMaturity`, `EntityRole`.
+- Tests: `FindingIdentityTest` (9). `./gradlew check` green; no legacy output touched.
+
+
 ## Session: ML-012 — a threshold is only the number after the definition (2026-09-29)
 
 **"ATFD ≥ 5" is not a rule until you know which ATFD.** The paper's version and this library's
@@ -2110,9 +2154,9 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-012 are DONE.
-  Next ready task: **ML-013** (immutable findings and stable entity identity). Implement one packet
-  per commit. The prior roadmap below is completed history.
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-013 are DONE.
+  Next ready task: **ML-014** (versioned rule catalog and strict policy overrides). Implement one
+  packet per commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.
