@@ -93,8 +93,8 @@ final class ClassRuleEvaluator {
 
             double value = measured.doubleValue();
             allSatisfied &= bounds.matches(value);
-            evidence.add(FindingEvidence.currentOnly(metric, value,
-                    MethodRuleEvaluator.unitOf(metric)));
+            evidence.add(new FindingEvidence(metric, null, value, bounds.min(), bounds.max(), null,
+                    MethodRuleEvaluator.unitOf(metric), List.of()));
         }
 
         if (!allPresent) {

@@ -908,7 +908,11 @@ final class GateCommand implements Callable<Integer> {
      */
     private void writeReport(OutputFormat format, String status, GateReportView view)
             throws IOException {
-        String content = reportAdapters.render(ReportType.GATE, format, new GateReportContext(view));
+        String content = maintainabilityReport != null && activePolicy != null
+                && activePolicy.isMaintainability()
+                ? reportAdapters.render(ReportType.FINDINGS, format,
+                        new FindingReportContext(maintainabilityReport, sidecarComparison()))
+                : reportAdapters.render(ReportType.GATE, format, new GateReportContext(view));
         if (STDOUT.equals(outputFile.toString())) {
             stdout.println(content);
             stdout.flush();

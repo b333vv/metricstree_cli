@@ -5,6 +5,11 @@ import java.util.List;
 
 /** Selects the adapter for a report type and output format. */
 final class ReportAdapterRegistry {
+    /** Adds an adapter after construction, for a report type chosen at run time. */
+    void add(ReportAdapter adapter) {
+        adapters.add(adapter);
+    }
+
     private final List<ReportAdapter> adapters;
 
     ReportAdapterRegistry(List<ReportAdapter> adapters) {

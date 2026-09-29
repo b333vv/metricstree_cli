@@ -1,5 +1,35 @@
 # what has been done
 
+## Session: ML-021 — one preparation, two renderings (2026-09-29)
+
+**Markdown and HTML must not disagree about what was found**, so the grouping, the ordering and the
+truncation are decided once in `FindingsPresentation` and both adapters only render the result. An
+adapter that filtered or re-sorted would be a second opinion about the report, printed as if it were
+the report.
+
+**Truncation keeps the blocking entries.** Findings sort blocking-first, then by entity, then by
+rule, so any prefix-based cut keeps what fails the build. Hiding a blocking finding to show an
+advisory one is the one truncation that makes a report actively misleading, and the test builds
+twenty-five advisory findings that sort ahead of one blocking finding precisely to prove it.
+
+**Twenty-one findings say so.** The omitted count is stated and the JSON is named as the complete
+source — a truncated list that does not announce itself reads as a complete one.
+
+**A test found a real gap: the condition bounds were never carried into the evidence.** The evaluators
+recorded the measured value and dropped the bound it had been compared against, so a finding said
+"18" and left the reader to guess the rule. The schema had allowed `min`/`max` all along; nothing
+supplied them. Both evaluators now carry the bounds with the value.
+
+**Escaping is asserted, not assumed.** A title of `<script>alert(1)</script>` must not execute as
+markup — and my first assertion was wrong, checking for any `<script>` on a page that legitimately
+has its own search script. The assertion now looks for the dangerous *form* rather than for a tag
+that belongs to the template.
+
+**The adapter registry bit twice.** Registering a findings HTML adapter beside the gate's own HTML
+adapter fails every gate run at construction with `Duplicate report adapter format` — so the
+findings adapters are registered only when the new policy and a non-JSON format are both in force.
+
+
 ## Session: ML-020 — the v2 report is frozen, and it has to add up (2026-09-29)
 
 **A schema nobody checks is a comment.** `finding-report.schema.json` and a test-side validator
@@ -2444,9 +2474,9 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-020 are DONE.
-  Next ready task: **ML-021** (render actionable agent Markdown and HTML from findings). Implement one
-  packet per commit. The prior roadmap below is completed history.
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-021 are DONE.
+  Next ready task: **ML-022** (finding-based SARIF, including incomplete runs). Implement one packet
+  per commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.

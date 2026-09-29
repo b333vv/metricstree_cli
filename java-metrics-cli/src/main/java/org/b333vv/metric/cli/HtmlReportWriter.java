@@ -127,6 +127,120 @@ final class HtmlReportWriter {
                 .replace("\"", "&quot;");
     }
 
+    /**
+     * The findings report as a page.
+     *
+     * <p>Consumes the same {@link FindingsPresentation} as the Markdown rendering, so the two cannot
+     * disagree about what was found or about what was left out. There is no client-side filtering
+     * here — every entry is in the HTML — because a filter that hides rows in the browser would make
+     * the page and the JSON disagree for anyone reading the two.
+     *
+     * <p>No scripts and no remote assets: a report opened from a CI artefact directory should render
+     * without fetching anything, and should not execute anything it read from a repository.
+     */
+    String forFindings(FindingReport report, String title) {
+        FindingsPresentation presentation = FindingsPresentation.of(report,
+                FindingsPresentation.DEFAULT_LIMIT);
+
+        StringBuilder cards = new StringBuilder();
+        card(cards, presentation.totalEntries(), "Findings");
+        card(cards, presentation.blockingEntries(), "Blocking");
+        card(cards, presentation.existingCount(), "Existing");
+        card(cards, presentation.suppressedCount(), "Suppressed");
+        card(cards, presentation.baselineCount(), "Baseline accepted");
+        card(cards, presentation.resolvedCount(), "Resolved");
+        card(cards, presentation.issues().size(), "Checks not evaluated");
+
+        StringBuilder body = new StringBuilder();
+        if (!presentation.issues().isEmpty()) {
+            body.append("<h2 class=\"group\">Checks that could not be evaluated</h2>")
+                    .append("<table><tr><th>Severity</th><th>Reason</th><th>What happened</th></tr>");
+            for (EvaluationIssue issue : presentation.issues()) {
+                body.append("<tr><td>")
+                        .append(issue.required() ? "<b>required</b>" : "optional")
+                        .append("</td><td><code>").append(esc(issue.reasonCode()))
+                        .append("</code></td><td>").append(esc(issue.message())).append("</td></tr>");
+            }
+            body.append("</table>");
+        }
+
+        body.append("<h2 class=\"group\">Findings by entity</h2>");
+        if (presentation.groups().isEmpty()) {
+            body.append("<p>No findings.</p>");
+        }
+        for (FindingsPresentation.EntityGroup group : presentation.groups()) {
+            body.append("<details class=\"section\" data-search=\"")
+                    .append(esc(group.qualifiedName().toLowerCase(
+                            java.util.Locale.ROOT)))
+                    .append("\"><summary><span>")
+                    .append(esc(group.qualifiedName()));
+            if (group.signature() != null) {
+                body.append('#').append(esc(group.signature()));
+            }
+            body.append("</span><span class=\"count\">").append(group.findings().size())
+                    .append("</span></summary>");
+            body.append("<p class=\"path\">").append(esc(group.location())).append("</p>");
+            body.append("<table><tr><th>Rule</th><th>Lifecycle</th><th>Measurements</th>")
+                    .append("<th>What to look at</th></tr>");
+            for (Finding finding : group.findings()) {
+                appendFindingRow(body, finding);
+            }
+            body.append("</table></details>");
+        }
+        if (presentation.truncated()) {
+            body.append("<p class=\"note\">").append(presentation.omitted())
+                    .append(" further finding(s) are not shown on this page; the JSON report has"
+                            + " every one.</p>");
+        }
+        return page(title, "maintainability findings", cards, body);
+    }
+
+    private static void appendFindingRow(StringBuilder body, Finding finding) {
+        body.append("<tr data-search=\"").append(esc(finding.ruleId().toLowerCase(
+                java.util.Locale.ROOT))).append("\"><td><b>").append(esc(finding.ruleId()))
+                .append("</b> ").append(esc(finding.title()));
+        if (finding.blocks()) {
+            body.append(" <b>(blocking)</b>");
+        }
+        body.append("</td><td>").append(esc(finding.lifecycle().id())).append("</td><td>");
+        for (FindingEvidence evidence : finding.evidence()) {
+            body.append(esc(evidence.metric().name())).append(": ")
+                    .append(esc(describeEvidence(evidence))).append("<br>");
+        }
+        if (finding.evidence().stream().anyMatch(evidence -> !evidence.isComplete())) {
+            body.append("<em>partial: ").append(esc(String.join("; ",
+                    finding.evidence().stream()
+                            .flatMap(evidence -> evidence.completenessReasons().stream())
+                            .distinct().toList())))
+                    .append("</em>");
+        }
+        body.append("</td><td>").append(esc(finding.remediationHint() == null
+                ? "" : finding.remediationHint()));
+        if (finding.documentationPath() != null && !finding.documentationPath().isBlank()) {
+            // A repository-relative link, deliberately: inventing an absolute URL for documentation
+            // that is not published anywhere would be a link that cannot resolve for anybody else.
+            body.append("<br><a href=\"").append(esc(finding.documentationPath()))
+                    .append("\">").append(esc(finding.documentationPath())).append("</a>");
+        }
+        body.append("</td></tr>");
+    }
+
+    /** The measured value next to the bound; an absent value says so rather than showing zero. */
+    private static String describeEvidence(FindingEvidence evidence) {
+        StringBuilder text = new StringBuilder();
+        if (evidence.before() != null) {
+            text.append(formatNumber(evidence.before())).append(" \u2192 ");
+        }
+        text.append(evidence.after() == null ? "not measured" : formatNumber(evidence.after()));
+        if (evidence.minThreshold() != null) {
+            text.append(" (min ").append(formatNumber(evidence.minThreshold())).append(')');
+        }
+        if (evidence.maxThreshold() != null) {
+            text.append(" (max ").append(formatNumber(evidence.maxThreshold())).append(')');
+        }
+        return text.toString();
+    }
+
     // ----------------------------------------------------------------------- gate
 
     /**

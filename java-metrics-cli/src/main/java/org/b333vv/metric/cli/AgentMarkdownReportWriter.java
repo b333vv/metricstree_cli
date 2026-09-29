@@ -253,6 +253,131 @@ final class AgentMarkdownReportWriter {
         out.append('\n');
     }
 
+    /**
+     * The findings report as Markdown for an agent to act on.
+     *
+     * <p>Grouped by entity so a fixing agent visits each file once, with every rule it tripped listed
+     * separately rather than blended into one sentence. The count of what was hidden is stated: a
+     * truncated list that does not say it is truncated reads as a complete one.
+     */
+    String forFindings(FindingReport report) {
+        FindingsPresentation presentation = FindingsPresentation.of(report,
+                FindingsPresentation.DEFAULT_LIMIT);
+        StringBuilder out = new StringBuilder("# Maintainability findings\n\n")
+                .append("- **Findings:** ").append(presentation.totalEntries())
+                .append(" (").append(presentation.blockingEntries()).append(" blocking)\n")
+                .append("- **Existing:** ").append(presentation.existingCount()).append('\n')
+                .append("- **Suppressed:** ").append(presentation.suppressedCount()).append('\n')
+                .append("- **Baseline accepted:** ").append(presentation.baselineCount())
+                .append('\n')
+                .append("- **Resolved:** ").append(presentation.resolvedCount()).append('\n');
+
+        // Rendered before the findings and unconditionally when non-empty: a run that evaluated fewer
+        // checks than it was asked to has not searched the space those checks cover.
+        appendFindingIssues(out, presentation.issues());
+
+        out.append("\n## Findings by entity\n\n");
+        if (presentation.groups().isEmpty()) {
+            out.append("No findings.\n");
+        }
+        for (FindingsPresentation.EntityGroup group : presentation.groups()) {
+            out.append("### ").append(escape(group.qualifiedName()));
+            if (group.signature() != null) {
+                out.append('#').append(escape(group.signature()));
+            }
+            out.append(" \u2014 `").append(escape(group.location())).append("`\n\n");
+            for (Finding finding : group.findings()) {
+                appendFinding(out, finding);
+            }
+        }
+        if (presentation.truncated()) {
+            out.append("\n_").append(presentation.omitted())
+                    .append(" further finding(s) are not shown here; the JSON report has every one._\n");
+        }
+        return out.toString();
+    }
+
+    /** One finding: what it is, where it is, what was measured, and what to do about it. */
+    private static void appendFinding(StringBuilder out, Finding finding) {
+        out.append("- **").append(escape(finding.ruleId())).append(" ")
+                .append(escape(finding.title())).append("** \u2014 ")
+                .append(finding.lifecycle().id()).append(", ")
+                .append(finding.disposition().id());
+        if (finding.blocks()) {
+            out.append(", **blocking**");
+        }
+        out.append("\n");
+        if (!finding.message().isBlank()) {
+            out.append("  - ").append(escape(finding.message())).append('\n');
+        }
+        for (FindingEvidence evidence : finding.evidence()) {
+            out.append("  - ").append(escape(evidence.metric().name())).append(": ")
+                    .append(describeEvidence(evidence)).append('\n');
+        }
+        if (!evidenceIsComplete(finding)) {
+            out.append("  - measurement is partial: ")
+                    .append(escape(String.join("; ", completenessReasons(finding))))
+                    .append('\n');
+        }
+        if (finding.remediationHint() != null && !finding.remediationHint().isBlank()) {
+            out.append("  - what to look at: ").append(escape(finding.remediationHint()))
+                    .append('\n');
+        }
+        if (finding.documentationPath() != null && !finding.documentationPath().isBlank()) {
+            out.append("  - more: [").append(escape(finding.documentationPath())).append("](")
+                    .append(escape(finding.documentationPath())).append(")\n");
+        }
+    }
+
+    /**
+     * One condition, with the measured value next to the bound it crossed.
+     *
+     * <p>A value that was never measured is printed as `not measured` rather than as a number:
+     * a bare 0 there would be read as a measurement of zero, which is exactly the substitution the
+     * evidence contract forbids.
+     */
+    private static String describeEvidence(FindingEvidence evidence) {
+        StringBuilder text = new StringBuilder();
+        if (evidence.before() != null) {
+            text.append(number(evidence.before())).append(" \u2192 ");
+        }
+        if (evidence.after() != null) {
+            text.append(number(evidence.after()));
+        } else {
+            text.append("not measured");
+        }
+        if (evidence.minThreshold() != null) {
+            text.append(" (min ").append(number(evidence.minThreshold())).append(')');
+        }
+        if (evidence.maxThreshold() != null) {
+            text.append(" (max ").append(number(evidence.maxThreshold())).append(')');
+        }
+        return text.toString();
+    }
+
+    private static boolean evidenceIsComplete(Finding finding) {
+        return finding.evidence().stream().allMatch(FindingEvidence::isComplete);
+    }
+
+    private static List<String> completenessReasons(Finding finding) {
+        return finding.evidence().stream()
+                .flatMap(evidence -> evidence.completenessReasons().stream())
+                .distinct()
+                .toList();
+    }
+
+    private static void appendFindingIssues(StringBuilder out, List<EvaluationIssue> issues) {
+        if (issues.isEmpty()) {
+            return;
+        }
+        out.append("\n## Checks that could not be evaluated\n\n");
+        for (EvaluationIssue issue : issues) {
+            out.append("- **").append(issue.required() ? "required" : "optional")
+                    .append("** \u2014 ").append(escape(issue.reasonCode())).append(": ")
+                    .append(escape(issue.message())).append('\n');
+        }
+    }
+
     private static String number(double value) {
         return value == Math.rint(value) ? Long.toString((long) value) : Double.toString(value);
     }

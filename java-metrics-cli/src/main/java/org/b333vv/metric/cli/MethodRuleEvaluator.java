@@ -70,7 +70,10 @@ final class MethodRuleEvaluator {
 
             double value = measured.doubleValue();
             allSatisfied &= bounds.matches(value);
-            evidence.add(FindingEvidence.currentOnly(metric, value, unitOf(metric)));
+            // The bounds travel with the value: a finding that says "18" without saying "against 16"
+            // leaves the reader to guess the rule, which is the thing they were trying to avoid.
+            evidence.add(new FindingEvidence(metric, null, value, bounds.min(), bounds.max(), null,
+                    unitOf(metric), List.of()));
         }
 
         if (!allPresent) {
