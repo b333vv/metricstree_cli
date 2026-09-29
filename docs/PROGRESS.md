@@ -1,5 +1,40 @@
 # what has been done
 
+## Session: ML-016 — a finite number is not a measurement (2026-09-29)
+
+**Here is the difference between the two evaluators.** A method rule over a syntax metric either has
+a number or does not. A class rule over a *semantic* metric has a number that may have been produced
+without the resolution the metric means — and that number is finite, plausible, and unrelated to the
+property the rule is about. MT-C001 needs `ATFD ≥ 6`; a local run produces a real ATFD for a class
+whose foreign accesses were never resolved; checking that against 6 produces a finding about couplings
+the analysis never saw.
+
+So `ClassRuleEvaluator` compares each metric's own required scope against the scope the run actually
+used, and when the run is weaker the metric is treated as **absent regardless of what number came
+back**. The test asserts exactly that: the same plausible numbers (WMC 120, ATFD 9, TCC 0.1) are
+`UNAVAILABLE` in local scope and a `COMPLETE_MATCH` in project scope. Two issues are emitted, one per
+out-of-scope metric, each naming the scope it needs.
+
+**Nothing is recomputed.** The evaluator reads `ClassReport` metrics. A gate that recomputed a metric
+here would have two implementations of the same formula, and the finding and the report would
+eventually disagree — visible only as a rule firing on a class the report calls fine.
+
+**Severity is the rule's, not the excess ratio.** Two classes matching MT-C002 at 81 and at 400 WMC
+are both matches of the same claim. Scaling severity by how far past the bound a value sits would make
+the barely-over class quieter than a mild match of a rule with a higher bound. The ratio-based severity
+stays on the legacy `CombinationDetector`, unchanged — and a regression test asserts it still scales
+there, so the two paths cannot be confused for one another.
+
+**A message has to read like the documentation.** The first run of the test failed on wording: the
+issue said `PROJECT_GLOBAL` where a user would have read `project-global` in
+[metric semantics](reference/metric-semantics.md). Enum names are not documentation, and a message that
+does not match the docs is a support question waiting to happen.
+
+- New: `ClassRuleEvaluator` (pure, report-reading, scope-aware). `RuleEvaluation` and
+  `EvaluationStatus` shared with the method evaluator from ML-015.
+- Tests: `ClassRuleEvaluatorTest` (8). `./gradlew check` green; `CombinationDetectorTest` unchanged.
+
+
 ## Session: ML-015 — a rule that could not run is not a rule that found nothing (2026-09-29)
 
 **The distinction this task exists for is a one-word difference in an enum.** If a rule with two
@@ -2238,8 +2273,8 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-015 are DONE.
-  Next ready task: **ML-016** (evaluate class rules with conservative evidence status). Implement one
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-016 are DONE.
+  Next ready task: **ML-017** (explicit code roles and stable exclusion semantics). Implement one
   packet per commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
