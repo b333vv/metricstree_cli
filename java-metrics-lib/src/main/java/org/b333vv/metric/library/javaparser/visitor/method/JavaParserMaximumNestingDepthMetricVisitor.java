@@ -10,6 +10,8 @@ import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.SwitchStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import org.b333vv.metric.library.core.MetricCode;
+import org.b333vv.metric.library.core.MetricContribution;
+import org.b333vv.metric.library.core.MetricEvidence;
 import org.b333vv.metric.library.core.MetricResult;
 import org.b333vv.metric.library.javaparser.visitor.AnalysisCollector;
 import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisitor;
@@ -26,81 +28,129 @@ import org.b333vv.metric.library.javaparser.visitor.JavaParserMethodMetricVisito
  * TASK-003 did for the Halstead visitors, would mean re-expressing the traversal explicitly and risks
  * changing the values.
  */
-public class JavaParserMaximumNestingDepthMetricVisitor extends JavaParserMethodMetricVisitor {
+public class JavaParserMaximumNestingDepthMetricVisitor extends JavaParserMethodMetricVisitor implements
+        org.b333vv.metric.library.javaparser.ContributesToTrace {
     private int depth;
     private int maxDepth;
+
+    /** Where the witness path is assembled, or null when tracing was not asked for. */
+    private MetricEvidence.Collector contributions;
+
+    /** The nesting construct currently being entered, innermost last. */
+    private final java.util.ArrayDeque<String> path = new java.util.ArrayDeque<>();
+
+    /**
+     * Turns tracing on for the next method, or off when the collector is null.
+     *
+     * <p>For nesting the useful evidence is not a total but the path that reached the maximum, so
+     * this records one contribution per construct that is at or below the deepest level reached. The
+     * metric is a maximum and its contributions deliberately do not sum to it.
+     */
+    @Override
+    public void withContributions(MetricEvidence.Collector collector) {
+        this.contributions = collector;
+    }
+
+    /** The witness path recorded for the method just visited. */
+    @Override
+    public MetricEvidence collectedEvidence() {
+        return contributions == null ? MetricEvidence.none() : contributions.freeze();
+    }
 
     @Override
     public void visit(MethodDeclaration declaration, AnalysisCollector collector) {
         depth = 0;
         maxDepth = 0;
+        path.clear();
         super.visit(declaration, collector);
         collector.accept(MetricResult.of(MetricCode.MND, maxDepth));
     }
 
-    private void enter() {
+    /** The nesting construct currently being entered, innermost last. */
+    private final java.util.ArrayDeque<String> entering = new java.util.ArrayDeque<>();
+
+    /**
+     * Records the nesting level this construct sits at.
+     *
+     * <p>The amount is the <em>depth</em>, not one, so the deepest entry in the trace <em>is</em> the
+     * metric: a reader can confirm the maximum by looking at the trace rather than taking the number
+     * on trust. The contributions deliberately do not sum to the value — the value is a maximum, and a
+     * trace that pretended otherwise would be describing a different quantity.
+     */
+    private void enter(String kind, int line) {
         depth++;
         if (depth > maxDepth) {
             maxDepth = depth;
         }
+        entering.push(kind);
+        if (contributions != null) {
+            contributions.record(
+                    new MetricContribution(MetricCode.MND, kind, depth, line, null));
+        }
+    }
+
+    /** The line a node starts on, or 1 when it has no range. */
+    private static int lineOf(com.github.javaparser.ast.Node node) {
+        return node.getRange().map(range -> range.begin.line).orElse(1);
     }
 
     private void exit() {
         depth--;
+        entering.pop();
     }
 
     @Override
     public void visit(IfStmt statement, AnalysisCollector collector) {
-        enter();
+        enter("ifStmt", lineOf(statement));
         super.visit(statement, collector);
         exit();
     }
 
     @Override
     public void visit(ForStmt statement, AnalysisCollector collector) {
-        enter();
+        enter("forStmt", lineOf(statement));
         super.visit(statement, collector);
         exit();
     }
 
     @Override
     public void visit(ForEachStmt statement, AnalysisCollector collector) {
-        enter();
+        enter("forEachStmt", lineOf(statement));
         super.visit(statement, collector);
         exit();
     }
 
     @Override
     public void visit(WhileStmt statement, AnalysisCollector collector) {
-        enter();
+        enter("whileStmt", lineOf(statement));
         super.visit(statement, collector);
         exit();
     }
 
     @Override
     public void visit(DoStmt statement, AnalysisCollector collector) {
-        enter();
+        enter("doStmt", lineOf(statement));
         super.visit(statement, collector);
         exit();
     }
 
     @Override
     public void visit(SwitchStmt statement, AnalysisCollector collector) {
-        enter();
+        enter("switchStmt", lineOf(statement));
         super.visit(statement, collector);
         exit();
     }
 
     @Override
     public void visit(CatchClause catchClause, AnalysisCollector collector) {
-        enter();
+        enter("catchClause", lineOf(catchClause));
         super.visit(catchClause, collector);
         exit();
     }
 
     @Override
     public void visit(ConditionalExpr conditionalExpr, AnalysisCollector collector) {
-        enter();
+        enter("conditionalExpr", lineOf(conditionalExpr));
         super.visit(conditionalExpr, collector);
         exit();
     }

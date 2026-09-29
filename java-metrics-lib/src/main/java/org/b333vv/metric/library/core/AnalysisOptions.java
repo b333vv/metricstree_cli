@@ -4,7 +4,8 @@ public record AnalysisOptions(
         MetricSelection metricSelection,
         ExclusionConfig exclusions,
         int unresolvedSymbolDiagnosticCap,
-        AnalysisExecution execution) {
+        AnalysisExecution execution,
+        boolean contributionEvidence) {
 
     /**
      * How many individual unresolved-symbol diagnostics a single class may contribute before the rest
@@ -17,6 +18,8 @@ public record AnalysisOptions(
         metricSelection = metricSelection == null ? MetricSelection.all() : metricSelection;
         exclusions = exclusions == null ? ExclusionConfig.empty() : exclusions;
         execution = execution == null ? AnalysisExecution.PARALLEL : execution;
+        // Off by default: tracing costs work per decision point on every analysed method, and nothing
+        // in an existing analysis asked for it. A legacy run must not become a slower run.
         if (unresolvedSymbolDiagnosticCap < 0) {
             throw new IllegalArgumentException(
                     "Unresolved symbol diagnostic cap must not be negative, got " + unresolvedSymbolDiagnosticCap);
@@ -26,46 +29,51 @@ public record AnalysisOptions(
     /** The two-component form, retained: it is the default execution mode. */
     public AnalysisOptions(MetricSelection metricSelection, ExclusionConfig exclusions) {
         this(metricSelection, exclusions, DEFAULT_UNRESOLVED_SYMBOL_DIAGNOSTIC_CAP,
-                AnalysisExecution.PARALLEL);
+                AnalysisExecution.PARALLEL, false);
     }
 
     /** The three-component form, retained: the execution component did not exist when it was written. */
     public AnalysisOptions(
             MetricSelection metricSelection, ExclusionConfig exclusions, int unresolvedSymbolDiagnosticCap) {
-        this(metricSelection, exclusions, unresolvedSymbolDiagnosticCap, AnalysisExecution.PARALLEL);
+        this(metricSelection, exclusions, unresolvedSymbolDiagnosticCap, AnalysisExecution.PARALLEL,
+                false);
     }
 
     public AnalysisOptions(MetricSelection metricSelection) {
         this(metricSelection, ExclusionConfig.empty(), DEFAULT_UNRESOLVED_SYMBOL_DIAGNOSTIC_CAP,
-                AnalysisExecution.PARALLEL);
+                AnalysisExecution.PARALLEL, false);
     }
 
     public AnalysisOptions(MetricSelection metricSelection, AnalysisExecution execution) {
-        this(metricSelection, ExclusionConfig.empty(), DEFAULT_UNRESOLVED_SYMBOL_DIAGNOSTIC_CAP, execution);
+        this(metricSelection, ExclusionConfig.empty(), DEFAULT_UNRESOLVED_SYMBOL_DIAGNOSTIC_CAP, execution,
+                false);
     }
 
     public static AnalysisOptions defaults() {
         return new AnalysisOptions(
                 MetricSelection.all(), ExclusionConfig.empty(), DEFAULT_UNRESOLVED_SYMBOL_DIAGNOSTIC_CAP,
-                AnalysisExecution.PARALLEL);
+                AnalysisExecution.PARALLEL, false);
     }
 
     public static AnalysisOptions of(MetricSelection metricSelection) {
         return new AnalysisOptions(
                 metricSelection, ExclusionConfig.empty(), DEFAULT_UNRESOLVED_SYMBOL_DIAGNOSTIC_CAP,
-                AnalysisExecution.PARALLEL);
+                AnalysisExecution.PARALLEL, false);
     }
 
     public AnalysisOptions withMetricSelection(MetricSelection metricSelection) {
-        return new AnalysisOptions(metricSelection, exclusions, unresolvedSymbolDiagnosticCap, execution);
+        return new AnalysisOptions(metricSelection, exclusions, unresolvedSymbolDiagnosticCap,
+                execution, contributionEvidence);
     }
 
     public AnalysisOptions withExclusions(ExclusionConfig exclusions) {
-        return new AnalysisOptions(metricSelection, exclusions, unresolvedSymbolDiagnosticCap, execution);
+        return new AnalysisOptions(metricSelection, exclusions, unresolvedSymbolDiagnosticCap,
+                execution, contributionEvidence);
     }
 
     public AnalysisOptions withUnresolvedSymbolDiagnosticCap(int unresolvedSymbolDiagnosticCap) {
-        return new AnalysisOptions(metricSelection, exclusions, unresolvedSymbolDiagnosticCap, execution);
+        return new AnalysisOptions(metricSelection, exclusions, unresolvedSymbolDiagnosticCap,
+                execution, contributionEvidence);
     }
 
     /**
@@ -76,6 +84,15 @@ public record AnalysisOptions(
      * comparing two different configurations and proves nothing.
      */
     public AnalysisOptions withExecution(AnalysisExecution execution) {
-        return new AnalysisOptions(metricSelection, exclusions, unresolvedSymbolDiagnosticCap, execution);
+        return new AnalysisOptions(metricSelection, exclusions, unresolvedSymbolDiagnosticCap,
+                execution, contributionEvidence);
+    }
+
+    /** The same options with contribution tracing switched on. */
+    public AnalysisOptions withContributionEvidence() {
+        return contributionEvidence
+                ? this
+                : new AnalysisOptions(metricSelection, exclusions, unresolvedSymbolDiagnosticCap,
+                        execution, true);
     }
 }

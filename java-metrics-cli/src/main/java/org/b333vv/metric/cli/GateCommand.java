@@ -281,9 +281,15 @@ final class GateCommand implements Callable<Integer> {
         // first would make the verdict a function of machine load. The throughput that PARALLEL buys is
         // irrelevant at this file count, and reproducibility is the whole product. ML-031 measures both;
         // until it does, the slower deterministic branch is the right one for a blocking check.
+        // Traces are requested only under the maintainability policy: a finding that names its
+        // contributing lines needs them, and a legacy gate run should pay nothing for a feature it
+        // never shows.
         AnalysisOptions options = AnalysisOptions.of(metricSelection.selection())
                 .withExclusions(exclusions)
                 .withExecution(AnalysisExecution.ORDERED);
+        if (activePolicy != null && activePolicy.isMaintainability()) {
+            options = options.withContributionEvidence();
+        }
 
         GateEvaluator.Result result;
         List<GateFinding> parseErrors;

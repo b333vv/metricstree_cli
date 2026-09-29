@@ -193,7 +193,15 @@ final class CliObjectMapper {
         Map<MetricCode, Value> metrics();
     }
 
-    @JsonPropertyOrder({"signature", "methodName", "parameterCount", "sourceLocation", "metrics"})
+    /**
+     * The ML-023 trace is absent rather than an empty object when tracing was not asked for, so a
+     * default analysis serialises to exactly the bytes it produced before the field existed. That is
+     * why {@code MethodReport} stores an empty trace as null: NON_NULL here is the whole mechanism
+     * that keeps the legacy output byte-identical.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonPropertyOrder({"signature", "methodName", "parameterCount", "sourceLocation", "metrics",
+            "evidence"})
     interface MethodReportMixin {
         @JsonSerialize(using = MetricValuesSerializer.class)
         Map<MetricCode, Value> metrics();

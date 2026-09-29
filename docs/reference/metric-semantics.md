@@ -113,3 +113,22 @@ each would be a separately scoped change with its own evidence.
 drawn exactly the wrong conclusion about their direction and their edges.
 
 | `ATFD` | `JavaParserAccessToForeignDataMetricVisitor` |
+
+
+## Contribution traces (ML-023)
+
+`CC` and `MND` can explain themselves. When `AnalysisOptions.contributionEvidence()` is on, each
+method carries a `MetricEvidence` trace naming the constructs that produced the value:
+
+- **CC** records one contribution per decision point (`if`, `for`, `while`, `catch`, `?`, `&&`, `||`,
+  switch case) plus an `entry` contribution for the method's base value. The contributions of one
+  method sum to its reported complexity.
+- **MND** records the nesting level each construct sits at. The deepest entry is the reported maximum;
+  the contributions do not sum to it, because nesting depth is a maximum and not a total.
+
+The trace is capped at 100 contributions per metric; `omitted()` says how many were dropped. The cap
+never affects the metric value — the count is produced by the same traversal that records the trace.
+
+Tracing is off by default. It is enabled by `gate --policy maintainability` and appears in the v2
+JSON as `evidence[].contributions[]`. A method analysed without tracing reports no trace at all rather
+than an empty or inferred one, and the legacy `analyze` JSON is unchanged.

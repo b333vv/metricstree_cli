@@ -7,6 +7,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.b333vv.metric.library.core.MetricContribution;
+
 /**
  * The frozen v2 JSON projection of a findings report, shared by gate and detect.
  *
@@ -211,7 +213,7 @@ record LocationView(String path, int startLine, int endLine, Integer column) {
 
 /** One measured input; absent values are null, never zero. */
 @JsonPropertyOrder({"metric", "before", "after", "delta", "min", "max", "unit",
-        "completenessReasons"})
+        "completenessReasons", "contributions"})
 record EvidenceView(
         String metric,
         Double before,
@@ -220,12 +222,33 @@ record EvidenceView(
         Double min,
         Double max,
         String unit,
-        List<String> completenessReasons) {
+        List<String> completenessReasons,
+        List<ContributionView> contributions) {
 
     static EvidenceView of(FindingEvidence evidence) {
         return new EvidenceView(evidence.metric().name(), evidence.before(),
                 evidence.after(), evidence.delta(), evidence.minThreshold(),
-                evidence.maxThreshold(), evidence.unit(), evidence.completenessReasons());
+                evidence.maxThreshold(), evidence.unit(), evidence.completenessReasons(),
+                ContributionView.ofAll(evidence.contributions()));
+    }
+}
+
+/**
+ * One recorded contribution: which construct, how much, where.
+ *
+ * <p>Empty rather than absent when nothing was traced, so a consumer can read one list unconditionally
+ * and a missing trace is visibly a missing trace rather than a different schema.
+ */
+@JsonPropertyOrder({"kind", "amount", "line", "detail"})
+record ContributionView(String kind, int amount, int line, String detail) {
+
+    static ContributionView of(MetricContribution contribution) {
+        return new ContributionView(contribution.kind(), contribution.amount(),
+                contribution.line(), contribution.detail());
+    }
+
+    static List<ContributionView> ofAll(List<MetricContribution> contributions) {
+        return contributions.stream().map(ContributionView::of).toList();
     }
 }
 

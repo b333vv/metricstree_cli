@@ -104,7 +104,21 @@
         "min": { "type": ["number", "null"] },
         "max": { "type": ["number", "null"] },
         "unit": { "type": "string", "minLength": 1 },
-        "completenessReasons": { "type": "array", "items": { "type": "string" } }
+        "completenessReasons": { "type": "array", "items": { "type": "string" } },
+        "contributions": {
+          "type": "array",
+          "description": "Where the value came from, as recorded during analysis. Empty when tracing was not requested: an absent trace is a legitimate report, never a guessed one.",
+          "items": {
+            "type": "object",
+            "required": ["kind", "amount", "line"],
+            "properties": {
+              "kind": { "type": "string", "minLength": 1 },
+              "amount": { "type": "number", "exclusiveMinimum": 0 },
+              "line": { "type": "integer", "minimum": 1 },
+              "detail": { "type": ["string", "null"] }
+            }
+          }
+        }
       }
     },
     "issue": {

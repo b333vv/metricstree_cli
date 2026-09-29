@@ -1,6 +1,7 @@
 package org.b333vv.metric.cli;
 
 import org.b333vv.metric.library.core.MetricCode;
+import org.b333vv.metric.library.core.MetricContribution;
 import org.b333vv.metric.library.core.MethodReport;
 import org.b333vv.metric.model.metric.value.Value;
 
@@ -42,6 +43,17 @@ final class MethodRuleEvaluator {
      */
     RuleEvaluation evaluate(MaintainabilityRule rule, EntityKey entityKey,
             Map<MetricCode, Value> metrics) {
+        return evaluate(rule, entityKey, metrics, null);
+    }
+
+    /**
+     * Evaluates one rule against one method that may carry a contribution trace.
+     *
+     * <p>The metrics-only overload is kept rather than removed: it is how the tests state a case
+     * without a report, and a trace is evidence about a measurement, not a requirement for making one.
+     */
+    RuleEvaluation evaluate(MaintainabilityRule rule, EntityKey entityKey,
+            Map<MetricCode, Value> metrics, MethodReport method) {
         List<FindingEvidence> evidence = new ArrayList<>(rule.conditions().size());
         List<EvaluationIssue> issues = new ArrayList<>();
         boolean allPresent = true;
@@ -72,8 +84,12 @@ final class MethodRuleEvaluator {
             allSatisfied &= bounds.matches(value);
             // The bounds travel with the value: a finding that says "18" without saying "against 16"
             // leaves the reader to guess the rule, which is the thing they were trying to avoid.
+            // The trace travels with the value when the analysis produced one. Attaching it here
+            // rather than at the report level keeps the explanation next to the number it explains,
+            // and keeps it absent — rather than empty — when tracing was not asked for.
             evidence.add(new FindingEvidence(metric, null, value, bounds.min(), bounds.max(), null,
-                    unitOf(metric), List.of()));
+                    unitOf(metric), List.of())
+                    .withContributions(contributionsOf(method, metric)));
         }
 
         if (!allPresent) {
@@ -84,13 +100,25 @@ final class MethodRuleEvaluator {
                 : RuleEvaluation.nonmatch(rule.id(), entityKey, evidence);
     }
 
+    /**
+     * The recorded trace for a metric, or nothing when none was collected.
+     *
+     * <p>Reads a null trace as an empty one so a caller never has to know whether tracing ran: an
+     * absent trace is a normal outcome, not a failure.
+     */
+    private static List<MetricContribution> contributionsOf(MethodReport method, MetricCode metric) {
+        return method == null || method.evidence() == null
+                ? List.of()
+                : method.evidence().forMetric(metric);
+    }
+
     /** Evaluates a rule against every method of a class, in source order. */
     List<RuleEvaluation> evaluateAll(MaintainabilityRule rule, String path, String qualifiedName,
             List<MethodReport> methods) {
         List<RuleEvaluation> evaluations = new ArrayList<>(methods.size());
         for (MethodReport method : methods) {
             EntityKey key = EntityKey.ofMethod(path, qualifiedName, method.signature());
-            evaluations.add(evaluate(rule, key, method.metrics()));
+            evaluations.add(evaluate(rule, key, method.metrics(), method));
         }
         return evaluations;
     }

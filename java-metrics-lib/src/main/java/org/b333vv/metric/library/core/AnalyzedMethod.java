@@ -17,7 +17,12 @@ import java.util.Map;
  * @param report     the method as it will be reported
  * @param rawMetrics every metric measured for this method, before the selection filter
  */
-public record AnalyzedMethod(MethodReport report, Map<MetricCode, Value> rawMetrics) {
+public record AnalyzedMethod(MethodReport report, Map<MetricCode, Value> rawMetrics,
+        MetricEvidence evidence) {
+
+    public AnalyzedMethod(MethodReport report, Map<MetricCode, Value> rawMetrics) {
+        this(report, rawMetrics, MetricEvidence.none());
+    }
 
     public AnalyzedMethod {
         if (report == null) {

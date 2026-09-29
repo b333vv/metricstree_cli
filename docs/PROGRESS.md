@@ -1,5 +1,46 @@
 # what has been done
 
+## Session: ML-023 — a number should say where it came from (2026-09-29)
+
+`CC = 18` used to be the whole story: the finding named a method, and the reader had to go and
+rediscover which of its branches counted. ML-023 records the count itself, so the finding can point
+at the syntax that produced it.
+
+**What was built**
+
+- `MetricContribution` (metric, kind, amount, line, detail) and `MetricEvidence`, a bounded trace with
+  an `omitted` count. Both live in `library.core` and hold no AST type — `CorePackageAstIndependenceTest`
+  now covers them, and a `line` rather than a node is what the reader has to navigate to anyway.
+- The cap is 100 contributions per metric, enforced by `MetricEvidence.Collector`. It never touches the
+  aggregate: the count is produced by the same traversal that records the trace, so the two cannot
+  drift. A trace that altered the number it explained would be worse than no trace.
+- `CC` records a contribution per decision point, including the entry contribution, so a method's
+  contributions sum to its reported value. `MND` records the nesting level each construct sits at, so
+  the deepest entry **is** the reported maximum — the contributions deliberately do not sum, because the
+  metric is a maximum and a trace that pretended otherwise would describe a different quantity.
+- Tracing is opt-in via `AnalysisOptions.contributionEvidence()` (default off) and is enabled by the
+  gate only under `--policy maintainability`. `MethodReport` stores an empty trace as null and
+  `CliObjectMapper` uses `NON_NULL`, so a legacy `analyze` serialises to exactly the bytes it did
+  before the field existed — the golden files are unchanged.
+- `FindingEvidence` carries the trace next to the number, and the v2 JSON exposes it as
+  `evidence[].contributions[]`, added to the frozen schema. An untraced measurement emits an empty
+  list rather than a fabricated explanation.
+
+**Decisions worth keeping**
+
+- Tracing is a capability (`ContributesToTrace`), not a base class: a visitor that does not trace is
+  never asked, so enabling the feature costs nothing for the metrics that cannot explain themselves.
+- The collector is created per method, not per class, so a stateful visitor cannot leak the previous
+  method's contributions into this one.
+- `parallelTracesAreIdentical` compares parallel and ordered analysis over eight files. It is the
+  test that would fail first if a collector were ever shared across workers — the same hazard DEBT-10
+  describes for the counts themselves.
+
+**Verification:** `./gradlew check` passes. New: `MetricEvidenceTest` (14 cases),
+`MethodContributionTraceTest` (11 cases), `FindingReportJsonTest.contributionsAreSerialisedAndNeverFaked`.
+
+ML-001–ML-023 are DONE. Next ready task: **ML-024**.
+
 ## Session: ML-022 — SARIF has to say whether the analysis happened (2026-09-29)
 
 **A quality violation is a successful tool execution.** `executionSuccessful` is false only when the
@@ -2505,7 +2546,7 @@ All three proposals were accepted and implemented; backward compatibility was no
 
 - New active work: accepted maintainability linter strategy, planned in
   `docs/plans/maintainability-linter/README.md`. ML-001–ML-022 are DONE.
-  Next ready task: **ML-023** (bounded complexity contribution traces). Implement one packet per
+  Next ready task: **ML-024**. Implement one packet per
   commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:

@@ -3,6 +3,7 @@ package org.b333vv.metric.cli;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.b333vv.metric.library.core.MetricCode;
+import org.b333vv.metric.library.core.MetricContribution;
 import org.junit.jupiter.api.Test;
 
 import java.util.EnumMap;
@@ -31,11 +32,17 @@ class FindingReportJsonTest {
     }
 
     private static Finding finding(FindingLifecycle lifecycle, FindingDisposition disposition) {
+        return finding(lifecycle, disposition,
+                FindingEvidence.currentOnly(MetricCode.CC, 18.0, "complexity"));
+    }
+
+    private static Finding finding(FindingLifecycle lifecycle, FindingDisposition disposition,
+            FindingEvidence evidence) {
         EntityKey key = EntityKey.ofMethod("src/main/java/app/Order.java", "app.Order", "total(int)");
         return new Finding("MT-M001", 1, key, "High method complexity", "Cyclomatic complexity "
                 + "is at or above the configured bound.", FindingLocation.of(key.path(), 42), null,
                 RuleSeverity.WARNING, RuleMaturity.CANDIDATE, EvaluationStatus.COMPLETE_MATCH,
-                lifecycle, List.of(FindingEvidence.currentOnly(MetricCode.CC, 18.0, "complexity")),
+                lifecycle, List.of(evidence),
                 List.of(), "inspect the branches", "docs/rules/mt-m001.md", EntityRole.PRODUCTION,
                 disposition, null);
     }
@@ -56,6 +63,35 @@ class FindingReportJsonTest {
     }
 
     // ---------------------------------------------------------------- the contract holds
+
+    /**
+     * A recorded trace reaches the JSON as data, not as a claim.
+     *
+     * <p>The two properties that matter: the line is the one the analysis recorded, and an evidence
+     * with no trace emits an empty list rather than a fabricated explanation.
+     */
+    @Test
+    void contributionsAreSerialisedAndNeverFaked() throws Exception {
+        List<MetricContribution> traced = List.of(
+                new MetricContribution(MetricCode.CC, "if", 1, 42, null),
+                new MetricContribution(MetricCode.CC, "forEach", 1, 44, "the loop"));
+        Finding withTrace = finding(FindingLifecycle.NEW_ENTITY, FindingDisposition.ACTIVE,
+                FindingEvidence.currentOnly(MetricCode.CC, 18.0, "complexity")
+                        .withContributions(traced));
+        Finding withoutTrace = finding(FindingLifecycle.NEW_ENTITY, FindingDisposition.ACTIVE,
+                FindingEvidence.currentOnly(MetricCode.CC, 4.0, "complexity"));
+
+        JsonNode document = render(report(List.of(withTrace, withoutTrace), List.of()), null);
+        JsonNode first = document.at("/findings/0/evidence/0/contributions");
+        JsonNode second = document.at("/findings/1/evidence/0/contributions");
+
+        assertEquals(2, first.size());
+        assertEquals("if", first.get(0).get("kind").asText());
+        assertEquals(42, first.get(0).get("line").asInt());
+        assertEquals("the loop", first.get(1).get("detail").asText());
+        assertTrue(second.isArray(), "an untraced measurement is an empty list, not a missing field");
+        assertEquals(0, second.size());
+    }
 
     /** What both commands emit satisfies the schema. */
     @Test

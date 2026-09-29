@@ -42,6 +42,8 @@ import org.b333vv.metric.library.core.SourceLocation;
 import org.b333vv.metric.library.core.DerivedMetricCalculator;
 import org.b333vv.metric.library.core.MethodReport;
 import org.b333vv.metric.library.core.MetricCode;
+import org.b333vv.metric.library.core.MetricContribution;
+import org.b333vv.metric.library.core.MetricEvidence;
 import org.b333vv.metric.library.core.SyntaxSupport;
 import org.b333vv.metric.library.core.MetricReport;
 import org.b333vv.metric.library.core.MetricSelection;
@@ -374,7 +376,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                 java.util.Collections.synchronizedList(new ArrayList<>());
         for (ParsedFile explicitFile : explicitFiles) {
             fileAnalyses.add(analyzeUnit(explicitFile.path(), explicitFile.compilationUnit(), typeSolver,
-                    metricSelection, resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport));
+                    metricSelection, resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport,
+                                options.contributionEvidence()));
         }
         if (options.execution() == org.b333vv.metric.library.core.AnalysisExecution.ORDERED) {
             // One thread, sorted files, and no shared state between units. Ordered mode is not about
@@ -390,7 +393,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                         parserConfiguration,
                         parseDiagnostics::addAll,
                         (file, unit) -> analyzeUnit(file, unit, typeSolver, metricSelection,
-                                resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport))
+                                resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport,
+                                options.contributionEvidence()))
                         .forEach(fileAnalyses::add);
             }
             if (!parseDiagnostics.isEmpty()) {
@@ -402,7 +406,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                     parserConfiguration,
                     windowDiagnostics -> mergeDiagnostics(diagnostics, windowDiagnostics),
                     (sourceFile, unit) -> analyzeUnit(sourceFile, unit, typeSolver, metricSelection,
-                            resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport))));
+                            resolutionStats, unresolvedSymbolDiagnosticCap, syntaxSupport,
+                                options.contributionEvidence()))));
         }
 
         if (!fileAnalyses.isEmpty()
@@ -799,7 +804,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             MetricSelection metricSelection,
             ResolutionStats resolutionStats,
             int unresolvedSymbolDiagnosticCap,
-            List<SyntaxSupport.FileSupport> syntaxSupport) {
+            List<SyntaxSupport.FileSupport> syntaxSupport,
+            boolean contributionEvidence) {
         List<AnalysisDiagnostic> diagnostics = new ArrayList<>();
         compilationUnit.setData(Node.SYMBOL_RESOLVER_KEY, new JavaSymbolSolver(typeSolver));
 
@@ -832,7 +838,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                         metricSelection,
                         diagnostics,
                         resolutionStats,
-                        unresolvedSymbolDiagnosticCap))
+                        unresolvedSymbolDiagnosticCap,
+                        contributionEvidence))
                 .toList();
         boolean packageOnly = classes.isEmpty()
                 && !compilationUnit.getPackageDeclaration().isPresent()
@@ -865,7 +872,8 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
             MetricSelection metricSelection,
             List<AnalysisDiagnostic> diagnostics,
             ResolutionStats resolutionStats,
-            int unresolvedSymbolDiagnosticCap) {
+            int unresolvedSymbolDiagnosticCap,
+            boolean contributionEvidence) {
         String qualifiedName = classDeclaration.getFullyQualifiedName().orElseGet(() -> fallbackQualifiedName(classDeclaration));
         SourceLocation sourceLocation = toSourceLocation(classDeclaration, sourcePath);
         Map<MetricCode, Value> classMetrics = new EnumMap<>(MetricCode.class);
@@ -905,15 +913,26 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
                     AnalysisCollector methodCollector = classCollector.childCollector(
                             result -> methodMetrics.put(result.code(), result.value()),
                             qualifiedName + "#" + methodSignature(methodDeclaration));
+                    // Tracing is opt-in and per method: the collector is created here so a visitor
+                    // from the previous method cannot contribute to this one's trace. When it is off
+                    // the visitors are never asked, and a legacy run costs exactly what it did before.
+                    boolean tracing = contributionEvidence;
                     for (JavaParserMethodMetricVisitor visitor : methodVisitors) {
+                        if (tracing) {
+                            enableContributions(visitor);
+                        }
                         visitor.visit(methodDeclaration, methodCollector);
                     }
+                    MetricEvidence evidence = tracing
+                            ? freezeContributions(methodVisitors)
+                            : MetricEvidence.none();
                     // A method collector keeps its own cap counters, so it owns the flush that turns
                     // its excess into an aggregate. Without this, a method with more unresolvable
                     // symbols than the cap would report the first `cap` and drop the rest.
                     methodCollector.flush();
                     addDerivedMethodMetrics(methodMetrics);
-                    return buildMethodReport(methodDeclaration, sourcePath, methodMetrics, metricSelection);
+                    return buildMethodReport(methodDeclaration, sourcePath, methodMetrics,
+                            metricSelection, evidence);
                 })
                 .toList();
 
@@ -977,18 +996,66 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
         }
     }
 
+    /**
+     * Asks a tracing visitor to record, without this class knowing which visitors trace.
+     *
+     * <p>Checked by capability rather than by {@code instanceof} on two concrete classes, so a third
+     * tracing visitor does not need this method edited and a visitor that does not trace is skipped
+     * rather than silently producing nothing.
+     */
+    private static void enableContributions(JavaParserMethodMetricVisitor visitor) {
+        if (visitor instanceof ContributesToTrace contributing) {
+            contributing.withContributions(new org.b333vv.metric.library.core.MetricEvidence.Collector(
+                    org.b333vv.metric.library.core.MetricEvidence.DEFAULT_LIMIT, true));
+        }
+    }
+
+    /** Merges what every tracing visitor collected for the method just analysed. */
+    private static MetricEvidence freezeContributions(List<JavaParserMethodMetricVisitor> visitors) {
+        java.util.List<MetricContribution> all = new java.util.ArrayList<>();
+        java.util.Map<MetricCode, Integer> omitted = new java.util.TreeMap<>();
+        for (JavaParserMethodMetricVisitor visitor : visitors) {
+            if (!(visitor instanceof ContributesToTrace contributing)) {
+                continue;
+            }
+            MetricEvidence traced = contributing.collectedEvidence();
+            for (org.b333vv.metric.library.core.MetricCode metric : traced.metrics()) {
+                for (MetricContribution contribution : traced.forMetric(metric)) {
+                    if (all.size() < org.b333vv.metric.library.core.MetricEvidence.DEFAULT_LIMIT) {
+                        all.add(contribution);
+                    } else {
+                        omitted.merge(metric, 1, Integer::sum);
+                    }
+                }
+                omitted.merge(metric, traced.omitted(metric), Integer::sum);
+            }
+        }
+        return org.b333vv.metric.library.core.MetricEvidence.of(all, omitted);
+    }
+
     private AnalyzedMethod buildMethodReport(
             MethodDeclaration methodDeclaration,
             Path sourcePath,
             Map<MetricCode, Value> methodMetrics,
             MetricSelection metricSelection) {
+        return buildMethodReport(methodDeclaration, sourcePath, methodMetrics, metricSelection,
+                MetricEvidence.none());
+    }
+
+    private AnalyzedMethod buildMethodReport(
+            MethodDeclaration methodDeclaration,
+            Path sourcePath,
+            Map<MetricCode, Value> methodMetrics,
+            MetricSelection metricSelection,
+            MetricEvidence evidence) {
         MethodReport report = new MethodReport(
                 methodSignature(methodDeclaration),
                 methodDeclaration.getNameAsString(),
                 methodDeclaration.getParameters().size(),
                 toSourceLocation(methodDeclaration, sourcePath),
-                metricSelection.filter(methodMetrics));
-        return new AnalyzedMethod(report, methodMetrics);
+                metricSelection.filter(methodMetrics),
+                evidence);
+        return new AnalyzedMethod(report, methodMetrics, evidence);
     }
 
     /**

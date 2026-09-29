@@ -1,6 +1,7 @@
 package org.b333vv.metric.cli;
 
 import org.b333vv.metric.library.core.MetricCode;
+import org.b333vv.metric.library.core.MetricContribution;
 
 import java.util.Objects;
 
@@ -26,6 +27,9 @@ import java.util.Objects;
  * @param delta           {@code after - before}, or {@code null} when either side is absent
  * @param unit            how to read the number: "complexity", "lines", "classes", …
  * @param completenessReasons why the measurement is partial, empty when it is complete
+ * @param contributions       where the value came from, as ML-023 records it; empty when tracing was
+ *                            not asked for. Never guessed: an absent trace leaves this empty, and the
+ *                            finding is no less valid for it.
  */
 record FindingEvidence(
         MetricCode metric,
@@ -35,7 +39,16 @@ record FindingEvidence(
         Double maxThreshold,
         Double delta,
         String unit,
-        java.util.List<String> completenessReasons) {
+        java.util.List<String> completenessReasons,
+        java.util.List<MetricContribution> contributions) {
+
+    /** The pre-ML-023 shape: a measurement with no explanation attached. */
+    FindingEvidence(MetricCode metric, Double before, Double after, Double minThreshold,
+            Double maxThreshold, Double delta, String unit,
+            java.util.List<String> completenessReasons) {
+        this(metric, before, after, minThreshold, maxThreshold, delta, unit, completenessReasons,
+                java.util.List.of());
+    }
 
     FindingEvidence {
         Objects.requireNonNull(metric, "metric");
@@ -55,6 +68,21 @@ record FindingEvidence(
         completenessReasons = completenessReasons == null
                 ? java.util.List.of()
                 : java.util.List.copyOf(completenessReasons);
+        contributions = contributions == null
+                ? java.util.List.of()
+                : java.util.List.copyOf(contributions);
+    }
+
+    /**
+     * Attaches a trace, keeping the measurement exactly as it was.
+     *
+     * <p>Separate from construction so that attaching an explanation cannot accidentally change a
+     * number or drop a completeness caveat — the two concerns are different and are edited in different
+     * places.
+     */
+    FindingEvidence withContributions(java.util.List<MetricContribution> contributions) {
+        return new FindingEvidence(metric, before, after, minThreshold, maxThreshold, delta, unit,
+                completenessReasons, contributions);
     }
 
     /** Both sides measured and neither carrying a caveat. */
