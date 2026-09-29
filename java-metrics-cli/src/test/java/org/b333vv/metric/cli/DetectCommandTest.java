@@ -8,6 +8,7 @@ import org.b333vv.metric.model.metric.value.Value;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -376,6 +377,110 @@ class DetectCommandTest {
         assertNotEquals(byMethod.get(0).get("signature").asText(),
                 byMethod.get(1).get("signature").asText(),
                 "the two overloads are different findings");
+    }
+
+    // -------------------------------------------------- ML-019: opt-in maintainability policy
+
+    /**
+     * The maintainability policy on detect, with no base revision.
+     *
+     * <p>Every match is new, and none is claimed to be pre-existing debt: detect compares nothing
+     * against anything, and inventing a base would report the whole codebase as brand new on every
+     * run.
+     */
+    @Test
+    void detectUnderMaintainabilityPolicyReportsNewFindings(@TempDir Path tempDir) throws Exception {
+        Path source = tempDir.resolve("Demo.java");
+        Files.writeString(source, "class Demo { int f(int x){ if(x>0) return 1; return 0; } }");
+        Path output = tempDir.resolve("out.json");
+
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                request -> complexMethodReport(), new MetricReportJsonWriter(), tempDir::toAbsolutePath);
+        int exitCode = app.run(new String[]{
+                "detect", "-s", source.toString(), "--policy", "maintainability",
+                "-o", output.toString()},
+                new ByteArrayOutputStream(), new ByteArrayOutputStream());
+
+        assertEquals(0, exitCode, "advisory is the default and must not fail the build");
+        JsonNode json = mapper.readTree(Files.readString(output));
+        assertEquals("PASSED", json.get("status").asText());
+        assertFalse(json.get("findings").isEmpty());
+        assertTrue(json.get("findings").get(0).get("lifecycle").asText().equals("NEW_ENTITY"),
+                "with no base revision nothing can be existing debt");
+    }
+
+    /** Under enforce the same findings fail the build. */
+    @Test
+    void detectUnderEnforceFailsOnEligibleFindings(@TempDir Path tempDir) throws Exception {
+        Path source = tempDir.resolve("Demo.java");
+        Files.writeString(source, "class Demo {}");
+        Path output = tempDir.resolve("out.json");
+
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                request -> complexMethodReport(), new MetricReportJsonWriter(), tempDir::toAbsolutePath);
+        int exitCode = app.run(new String[]{
+                "detect", "-s", source.toString(), "--policy", "maintainability",
+                "--enforcement", "enforce", "-o", output.toString()},
+                new ByteArrayOutputStream(), new ByteArrayOutputStream());
+
+        assertEquals(1, exitCode);
+    }
+
+    /** Legacy rule files alongside the new policy are a migration error naming the conflict. */
+    @Test
+    void legacyRuleFilesConflictWithMaintainabilityPolicy(@TempDir Path tempDir) throws Exception {
+        Path rules = tempDir.resolve("r.json");
+        Files.writeString(rules, """
+                [{"name":"Big","conditions":[{"metric":"WMC","min":10}]}]
+                """);
+        Path source = tempDir.resolve("Demo.java");
+        Files.writeString(source, "class Demo {}");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                new org.b333vv.metric.library.javaparser.JavaMetricsAnalyzer() {
+                    @Override public MetricReport analyze(AnalysisRequest request) {
+                        return createReport();
+                    }
+                },
+                new MetricReportJsonWriter(), tempDir::toAbsolutePath);
+        int exitCode = app.run(new String[]{
+                "detect", "-s", source.toString(), "--policy", "maintainability",
+                "--class-rules", rules.toString(), "-o", tempDir.resolve("o.json").toString()},
+                new ByteArrayOutputStream(), err);
+
+        assertEquals(2, exitCode);
+        assertTrue(err.toString(StandardCharsets.UTF_8).contains("cannot be combined"));
+    }
+
+    /** Without the flag, detect needs a rule file exactly as before. */
+    @Test
+    void detectWithoutPolicyStillRequiresLegacyRules(@TempDir Path tempDir) throws Exception {
+        Path source = tempDir.resolve("Demo.java");
+        Files.writeString(source, "class Demo {}");
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                request -> createReport(), new MetricReportJsonWriter(), tempDir::toAbsolutePath);
+        int exitCode = app.run(new String[]{
+                "detect", "-s", source.toString(), "-o", tempDir.resolve("o.json").toString()},
+                out, err);
+
+        assertNotEquals(0, exitCode, "with no rules and no policy there is nothing to detect");
+        String message = out.toString(StandardCharsets.UTF_8) + err.toString(StandardCharsets.UTF_8);
+        assertTrue(message.contains("--class-rules"),
+                "the message names what is missing: " + message);
+    }
+
+    /** A report whose method is complex enough for MT-M001. */
+    private static MetricReport complexMethodReport() {
+        Path file = Path.of("Demo.java");
+        ClassReport cls = new ClassReport("Demo", "Demo", file,
+                new SourceLocation(file, 1, 1), Map.of(MetricCode.WMC, Value.of(10)),
+                List.of(method("compute(int)", 18, file)));
+        PackageReport pkg = new PackageReport("", Map.of(), List.of(cls));
+        return new MetricReport(new ProjectReport("t", Map.of(), List.of(pkg)), List.of());
     }
 
     /** A class with two overloads of the same name, so signature identity is observable. */

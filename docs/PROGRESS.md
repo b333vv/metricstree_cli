@@ -1,5 +1,31 @@
 # what has been done
 
+## Session: ML-019 (complete) — detect closes the loop (2026-09-29)
+
+`detect --policy maintainability` is wired, and the packet is DONE.
+
+**Detect is current-only by construction.** There is no base revision, so every match is `NEW_ENTITY`
+and none is claimed to be pre-existing debt. Inventing a base to compare against would report the
+whole codebase as brand new on every single run — a report nobody would read twice.
+
+**Legacy rule files alongside the new policy are a migration error**, naming the conflict. The same
+reasoning as gate's `-t`: a config whose rules are silently ignored is a weaker check than its author
+believes in, and the author has no way to tell from the output.
+
+**One test corrected me again.** I asserted that `detect` without rules exits 2; it exits 1, because a
+missing rules file is a picocli usage exception rather than the gate's environment-error path. The
+test now asserts what the command actually does — non-zero, with a message naming `--class-rules` —
+which is the property a user cares about, rather than a code I had assumed.
+
+**End to end now**: `gate --policy maintainability --enforcement enforce` fails on an introduced
+complex method that the legacy growth budgets cannot see at all; the same input passes under advisory;
+`-t` with the new policy is exit 2 naming it; a top-level `profile:` does not retune the new policy's
+CC >= 16 bound; and with no flag every legacy test is unchanged.
+
+- `DetectCommand`: `--policy`, `--enforcement`, current-only policy run, logical path mapping.
+- Tests: `DetectCommandTest` +4 (16 total). `./gradlew check` green.
+
+
 ## Session: ML-019 (part 2) — the new policy, opt-in (2026-09-29)
 
 **`gate --policy maintainability` now exists, and nothing changes without it.** Every existing gate
@@ -2385,9 +2411,9 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-018 DONE; ML-019 PARTIAL — gate wired and
-  tested, `detect --policy` outstanding and recorded in the packet.
-  Next ready task: finish `detect --policy` (ML-019 remainder), then **ML-020** (freeze v2 JSON). The prior roadmap below is completed history.
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-019 are DONE.
+  Next ready task: **ML-020** (freeze version 2 JSON and logical source locations). Implement one
+  packet per commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.

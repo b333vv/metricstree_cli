@@ -51,6 +51,19 @@ final class DetectCommand implements Callable<Integer> {
             description = "Source root scanned recursively for .java files or explicit Java source file.")
     private Path source;
 
+    @CommandLine.Option(names = "--policy", paramLabel = "POLICY",
+            description = "Which rules decide the findings: legacy (default) uses the class, method "
+                    + "and package rule files; maintainability uses the versioned rule catalogue "
+                    + "over the analysed source with no base revision. Defaults to detect.policy in "
+                    + "a project config. Cannot be combined with the legacy rule files.")
+    private String policy;
+
+    @CommandLine.Option(names = "--enforcement", paramLabel = "LEVEL",
+            description = "For --policy maintainability: advisory (default) reports findings without "
+                    + "failing; enforce makes eligible findings exit 1. Overrides "
+                    + "detect.enforcement.")
+    private String enforcement;
+
     @CommandLine.Option(names = "--class-rules", paramLabel = "PATH",
             description = "JSON file with class-level rule definitions.")
     private Path classRulesFile;
@@ -142,10 +155,32 @@ final class DetectCommand implements Callable<Integer> {
                 parentCommand, currentWorkingDirectorySupplier, stderr);
         effectiveFormat = ProjectConfigs.format(format, config.detectFormat(), config, spec);
 
+        // Resolved before anything is read: a migration error costs no analysis time.
+        MaintainabilityPolicy activePolicy;
+        try {
+            activePolicy = MaintainabilityPolicy.resolve(policy, null, enforcement, null, config,
+                    classRulesFile != null || packageRulesFile != null || methodRulesFile != null);
+        } catch (IllegalArgumentException exception) {
+            stderr.println("Error: " + exception.getMessage());
+            stderr.flush();
+            return 2;
+        }
+        if (activePolicy.isMaintainability()
+                && (config.classRules() != null || config.packageRules() != null
+                        || config.methodRules() != null)) {
+            stderr.println("Error: --policy maintainability cannot be combined with the legacy rule"
+                    + " files in this config. Those rules would not be evaluated, and a config whose"
+                    + " rules are silently ignored is a weaker check than its author believes in."
+                    + " Remove them, or keep the legacy policy.");
+            stderr.flush();
+            return 2;
+        }
+
         List<CombinationDefinition> classRules = resolveClassRules(config);
         List<CombinationDefinition> packageRules = resolvePackageRules(config);
         List<CombinationDefinition> methodRules = resolveMethodRules(config);
-        if (classRules == null && packageRules == null && methodRules == null) {
+        if (!activePolicy.isMaintainability() && classRules == null && packageRules == null
+                && methodRules == null) {
             throw new CommandLine.ExecutionException(spec.commandLine(),
                     "At least one of --class-rules, --method-rules or --package-rules must be"
                             + " provided, or classRules / methodRules / packageRules set in a"
@@ -200,6 +235,25 @@ final class DetectCommand implements Callable<Integer> {
                     methodRules.size(), methodMatches.size(), detector.validateRules(methodRules));
         }
 
+        if (activePolicy.isMaintainability()) {
+            // Current-only by construction: detect compares nothing against a base revision, and
+            // inventing one would report every match as brand new on every run.
+            MaintainabilityAnalysisService.Result result =
+                    new MaintainabilityAnalysisService().evaluate(
+                            null, report, this::logicalPathOf,
+                            org.b333vv.metric.library.core.MetricRequirements.Scope.SYNTAX_LOCAL,
+                            activePolicy.settings(), null, activePolicy.enforcement());
+            Path target = outputFile.toAbsolutePath().normalize();
+            Files.createDirectories(target.getParent() != null ? target.getParent() : Path.of("."));
+            Files.writeString(target, new FindingJsonReportAdapter()
+                    .render(new FindingReportContext(new FindingReport(FindingReport.SCHEMA_VERSION,
+                            result.blocking().isEmpty() ? "PASSED" : "FAILED",
+                            activePolicy.settings(), result.findings(), result.issues()))));
+            stderr.flush();
+            return activePolicy.enforcement() == MaintainabilityAnalysisService.Enforcement.ENFORCE
+                    && !result.blocking().isEmpty() ? 1 : 0;
+        }
+
         String serializedReport = toReport(classMatches, classRulesSummary, packageMatches,
                 packageRulesSummary, methodRules == null ? null : methodMatches, methodRulesSummary);
 
@@ -245,6 +299,12 @@ final class DetectCommand implements Callable<Integer> {
     private Path baseDir() {
         Path absolute = source.toAbsolutePath().normalize();
         return Files.isDirectory(absolute) ? absolute : absolute.getParent();
+    }
+
+    /** The report's absolute source path as a path relative to the analysed root. */
+    private String logicalPathOf(Path physical) {
+        Path absolute = physical.toAbsolutePath().normalize();
+        return baseDir().relativize(absolute).toString().replace('\\', '/');
     }
 
     private static DetectResultWriter.RulesSummary emptyRulesSummary() {
