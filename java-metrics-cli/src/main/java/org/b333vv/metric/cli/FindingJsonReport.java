@@ -119,9 +119,21 @@ record Summary(
                 summary.total(), summary.entities(), summary.issues(), summary.requiredIssues());
     }
 
+    /**
+     * Delegates rather than repeating the arithmetic.
+     *
+     * <p>This projection carries no {@code notMatched} field, so a check written here would be a
+     * second, weaker version of the one that actually decided the numbers — which is precisely how the
+     * two drifted apart and rejected a correct report.
+     */
     boolean reconciles() {
-        return blocking + existing + suppressed + baselineAccepted == activeFindings
-                && total == activeFindings + resolved;
+        // The active bucket is what is left once the named dispositions are removed, so it is
+        // derived here rather than carried as a field the JSON does not publish.
+        int named = existing + suppressed + baselineAccepted;
+        int activeDisposition = activeFindings - named;
+        return new FindingSummary(activeFindings, blocking, existing, suppressed, baselineAccepted,
+                resolved, 0, activeDisposition, total, entities, issues, requiredIssues)
+                .reconciles();
     }
 }
 

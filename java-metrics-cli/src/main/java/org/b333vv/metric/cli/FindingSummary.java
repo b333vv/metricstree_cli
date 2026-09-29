@@ -32,6 +32,7 @@ record FindingSummary(
         int baselineAccepted,
         int resolved,
         int notMatched,
+        int activeDisposition,
         int total,
         int entities,
         int issues,
@@ -46,6 +47,7 @@ record FindingSummary(
         int resolved = 0;
         int notMatched = 0;
         int active = 0;
+        int activeDisposition = 0;
         Set<String> entities = new LinkedHashSet<>();
         for (Finding finding : mergedFindings) {
             entities.add(finding.entityKey().render());
@@ -53,16 +55,22 @@ record FindingSummary(
                 resolved++;
                 continue;
             }
-            // Anything not resolved is an active finding whatever its disposition. Under advisory an
-            // eligible finding is re-dispositioned to EXISTING so it does not block, and it is still
-            // something this run found: counting it as neither active nor existing would leave the
-            // summary as the one part of the report that cannot be reconciled.
+            // Anything not resolved is an active finding whatever its disposition, because it is
+            // still something this run found.
+            // The disposition buckets partition the active findings: one disposition each, counted
+            // once. `blocking` is deliberately not one of them — it is a question about policy in
+            // force, and a finding can be both active and blocking.
             active++;
             switch (finding.disposition()) {
+                // Counted whatever it does to the build. An active finding that does not block --
+                // under advisory, or because its rule may not block -- is still a finding this run
+                // produced, and dropping it from every bucket would make the summary disagree with
+                // the list it describes. `blocking` is a subset of this bucket, not a fifth one.
                 case ACTIVE -> {
                     if (finding.blocks()) {
                         blocking++;
                     }
+                    activeDisposition++;
                 }
                 case EXISTING -> existing++;
                 case SUPPRESSED -> suppressed++;
@@ -73,7 +81,8 @@ record FindingSummary(
         }
         int required = (int) issues.stream().filter(EvaluationIssue::required).count();
         return new FindingSummary(active, blocking, existing, suppressed, baseline, resolved,
-                notMatched, active + resolved, entities.size(), issues.size(), required);
+                notMatched, activeDisposition, active + resolved, entities.size(), issues.size(),
+                required);
     }
 
     /** Counts a report exactly as every adapter will see it. */
@@ -89,7 +98,12 @@ record FindingSummary(
      * is being counted twice or not at all, and either is a wrong answer presented confidently.
      */
     boolean reconciles() {
-        return blocking + existing + suppressed + baselineAccepted + notMatched == activeFindings
+        // The four dispositions plus the active bucket account for every active finding exactly
+        // once. `blocking` is left out on purpose: it is a subset of the active bucket, not a fifth
+        // one, and adding it here would double-count everything eligible to stop a build.
+        return activeDisposition + existing + suppressed + baselineAccepted + notMatched
+                == activeFindings
+                && blocking <= activeDisposition
                 && total == activeFindings + resolved
                 && entities <= total;
     }

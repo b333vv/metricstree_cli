@@ -1,0 +1,380 @@
+package org.b333vv.metric.cli;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.b333vv.metric.library.javaparser.JavaParserJavaMetricsAnalyzer;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+/**
+ * The whole loop, on real repositories and real sources.
+ *
+ * <p>Everything else in this suite tests a piece. This one runs the sequence a person actually
+ * performs — edit, check, fix, check again, commit — and asserts that the tool answers the same way
+ * at every step. A piece can be correct and the loop still be broken, because the loop is where two
+ * components have to agree about what "the current state" means.
+ *
+ * <p>Every fixture is generated rather than committed, so each test says what code it means to
+ * analyse instead of leaving that in a resource file nobody reads.
+ */
+class MaintainabilityWorkflowTest {
+
+    private static final String SOURCE = "src/main/java/app/Order.java";
+
+    @TempDir
+    Path repo;
+
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    private GitFixture fixture() {
+        return new GitFixture(repo);
+    }
+
+    private int runGate(Path cwd, ByteArrayOutputStream err, String... args) throws Exception {
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                new JavaParserJavaMetricsAnalyzer(), new MetricReportJsonWriter(), () -> cwd);
+        return app.run(args, new ByteArrayOutputStream(), err);
+    }
+
+    /**
+     * Runs the gate with both outputs, since the findings sidecar is only written when the primary
+     * report is.
+     */
+    private int gateWithReport(Path report, ByteArrayOutputStream err, String... args)
+            throws Exception {
+        List<String> full = new ArrayList<>();
+        full.add("--output");
+        full.add(report.resolveSibling("gate-" + report.getFileName() + ".json").toString());
+        full.add("--json-output");
+        full.add(report.toString());
+        full.addAll(List.of(args));
+        return gate(err, full.toArray(String[]::new));
+    }
+
+    private int gate(ByteArrayOutputStream err, String... args) throws Exception {
+        List<String> full = new ArrayList<>();
+        full.add("gate");
+        full.addAll(List.of(args));
+        return runGate(repo, err, full.toArray(String[]::new));
+    }
+
+    /** The rules of the findings that are eligible to stop a build. */
+    private static List<String> blockingRuleIds(JsonNode found) {
+        List<String> rules = new ArrayList<>();
+        found.forEach(node -> {
+            // The JSON projection carries the enum name; the lower-case id is the presentation's.
+            if ("ACTIVE".equalsIgnoreCase(node.get("disposition").asText())) {
+                rules.add(node.get("ruleId").asText());
+            }
+        });
+        return rules;
+    }
+
+    private static List<String> ruleIds(JsonNode found) {
+        List<String> rules = new ArrayList<>();
+        found.forEach(node -> rules.add(node.get("ruleId").asText()));
+        return rules;
+    }
+
+    private static List<String> dispositions(JsonNode found) {
+        List<String> out = new ArrayList<>();
+        found.forEach(node -> out.add(node.get("disposition").asText() + ":"
+                + node.get("entityKey").get("signature").asText()));
+        return out;
+    }
+
+    private JsonNode findings(Path file) throws Exception {
+        if (!Files.exists(file)) {
+            throw new AssertionError("report not written: " + file);
+        }
+
+        return mapper.readTree(Files.readString(file)).get("findings");
+    }
+
+    /** A method with {@code ifs} independent branches, so CC ≈ ifs + 1. */
+    private static String withBranches(int ifs) {
+        StringBuilder body = new StringBuilder();
+        for (int index = 1; index <= ifs; index++) {
+            body.append("        if (x == ").append(index).append(") return ").append(index)
+                    .append(";\n");
+        }
+        return "package app;\npublic class Order {\n"
+                + "    public int f(int x) {\n" + body + "        return 0;\n    }\n}\n";
+    }
+
+    /** A class with no findings, so a test can distinguish \"clean\" from \"found nothing\". */
+    private static String trivial() {
+        return "package app;\npublic class Trivial {\n"
+                + "    public int f(int x) { return x; }\n}\n";
+    }
+
+    /**
+     * A project config that selects the policy.
+     *
+     * <p>Enforcement stays on the command line: it decides whether a finding stops a build, which is
+     * a fact about the pipeline rather than about the code, and the config section does not accept
+     * it. Writing it into the section is an error by design — an accepted key set is what makes a
+     * mistyped setting visible.
+     */
+    /** A method of {@code ifs} branches, extracted under a class name of its own. */
+    private static String helperWithBranches(int ifs) {
+        StringBuilder body = new StringBuilder();
+        for (int index = 1; index <= ifs; index++) {
+            body.append("        if (x == ").append(index).append(") return ").append(index)
+                    .append(";\n");
+        }
+        return "package app;\npublic class Extracted {\n    public int g(int x) {\n" + body
+                + "        return 0;\n    }\n}\n";
+    }
+
+    private static String config(String policy) {
+        return "gate:\n  policy: " + policy + "\nmaintainability:\n  enabledRules: [MT-M001]\n";
+    }
+
+    // ---------------------------------------------------------------- the loop
+
+    @Nested
+    @DisplayName("Edit, check, fix, check again")
+    class CorrectionLoop {
+
+        @Test
+        @DisplayName("finds the new complexity, then stops finding it once it is fixed")
+        void endToEndLocalCorrectionLoop() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.commitAll("initial");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            assertEquals(0, gate(err, "--base", "HEAD", "--mode", "committed"), err.toString());
+
+            // The edit that introduces the problem: still uncommitted, which is where a developer
+            // runs the check.
+            git.write(SOURCE, withBranches(20));
+            Path report = repo.resolve("findings.json");
+            err = new ByteArrayOutputStream();
+            int exit = gateWithReport(report, err, "--base", "HEAD", "--policy", "maintainability",
+                    "--enforcement", "enforce");
+            assertTrue(Files.exists(report), "exit=" + exit + " err=" + err);
+
+            JsonNode found = findings(report);
+            assertEquals(List.of("MT-M001"), blockingRuleIds(found),
+                    "exactly one rule blocks, and it is the complexity one; every other rule is"
+                            + " reported as not matched: " + dispositions(found));
+            assertEquals("MT-M001", found.get(0).get("ruleId").asText());
+            assertEquals("FAILED", mapper.readTree(Files.readString(report)).get("status").asText());
+            assertNotEquals(0, exit, "enforced mode fails the build on a blocking finding");
+
+            // The fix, still uncommitted.
+            git.write(SOURCE, withBranches(2));
+            Path afterFix = repo.resolve("findings-fixed.json");
+            err = new ByteArrayOutputStream();
+            int fixedExit = gateWithReport(afterFix, err, "--base", "HEAD",
+                    "--policy", "maintainability", "--enforcement", "enforce");
+
+            assertEquals(List.of(), blockingRuleIds(findings(afterFix)),
+                    "the fix removes the blocking finding");
+            assertEquals(0, fixedExit, err.toString());
+        }
+
+        @Test
+        @DisplayName("leaves debt that nobody touched alone, so it does not block a change")
+        void oldDebtUnchangedDoesNotBlock() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(20));
+            git.write("src/main/java/app/Trivial.java", trivial());
+            git.commitAll("debt in place");
+            git.write("src/main/java/app/Trivial.java", trivial().replace("return x;", "return x + 1;"));
+
+            Path report = repo.resolve("findings.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gateWithReport(report, err, "--base", "HEAD", "--policy", "maintainability",
+                    "--enforcement", "enforce");
+            assertTrue(Files.exists(report), "exit=" + exit + " err=" + err);
+
+            JsonNode found = findings(report);
+            // The complex method is reported -- the tool found it -- but the change did not worsen
+            // it, so nothing is eligible to block.
+            assertTrue(blockingRuleIds(found).isEmpty(),
+                    "the complex method is real debt, but this change did not touch it, so nothing"
+                            + " blocks: " + dispositions(found));
+            assertTrue(found.findValuesAsText("disposition").contains("EXISTING"),
+                    "and the debt is reported as pre-existing rather than quietly dropped");
+            assertEquals(0, exit, "a change that did not worsen anything must not fail the build");
+        }
+    }
+
+    @Nested
+    @DisplayName("Which revision is being checked")
+    class RevisionModes {
+
+        @Test
+        @DisplayName("agrees across modes once the contents are equal")
+        void stagedCommittedAndWorktreeAgreeWhenContentsEqual() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(20));
+            git.git("add", "-A");
+            git.commitAll("complex");
+
+            // Same content in all three places: the index, HEAD, and the working tree.
+            List<JsonNode> reports = new ArrayList<>();
+            for (String mode : List.of("worktree", "staged", "committed")) {
+                Path report = repo.resolve("findings-" + mode + ".json");
+                ByteArrayOutputStream err = new ByteArrayOutputStream();
+                // Enforced, not advisory: advisory re-dispositions eligible findings to EXISTING so
+                // they do not block, and a test asking what blocks has to ask in the mode that
+                // blocks. The advisory behaviour has its own test above.
+                int modeExit = gateWithReport(report, err, "--base", "HEAD~1", "--mode", mode,
+                        "--policy", "maintainability", "--enforcement", "enforce");
+                assertTrue(Files.exists(report),
+                        "mode " + mode + " wrote nothing; exit=" + modeExit + " err=" + err);
+                reports.add(findings(report));
+            }
+
+            // Every enabled rule reports a not-matched entry for each entity it evaluated, so the
+            // array is longer than the number of problems; what the mode must not change is the
+            // whole list, and one rule must block.
+            assertEquals(List.of("MT-M001"), blockingRuleIds(reports.get(0)));
+            assertEquals(reports.get(0), reports.get(1),
+                    "with equal contents the mode must not change the findings");
+            assertEquals(reports.get(1), reports.get(2));
+        }
+    }
+
+    @Nested
+    @DisplayName("Metric gaming")
+    class MetricGaming {
+
+        /**
+         * A counterexample, not a defence.
+         *
+         * <p>Splitting a complex method in two removes the finding for the original and creates a new
+         * one for the extracted helper, because the helper is a new entity the policy has never
+         * accepted. The tool does not detect that the complexity merely moved. What it does is refuse
+         * to pretend the debt is gone -- and that is a smaller, honest claim.
+         */
+        @Test
+        @DisplayName("a newly extracted complex helper is still reported")
+        void newlyExtractedComplexHelperStillReported() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.commitAll("initial");
+
+            // The classic "improvement": move half the branches into a helper.
+            git.write(SOURCE, withBranches(20));
+            git.commitAll("made it complex");
+            // The helper carries half the branches, so it is itself over MT-M001's CC >= 16: the
+            // complexity has moved, not gone. A helper small enough to be clean would prove nothing.
+            // Left uncommitted on purpose: the base is the complex method, and the extracted helper
+            // is a new entity the policy has never seen. Committing it first would make it EXISTING
+            // and the test would prove nothing about new-entity checking.
+            git.write("src/main/java/app/Extracted.java", helperWithBranches(20));
+
+            Path report = repo.resolve("findings.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int gamingExit = gateWithReport(report, err, "--base", "HEAD",
+                    "--policy", "maintainability", "--enforcement", "enforce");
+            assertTrue(Files.exists(report), "exit=" + gamingExit + " err=" + err);
+
+            JsonNode found = findings(report);
+            assertTrue(blockingRuleIds(found).contains("MT-M001"),
+                    "the extracted helper is itself complex, and it is a new entity: "
+                            + dispositions(found));
+        }
+
+        private List<String> ruleIdsOf(JsonNode found) {
+            List<String> rules = new ArrayList<>();
+            found.forEach(node -> rules.add(node.get("ruleId").asText()));
+            return rules;
+        }
+    }
+
+    @Nested
+    @DisplayName("The consumer's repository")
+    class ConsumerRepository {
+
+        @Test
+        @DisplayName("is never written to: no source, no index, no config")
+        void noWritesToConsumerSourceIndexOrConfig() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", config("maintainability"));
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(20));
+            git.git("add", "-A");
+
+            byte[] sourceBefore = Files.readAllBytes(repo.resolve(SOURCE));
+            byte[] configBefore = Files.readAllBytes(repo.resolve(".metrics-gate.yml"));
+            String headBefore = gitOutput("rev-parse", "HEAD");
+            String indexBefore = gitOutput("ls-files", "-s");
+            String statusBefore = gitOutput("status", "--porcelain");
+
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            gate(err, "--base", "HEAD", "--policy", "maintainability");
+
+            assertArrayEqualsWithMessage(sourceBefore, Files.readAllBytes(repo.resolve(SOURCE)),
+                    "a check must never edit the code it is checking");
+            assertArrayEqualsWithMessage(configBefore,
+                    Files.readAllBytes(repo.resolve(".metrics-gate.yml")),
+                    "or the configuration that governed it");
+            assertEquals(headBefore, gitOutput("rev-parse", "HEAD"), "or the commit");
+            assertEquals(indexBefore, gitOutput("ls-files", "-s"),
+                    "or stage anything: the tool reports on an index, it does not manage it");
+            assertEquals(statusBefore, gitOutput("status", "--porcelain"));
+        }
+
+        private String gitOutput(String... args) throws Exception {
+            List<String> command = new ArrayList<>(List.of("git", "-C", repo.toString()));
+            command.addAll(List.of(args));
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            String output = new String(process.getInputStream().readAllBytes(),
+                    StandardCharsets.UTF_8);
+            process.waitFor();
+            return output.trim();
+        }
+
+        private void assertArrayEqualsWithMessage(byte[] expected, byte[] actual, String message) {
+            assertEquals(new String(expected, StandardCharsets.UTF_8),
+                    new String(actual, StandardCharsets.UTF_8), message);
+        }
+    }
+
+    @Nested
+    @DisplayName("Configuration")
+    class Configured {
+
+        @Test
+        @DisplayName("a policy read from the project config drives the same run")
+        void projectConfigSelectsThePolicy() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", config("maintainability"));
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(20));
+
+            Path report = repo.resolve("findings.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gateWithReport(report, err, "--base", "HEAD", "--enforcement", "enforce");
+            assertTrue(Files.exists(report), "exit=" + exit + " err=" + err);
+
+            assertEquals(List.of("MT-M001"), blockingRuleIds(findings(report)),
+                    "the config alone selected the maintainability policy, and only the enabled"
+                            + " rule can block");
+            assertNotEquals(0, exit, "and the command line should have enforced it");
+        }
+    }
+}

@@ -336,6 +336,33 @@ Export is refused when a **required** check could not run: a baseline built from
 analysis would accept as debt only what happened to be measurable. Export and read cannot be combined
 in one run, and writing a baseline does not update the config, the source, or Git.
 
+### The edit-check-fix loop
+
+The policy is meant to be used in a loop, and the loop is what the workflow test exercises end to
+end:
+
+```sh
+# 1. check the working tree against the base, without committing anything
+metricstree gate --base origin/main --policy maintainability --enforcement enforce \
+  --output report.json --json-output findings.json
+
+# 2. fix what it reports, then run the same command again
+# 3. commit; run it with --mode committed in CI
+```
+
+Three things are worth knowing about how it behaves:
+
+- **Advisory is the default and it is not a quieter failure.** Advisory reports every finding and
+  re-dispositions the eligible ones so they do not block; `enforce` blocks on the same findings. A
+  CI job asking "what blocks" must ask in the mode that blocks, or it will be told nothing is.
+- **The report lists what was found, including what did not block.** Each finding carries its
+  `disposition`; `ACTIVE` means eligible to block, `EXISTING` means pre-existing and unworsened,
+  `NOT_MATCHED` is recorded so the counts reconcile. A run reports the same findings under every
+  `--mode`; only the blocking set differs.
+- **Extracting a complex method does not make the debt disappear.** The helper is a new entity the
+  policy has never seen, and if it is itself complex it is reported. The tool does not claim to
+  detect that complexity merely moved — it claims only not to pretend the debt is gone.
+
 ## Project configuration (`.metrics-gate.yml`)
 
 A single YAML or JSON file at the repository root can hold thresholds, rules, exclusions and

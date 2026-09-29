@@ -29,6 +29,8 @@ final class ReportAdapterRegistry {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
                         "No report adapter for " + type + " / " + format));
-        return adapter.render(context);
+        return type == ReportType.FINDINGS
+                ? adapter.renderFindings(context)
+                : adapter.render(context);
     }
 }

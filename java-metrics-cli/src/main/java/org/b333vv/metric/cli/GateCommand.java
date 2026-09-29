@@ -441,6 +441,7 @@ final class GateCommand implements Callable<Integer> {
         if (activePolicy.isMaintainability()) {
             maintainabilityReport = runMaintainabilityPolicy(activePolicy, policyInput, plan,
                     resolveAnalysisScope(config), completeness);
+            maintainabilityBlockingCount = maintainabilityReport.blocking().size();
         }
 
         List<GateFinding> violations = new ArrayList<>(parseErrors);
@@ -963,7 +964,7 @@ final class GateCommand implements Callable<Integer> {
      * gate says what it checked, and mentions optional gaps without letting them turn a real pass
      * into an error.
      */
-    private static String verdictLine(
+    private String verdictLine(
             String status,
             List<GateFinding> violations,
             List<GateFinding> warnings,
@@ -996,12 +997,25 @@ final class GateCommand implements Callable<Integer> {
         return line;
     }
 
-    /** The failed case: counts by type first, then the single worst finding. */
-    private static String failedLine(
+    /**
+     * The failed case: counts by type first, then the single worst finding.
+     *
+     * <p>Under the maintainability policy a run can be FAILED with no gate violation at all: the
+     * findings report is what failed, and the legacy violation list is empty. That case used to throw
+     * while building the verdict line, so the command reported a crash instead of the failure it had
+     * just decided — a run whose build was correctly about to fail said nothing about why. The line
+     * now names the policy's own count.
+     */
+    private String failedLine(
             List<GateFinding> violations, List<GateFinding> warnings, int changedFiles) {
         Map<GateFinding.Type, Integer> counts = new LinkedHashMap<>();
         for (GateFinding violation : violations) {
             counts.merge(violation.type(), 1, Integer::sum);
+        }
+        if (counts.isEmpty()) {
+            int blocking = maintainabilityBlockingCount;
+            return "FAILED: " + blocking + " maintainability finding"
+                    + (blocking == 1 ? "" : "s") + " blocked; no gate violation";
         }
         StringBuilder line = new StringBuilder("FAILED:");
         for (Map.Entry<GateFinding.Type, Integer> entry : counts.entrySet()) {
@@ -1016,6 +1030,15 @@ final class GateCommand implements Callable<Integer> {
         }
         return line.toString();
     }
+
+    /**
+     * How many findings blocked the last run, for the verdict line.
+     *
+     * <p>Set once the policy has run and read once when the line is built. A field rather than a
+     * parameter because the line is formatted in several places and threading a count through all
+     * of them would spread the question of "which policy decided this" across the whole command.
+     */
+    private int maintainabilityBlockingCount;
 
     private static String plural(GateFinding.Type type, int count) {
         String singular = switch (type) {

@@ -1,5 +1,46 @@
 # what has been done
 
+## Session: ML-027 — the loop, run for real (2026-09-29)
+
+Everything up to here tested a piece. ML-027 runs the sequence a person actually performs — edit,
+check, fix, check again, commit — on real Git histories and real sources, and it found three defects
+that no unit test had reached.
+
+**Defects found and fixed**
+
+1. **The gate could not write its own report under this policy.** `--output` with
+   `--policy maintainability` threw "No report adapter for FINDINGS / JSON". The registry allows one
+   adapter per format, and only the gate adapters were registered. Under the maintainability policy
+   the gate's report *is* the findings report, so `ReportAdapter` now has `renderFindings` and each
+   gate adapter delegates. A command that crashed when asked for a file is not a missing feature.
+2. **A failing gate crashed instead of reporting why.** `failedLine` read `violations.get(0)`, and a
+   run that fails on findings with no legacy violation has an empty list — so the command threw
+   `IndexOutOfBoundsException` while formatting the verdict it had just decided. It now says how many
+   findings blocked.
+3. **The findings summary dropped a whole class of findings.** An active finding that does not block
+   — advisory mode re-dispositions exactly these — was counted in no bucket at all, so the
+   summary refused to reconcile and the report was not written. `activeFindings` now counts every
+   non-resolved finding, and `blocking` is a subset of it rather than a fifth bucket.
+
+**Decisions worth keeping**
+
+- **Fixtures are generated, not committed.** Each test states the code it means to analyse in the
+  test itself, rather than leaving that in a resource file nobody reads. The bundled-project step is
+  deliberately done this way, and the limitation is recorded rather than papered over.
+- **Advisory is not a quieter failure.** Three tests failed at first because they asked "what blocks"
+  in advisory mode, which by design answers "nothing". The tests now run in the mode they mean.
+- **The gaming test is a counterexample, not a defence.** Extracting half a method's branches into a
+  helper does not make the debt disappear, because the helper is a new entity the policy has never
+  accepted — and if it is itself complex it is reported. The test claims exactly that and no more.
+- **The consumer's repository is never written to.** One test snapshots the source, the config, HEAD,
+  the index and `git status` around a run and asserts all five are unchanged.
+
+**Verification:** `./gradlew check` and `:java-metrics-cli:integrationTest` pass. New:
+`MaintainabilityWorkflowTest` (6 cases). `JavaMetricsCliDistributionSmokeTest` green, including the
+shadow-jar JSON contract that minimization could otherwise break silently.
+
+ML-001–ML-027 are DONE. Next ready task: **ML-028**.
+
 ## Session: ML-026 — the count and the list are the same claim (2026-09-29)
 
 A report whose summary disagrees with the list printed under it is worse than a report with a wrong
@@ -2669,7 +2710,7 @@ All three proposals were accepted and implemented; backward compatibility was no
 
 - New active work: accepted maintainability linter strategy, planned in
   `docs/plans/maintainability-linter/README.md`. ML-001–ML-022 are DONE.
-  Next ready task: **ML-027**. Implement one packet per
+  Next ready task: **ML-028**. Implement one packet per
   commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
