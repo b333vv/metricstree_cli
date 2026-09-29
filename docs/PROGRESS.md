@@ -1,5 +1,36 @@
 # what has been done
 
+## Session: ML-017 — a role decides which rules apply, not what gets measured (2026-09-29)
+
+**The distinction this task turns on is invisible from the outside unless a test says which one is
+implemented.** If a role removes a class from the *analysis*, every coupling number in the report
+shifts. If it only removes the class from *rule applicability*, the measurements are identical and
+only the findings change. `RoleClassifier` answers only the second question — and a test walks its
+declared methods and fails if anything named "exclude" is ever added, because the day someone adds an
+analysis-input filter here, the numbers change and nothing in the output says so.
+
+**Full-path matching, not prefix.** A rule pattern has to cover the whole repository-relative path.
+This cost me two rewrites and produced the most useful test in the suite: a prefix-style rule for
+`src/test` also captures `src/testFixtures`, and that file would be analysed as test code by a rule
+nobody pointed at test code. The defaults are written accordingly — `(.*/)?src/main/java/.*` and
+friends — rather than the `(^|/)src/main/java/` fragments I first wrote, which under full matching
+matched nothing at all.
+
+**Nothing is inferred from a name.** `UserDto` is not a `dto`. Inference from names is right most of
+the time and wrong silently the rest, and the wrong case changes which rules run over code somebody
+believes was checked. An explicit empty `roles: []` makes everything `unknown` rather than falling back
+to the defaults.
+
+**The tests corrected me twice more.** `movingTempRootDoesNotChangeExclusion` asserted a temporary
+prefix would defeat the match — it does not, and should not: the same file must have the same role on
+both sides of a comparison. And `firstRoleRuleWins` had a catch-all listed first, which made the test
+prove nothing about ordering.
+
+- New: `RoleClassifier` (ordered, full-regex, first-match-wins, logical paths, defaults documented);
+  `maintainability.roles` config key; `MaintainabilitySettings.roleRules()`.
+- Tests: `RoleClassifierTest` (11). `./gradlew check` green. Docs: `docs/RUN.md` § "Code roles".
+
+
 ## Session: ML-016 — a finite number is not a measurement (2026-09-29)
 
 **Here is the difference between the two evaluators.** A method rule over a syntax metric either has
@@ -2273,9 +2304,9 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what is in progress
 
 - New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-016 are DONE.
-  Next ready task: **ML-017** (explicit code roles and stable exclusion semantics). Implement one
-  packet per commit. The prior roadmap below is completed history.
+  `docs/plans/maintainability-linter/README.md`. ML-001–ML-017 are DONE.
+  Next ready task: **ML-018** (compare finding lifecycles across snapshots). Implement one packet per
+  commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.

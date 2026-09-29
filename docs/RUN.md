@@ -207,6 +207,41 @@ exclusions:
 
 Patterns from `packages` and `classes` are merged into one list and tested against the fully qualified class name (e.g., `com.myapp.api.UserController`). If any pattern matches (via `find()` semantics), the file is excluded.
 
+### Code roles (`maintainability.roles`)
+
+A role says which rules apply to an entity. It does **not** say the code is good, and it does **not**
+remove anything from the analysis — a class whose role excludes it from a rule is still a resolvable
+collaborator for somebody else's measurement.
+
+```yaml
+maintainability:
+  roles:
+    - pathRegex: (.*/)?generated/.*
+      role: generated
+    - pathRegex: (.*/)?src/test/java/.*
+      role: test
+    - pathRegex: (.*/)?src/main/java/.*
+      role: production
+    - pathRegex: (.*)
+      role: unknown
+```
+
+Three properties are worth stating because each prevents a specific wrong answer:
+
+- **Order is the configuration's, and the first match wins.** Read the list top to bottom and you can
+  compute any entity's role by hand.
+- **Matching is full-path.** A pattern has to describe the whole repository-relative path, so
+  `(.*/)?src/test/java/.*` classifies test code and cannot quietly capture
+  `src/testFixtures/java/...` the way a prefix-style rule would.
+- **Nothing is inferred from a name.** A class called `UserDto` is *not* a `dto` unless a rule says
+  so. Name-based inference is right most of the time and wrong silently the rest, and the wrong case
+  changes which rules run.
+
+Accepted roles: `production`, `test`, `generated`, `dto`, `adapter`, `unknown`. An explicitly empty
+`roles: []` makes everything `unknown` rather than falling back to the defaults — "clear this" has to
+mean what it says. Paths are logical repository-relative POSIX paths, so a temporary checkout
+directory cannot change a file's role.
+
 ## Project configuration (`.metrics-gate.yml`)
 
 A single YAML or JSON file at the repository root can hold thresholds, rules, exclusions and

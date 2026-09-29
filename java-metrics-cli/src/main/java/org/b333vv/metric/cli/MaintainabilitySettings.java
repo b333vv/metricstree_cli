@@ -28,7 +28,8 @@ record MaintainabilitySettings(
         java.nio.file.Path file,
         List<String> enabledRules,
         Map<String, RuleOverride> overrides,
-        String digest) {
+        String digest,
+        List<RoleClassifier.Rule> roleRules) {
 
     /**
      * What a project's configuration changed about one rule.
@@ -46,6 +47,12 @@ record MaintainabilitySettings(
     MaintainabilitySettings {
         enabledRules = enabledRules == null ? List.of() : List.copyOf(enabledRules);
         overrides = overrides == null ? Map.of() : Map.copyOf(overrides);
+        roleRules = roleRules == null ? List.of() : List.copyOf(roleRules);
+    }
+
+    /** Whether the role rules were configured at all, as opposed to being absent. */
+    boolean hasConfiguredRoles() {
+        return !roleRules.isEmpty();
     }
 
     /** The catalogue default set: the four candidate rules, without the experimental one. */
@@ -55,7 +62,7 @@ record MaintainabilitySettings(
     /** The settings a run gets with no configuration at all. */
     static MaintainabilitySettings defaults(java.nio.file.Path file) {
         return new MaintainabilitySettings(file, DEFAULT_ENABLED, Map.of(),
-                MaintainabilityRules.digest());
+                MaintainabilityRules.digest(), List.of());
     }
 
     /** Whether {@code ruleId} should be evaluated. */

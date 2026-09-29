@@ -43,6 +43,9 @@ final class RuleConfigLoader {
     private static final Set<String> KNOWN_KEYS =
             Set.of("enabledRules", "rules", "roles", "suppressions");
 
+    /** The keys one role rule entry accepts. */
+    private static final Set<String> ROLE_RULE_KEYS = Set.of("pathRegex", "role");
+
     private RuleConfigLoader() {
     }
 
@@ -72,7 +75,8 @@ final class RuleConfigLoader {
         List<String> enabled = enabledRules(file, section.get("enabledRules"));
         Map<String, MaintainabilitySettings.RuleOverride> overrides =
                 overrides(file, section.get("rules"));
-        return new MaintainabilitySettings(file, enabled, overrides, digest(enabled, overrides));
+        return new MaintainabilitySettings(file, enabled, overrides, digest(enabled, overrides),
+                roles(file, section.get("roles")));
 
     }
     /**
@@ -297,6 +301,53 @@ final class RuleConfigLoader {
                 .map(MaintainabilityRule::id)
                 .reduce((left, right) -> left + ", " + right)
                 .orElse("(none)");
+    }
+
+    /**
+     * The ordered role rules, or {@code null} for "use the defaults".
+     *
+     * <p>An explicitly empty list is honoured as an empty list rather than falling back: a project
+     * that wrote {@code roles: []} meant to classify everything as unknown, and quietly re-enabling
+     * the defaults would apply production rules to code somebody had just excluded from them.
+     */
+    private static List<RoleClassifier.Rule> roles(Path file, JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (!node.isArray()) {
+            throw error(file, "maintainability.roles",
+                    "must be a list of {pathRegex, role} entries, not a " + kindOf(node));
+        }
+        List<RoleClassifier.Rule> rules = new ArrayList<>();
+        for (JsonNode element : node) {
+            if (!element.isObject()) {
+                throw error(file, "maintainability.roles",
+                        "each entry must be a mapping of pathRegex and role, found: " + element);
+            }
+            List<String> unknown = new ArrayList<>();
+            element.fieldNames().forEachRemaining(name -> {
+                if (!ROLE_RULE_KEYS.contains(name)) {
+                    unknown.add(name);
+                }
+            });
+            if (!unknown.isEmpty()) {
+                throw error(file, "maintainability.roles." + unknown.get(0),
+                        "is not a role rule key. Accepted keys: " + String.join(", ", ROLE_RULE_KEYS));
+            }
+            JsonNode pattern = element.get("pathRegex");
+            if (pattern == null || !pattern.isTextual() || pattern.asText().isBlank()) {
+                throw error(file, "maintainability.roles",
+                        "every entry needs a non-blank pathRegex");
+            }
+            JsonNode role = element.get("role");
+            if (role == null || !role.isTextual()) {
+                throw error(file, "maintainability.roles",
+                        "every entry needs a role name. Accepted roles: production, test, generated,"
+                                + " dto, adapter, unknown.");
+            }
+            rules.add(new RoleClassifier.Rule(pattern.asText(), EntityRole.fromId(role.asText())));
+        }
+        return List.copyOf(rules);
     }
 
     private static String kindOf(JsonNode node) {
