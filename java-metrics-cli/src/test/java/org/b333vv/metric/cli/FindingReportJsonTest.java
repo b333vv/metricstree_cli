@@ -38,7 +38,12 @@ class FindingReportJsonTest {
 
     private static Finding finding(FindingLifecycle lifecycle, FindingDisposition disposition,
             FindingEvidence evidence) {
-        EntityKey key = EntityKey.ofMethod("src/main/java/app/Order.java", "app.Order", "total(int)");
+        return finding(lifecycle, disposition, evidence,
+                EntityKey.ofMethod("src/main/java/app/Order.java", "app.Order", "total(int)"));
+    }
+
+    private static Finding finding(FindingLifecycle lifecycle, FindingDisposition disposition,
+            FindingEvidence evidence, EntityKey key) {
         return new Finding("MT-M001", 1, key, "High method complexity", "Cyclomatic complexity "
                 + "is at or above the configured bound.", FindingLocation.of(key.path(), 42), null,
                 RuleSeverity.WARNING, RuleMaturity.CANDIDATE, EvaluationStatus.COMPLETE_MATCH,
@@ -58,6 +63,16 @@ class FindingReportJsonTest {
         return MAPPER.readTree(json);
     }
 
+    /** The contributions recorded for the one finding whose entity carries this signature. */
+    private JsonNode contributionsOf(JsonNode document, String signature) {
+        for (JsonNode finding : document.get("findings")) {
+            if (finding.get("entityKey").get("signature").asText().equals(signature)) {
+                return finding.at("/evidence/0/contributions");
+            }
+        }
+        throw new AssertionError("no finding for " + signature);
+    }
+
     private List<String> violations(JsonNode document) throws Exception {
         return FindingSchema.v2().violations(document);
     }
@@ -75,15 +90,21 @@ class FindingReportJsonTest {
         List<MetricContribution> traced = List.of(
                 new MetricContribution(MetricCode.CC, "if", 1, 42, null),
                 new MetricContribution(MetricCode.CC, "forEach", 1, 44, "the loop"));
+        // Different entities on purpose: two findings on one entity under one rule are one finding,
+        // and this test is about serialisation, not about merging.
         Finding withTrace = finding(FindingLifecycle.NEW_ENTITY, FindingDisposition.ACTIVE,
                 FindingEvidence.currentOnly(MetricCode.CC, 18.0, "complexity")
-                        .withContributions(traced));
+                        .withContributions(traced),
+                EntityKey.ofMethod("src/main/java/app/Order.java", "app.Order", "total(int)"));
         Finding withoutTrace = finding(FindingLifecycle.NEW_ENTITY, FindingDisposition.ACTIVE,
-                FindingEvidence.currentOnly(MetricCode.CC, 4.0, "complexity"));
+                FindingEvidence.currentOnly(MetricCode.CC, 4.0, "complexity"),
+                EntityKey.ofMethod("src/main/java/app/Order.java", "app.Order", "subtotal(int)"));
 
         JsonNode document = render(report(List.of(withTrace, withoutTrace), List.of()), null);
-        JsonNode first = document.at("/findings/0/evidence/0/contributions");
-        JsonNode second = document.at("/findings/1/evidence/0/contributions");
+        // Looked up by entity, not by index: the report sorts by entity, and an index-based
+        // assertion would be asserting the sort order rather than the serialisation.
+        JsonNode first = contributionsOf(document, "total(int)");
+        JsonNode second = contributionsOf(document, "subtotal(int)");
 
         assertEquals(2, first.size());
         assertEquals("if", first.get(0).get("kind").asText());
@@ -238,10 +259,18 @@ class FindingReportJsonTest {
     /** The counters reconcile, and each is derived independently rather than copied. */
     @Test
     void countersHaveIndependentExpectedValues() throws Exception {
+        // Three distinct entities: three findings on one method under one rule are one finding, and
+        // this test is about the counters, not about merging.
         List<Finding> findings = List.of(
-                finding(FindingLifecycle.NEW_ENTITY, FindingDisposition.ACTIVE),
-                finding(FindingLifecycle.WORSENED, FindingDisposition.ACTIVE),
-                finding(FindingLifecycle.EXISTING, FindingDisposition.EXISTING));
+                finding(FindingLifecycle.NEW_ENTITY, FindingDisposition.ACTIVE,
+                        FindingEvidence.currentOnly(MetricCode.CC, 18.0, "complexity"),
+                        EntityKey.ofMethod("src/main/java/app/Order.java", "app.Order", "a(int)")),
+                finding(FindingLifecycle.WORSENED, FindingDisposition.ACTIVE,
+                        FindingEvidence.currentOnly(MetricCode.CC, 21.0, "complexity"),
+                        EntityKey.ofMethod("src/main/java/app/Order.java", "app.Order", "b(int)")),
+                finding(FindingLifecycle.EXISTING, FindingDisposition.EXISTING,
+                        FindingEvidence.currentOnly(MetricCode.CC, 30.0, "complexity"),
+                        EntityKey.ofMethod("src/main/java/app/Order.java", "app.Order", "c(int)")));
 
         JsonNode node = render(report(findings, List.of()), null);
         JsonNode summary = node.get("summary");
@@ -251,7 +280,7 @@ class FindingReportJsonTest {
         assertEquals(1, summary.get("existing").asInt());
         assertEquals(0, summary.get("suppressed").asInt());
         assertEquals(3, summary.get("total").asInt());
-        assertEquals(1, summary.get("entities").asInt(), "three findings, one method");
+        assertEquals(3, summary.get("entities").asInt(), "three findings, three methods");
         assertTrue(summary.get("blocking").asInt() + summary.get("existing").asInt()
                 == summary.get("activeFindings").asInt());
     }

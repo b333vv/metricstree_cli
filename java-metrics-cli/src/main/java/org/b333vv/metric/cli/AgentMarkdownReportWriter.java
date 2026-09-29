@@ -280,7 +280,7 @@ final class AgentMarkdownReportWriter {
         if (presentation.groups().isEmpty()) {
             out.append("No findings.\n");
         }
-        for (FindingsPresentation.EntityGroup group : presentation.groups()) {
+        for (FindingOrdering.EntityGroup group : presentation.groups()) {
             out.append("### ").append(escape(group.qualifiedName()));
             if (group.signature() != null) {
                 out.append('#').append(escape(group.signature()));

@@ -1,5 +1,42 @@
 # what has been done
 
+## Session: ML-026 — the count and the list are the same claim (2026-09-29)
+
+A report whose summary disagrees with the list printed under it is worse than a report with a wrong
+number, because the reader has no way to tell which one is wrong. ML-026 removes the possibility.
+
+**What was built**
+
+- `FindingOrdering` — the one place that decides what a finding list is. The dedup key is rule ID,
+  rule version and `EntityKey`, compared as a value. Merging preserves the union of evidence and
+  locations and never drops a measurement; the deterministic order puts blocking first.
+- `FindingSummary` — the counts, computed once from the merged list, with `reconciles()` as a real
+  check rather than a tautology. `FindingJsonReport.Summary` is now a projection of it.
+- `FindingsPresentation` and all four adapters now run their list through the same utility.
+
+**Decisions worth keeping**
+
+- **A repeated result is one finding, not two.** The same rule reaching one entity twice was rendered
+  twice, and a reader counting findings counted one problem twice. Merging happens once, before any
+  adapter, so no format can decide for itself.
+- **Merging never unblocks.** When two merged entries disagree, the blocking one wins. A merge must not
+  be a way to make a finding stop counting.
+- **Distinct rules never merge.** MT-M001 and MT-M002 on one method share a Markdown group and stay
+  separate JSON findings — grouping is a way of scanning, not a finding.
+- **One counting path.** There were two; the second was for the human adapters and would have drifted.
+  Two existing JSON tests failed on the change and were fixtures relying on the old behaviour — three
+  findings on one method under one rule — and were corrected to use distinct entities, since the tests
+  were about serialisation and counters rather than about merging.
+- **Truncation changes rows, never findings.** `totalEntries()` is what the run found; a compact view
+  reports fewer rows and says how many it left out.
+
+**Verification:** `./gradlew check` passes. New: `FindingOrderingTest` (16 cases), including a
+permutation test over all 3! orderings of three findings and one that renders all four formats and
+asserts the same rule set reaches each. `FindingPresentationTest`, `FindingReportJsonTest` and
+`FindingSarifReportTest` green.
+
+ML-001–ML-026 are DONE. Next ready task: **ML-027**.
+
 ## Session: ML-025 — accepting debt without accepting drift (2026-09-29)
 
 A baseline is how a project adopts the policy without adopting a backlog. ML-025 gives it a format of
@@ -2632,7 +2669,7 @@ All three proposals were accepted and implemented; backward compatibility was no
 
 - New active work: accepted maintainability linter strategy, planned in
   `docs/plans/maintainability-linter/README.md`. ML-001–ML-022 are DONE.
-  Next ready task: **ML-026**. Implement one packet per
+  Next ready task: **ML-027**. Implement one packet per
   commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:

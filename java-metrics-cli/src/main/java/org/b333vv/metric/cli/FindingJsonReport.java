@@ -46,10 +46,11 @@ record FindingJsonReport(
      * no summary, so it throws rather than publishing one.
      */
     static FindingJsonReport of(FindingReport report, Comparison comparison) {
-        List<FindingView> views = report.findings().stream()
-                .map(FindingView::of)
-                .toList();
-        Summary summary = Summary.of(report);
+        // Merged and ordered by the same utility the human adapters use, so the two formats report
+        // the same findings in the same order and a repeated result is one entry in both.
+        List<Finding> merged = FindingOrdering.deduplicated(report.findings());
+        List<FindingView> views = merged.stream().map(FindingView::of).toList();
+        Summary summary = Summary.of(FindingSummary.of(merged, report.issues()));
         if (!summary.reconciles()) {
             throw new IllegalStateException("Findings summary does not reconcile: " + summary);
         }
@@ -89,9 +90,13 @@ record SuppressionView(
     }
 }
 
-/** Counts that have to reconcile. */
-@JsonPropertyOrder({"activeFindings", "blocking", "existing", "suppressed", "baselineAccepted",
-        "resolved", "total", "entities", "issues", "requiredIssues"})
+/**
+ * The JSON projection of {@link FindingSummary}, kept as its own record because its field order and
+ * names are part of the frozen v2 contract.
+ *
+ * <p>The numbers come from the shared summary rather than from a second count, which is what
+ * guarantees a JSON report and a Markdown report of the same run agree.
+ */
 record Summary(
         int activeFindings,
         int blocking,
@@ -105,39 +110,13 @@ record Summary(
         int requiredIssues) {
 
     static Summary of(FindingReport report) {
-        int blocking = 0;
-        int existing = 0;
-        int suppressed = 0;
-        int baseline = 0;
-        int resolved = 0;
-        int active = 0;
-        Set<String> entities = new LinkedHashSet<>();
-        for (Finding finding : report.findings()) {
-            entities.add(finding.entityKey().render());
-            if (finding.lifecycle() == FindingLifecycle.RESOLVED) {
-                resolved++;
-                continue;
-            }
-            // Everything that is not resolved is an active finding, whatever its disposition. Under
-            // advisory an eligible finding is re-dispositioned to EXISTING so it does not block — it
-            // is still something this run found, and counting it as neither active nor existing
-            // would make the summary the one part of the report that cannot be reconciled.
-            active++;
-            switch (finding.disposition()) {
-                case ACTIVE -> {
-                    if (finding.blocks()) {
-                        blocking++;
-                    }
-                }
-                case EXISTING -> existing++;
-                case SUPPRESSED -> suppressed++;
-                case BASELINE_ACCEPTED -> baseline++;
-                case RESOLVED, NOT_MATCHED -> { }
-            }
-        }
-        int required = (int) report.issues().stream().filter(EvaluationIssue::required).count();
-        return new Summary(active, blocking, existing, suppressed, baseline,
-                resolved, active + resolved, entities.size(), report.issues().size(), required);
+        return Summary.of(FindingSummary.of(report));
+    }
+
+    static Summary of(FindingSummary summary) {
+        return new Summary(summary.activeFindings(), summary.blocking(), summary.existing(),
+                summary.suppressed(), summary.baselineAccepted(), summary.resolved(),
+                summary.total(), summary.entities(), summary.issues(), summary.requiredIssues());
     }
 
     boolean reconciles() {

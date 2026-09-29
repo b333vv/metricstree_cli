@@ -30,7 +30,7 @@ final class FindingsPresentation {
     /** How many entries the compact presentation shows before it starts omitting. */
     static final int DEFAULT_LIMIT = 20;
 
-    private final List<EntityGroup> groups;
+    private final List<FindingOrdering.EntityGroup> groups;
     private final List<EvaluationIssue> issues;
     private final int totalEntries;
     private final int blockingEntries;
@@ -40,7 +40,7 @@ final class FindingsPresentation {
     private final int resolvedCount;
     private final int omitted;
 
-    private FindingsPresentation(List<EntityGroup> groups, List<EvaluationIssue> issues,
+    private FindingsPresentation(List<FindingOrdering.EntityGroup> groups, List<EvaluationIssue> issues,
             int totalEntries, int blockingEntries, int suppressedCount, int baselineCount,
             int existingCount, int resolvedCount, int omitted) {
         this.groups = groups;
@@ -61,45 +61,38 @@ final class FindingsPresentation {
      * view pass {@link #DEFAULT_LIMIT}.
      */
     static FindingsPresentation of(FindingReport report, Integer limit) {
-        List<Finding> ordered = new ArrayList<>(report.findings());
-        // Blocking first, then by entity, then by rule: a stable order in which the blocking entries
-        // are guaranteed to survive any prefix-based truncation.
-        ordered.sort(Comparator
-                .comparing((Finding finding) -> finding.blocks() ? 0 : 1)
-                .thenComparing(finding -> finding.entityKey().render())
-                .thenComparing(finding -> finding.ruleId()));
+        // The same list the JSON reports, merged and ordered in one place: a format that reordered
+        // or deduplicated differently would be expressing a second opinion about the findings
+        // rather than about how to display them.
+        List<Finding> ordered = FindingOrdering.deduplicated(report.findings());
 
+        // Counted from the merged list, not from the raw one: two reports of one finding are one
+        // finding, and a summary that counted them twice would disagree with the list it summarises.
         int total = ordered.size();
         int blocking = (int) ordered.stream().filter(Finding::blocks).count();
-        int suppressed = count(report, FindingDisposition.SUPPRESSED);
-        int baseline = count(report, FindingDisposition.BASELINE_ACCEPTED);
-        int existing = count(report, FindingDisposition.EXISTING);
-        int resolved = count(report, FindingDisposition.RESOLVED);
+        int suppressed = count(ordered, FindingDisposition.SUPPRESSED);
+        int baseline = count(ordered, FindingDisposition.BASELINE_ACCEPTED);
+        int existing = count(ordered, FindingDisposition.EXISTING);
+        int resolved = count(ordered, FindingDisposition.RESOLVED);
 
         List<Finding> shown = limit == null || ordered.size() <= limit
                 ? ordered
                 : ordered.subList(0, limit);
 
-        Map<String, List<Finding>> byEntity = new LinkedHashMap<>();
-        for (Finding finding : shown) {
-            byEntity.computeIfAbsent(finding.entityKey().render(), key -> new ArrayList<>())
-                    .add(finding);
-        }
-        List<EntityGroup> groups = new ArrayList<>();
-        byEntity.forEach((entity, findings) -> groups.add(new EntityGroup(entity, findings)));
+        List<FindingOrdering.EntityGroup> groups = FindingOrdering.groupByEntity(shown);
 
         return new FindingsPresentation(groups, report.issues(), total, blocking, suppressed,
                 baseline, existing, resolved, total - shown.size());
     }
 
-    private static int count(FindingReport report, FindingDisposition disposition) {
-        return (int) report.findings().stream()
+    private static int count(List<Finding> findings, FindingDisposition disposition) {
+        return (int) findings.stream()
                 .filter(finding -> finding.disposition() == disposition)
                 .count();
     }
 
     /** The findings, grouped by entity. */
-    List<EntityGroup> groups() {
+    List<FindingOrdering.EntityGroup> groups() {
         return groups;
     }
 
@@ -144,31 +137,4 @@ final class FindingsPresentation {
         return omitted > 0;
     }
 
-    /** One entity and every rule it matched. */
-    record EntityGroup(String entity, List<Finding> findings) {
-
-        EntityGroup {
-            findings = List.copyOf(findings);
-        }
-
-        /** The class the findings are about, for a heading. */
-        String qualifiedName() {
-            return findings.get(0).entityKey().qualifiedName();
-        }
-
-        /** The signature, or {@code null} for a class-level entity. */
-        String signature() {
-            return findings.get(0).entityKey().signature();
-        }
-
-        /** Whether any finding in this group blocks. */
-        boolean blocking() {
-            return findings.stream().anyMatch(Finding::blocks);
-        }
-
-        /** {@code path:line} of the first finding, which is where a reader starts. */
-        String location() {
-            return findings.get(0).location().render();
-        }
-    }
 }

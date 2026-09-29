@@ -168,7 +168,7 @@ final class HtmlReportWriter {
         if (presentation.groups().isEmpty()) {
             body.append("<p>No findings.</p>");
         }
-        for (FindingsPresentation.EntityGroup group : presentation.groups()) {
+        for (FindingOrdering.EntityGroup group : presentation.groups()) {
             body.append("<details class=\"section\" data-search=\"")
                     .append(esc(group.qualifiedName().toLowerCase(
                             java.util.Locale.ROOT)))
