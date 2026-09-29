@@ -1,5 +1,47 @@
 # what has been done
 
+## Session: ML-025 — accepting debt without accepting drift (2026-09-29)
+
+A baseline is how a project adopts the policy without adopting a backlog. ML-025 gives it a format of
+its own and makes the ways it could be misused impossible rather than discouraged.
+
+**What was built**
+
+- `FindingBaseline` — schema version, policy digest, rule versions, and entries keyed by fingerprint.
+  Its own format, never a reinterpretation of the legacy `BaselineFile`: the legacy file holds metric
+  values against thresholds, and any translation would silently decide what a project is deemed to
+  have accepted.
+- `FindingBaselineStore` — reads and writes it, atomically, replacing only on an explicit flag.
+  A failed write leaves the previous file byte-for-byte intact, which a test asserts by blocking the
+  move rather than by trusting the code path.
+- `FindingBaselineFilter` — compares each finding against the values its entry was accepted at.
+- Three gate flags: `--findings-baseline`, `--write-findings-baseline`, `--replace-findings-baseline`.
+
+**Decisions worth keeping**
+
+- **Entries store the accepted evidence, not the fact of a match.** This is the whole point. A method
+  can gain a branch, then a second, then a third, each below the rule's +5 per-commit budget, and a
+  baseline recording only "this matched" would call it unchanged debt forever. The test walks +2, +2,
+  +2 against a +5 budget and shows the third step is caught.
+- **A changed policy is an error, never a refresh.** The digest mismatch fails with instructions and
+  names both digests. A tool that re-accepts your debt on your behalf is not reviewing anything.
+- **Export is refused under an incomplete analysis.** A baseline built from a run that could not see
+  everything would accept as debt only what happened to be measurable — a quiet way of forgetting the
+  rest.
+- **Improvement rewrites nothing.** The file is left exactly as written, so a diff of it means
+  something: the entries that appear are the ones somebody decided to accept.
+- **Overwrite is opt-in.** Otherwise accepting a batch of new findings would be something you do by
+  re-running a command rather than something you decide.
+- **Export and read are mutually exclusive**, checked before any file is read or any snapshot created.
+- **A glob-free, mapper-single design held.** The store writes through plain `LinkedHashMap`s and
+  `CliObjectMapper.write`, which keeps the field order stated in code; a private `ObjectMapper` was
+  tried first and `CliObjectMapperContractTest` caught it — including the copy in the test itself.
+
+**Verification:** `./gradlew check` passes. New: `FindingBaselineTest` (23 cases). `BaselineFileTest`
+and `BaselineFilterTest` unchanged and green.
+
+ML-001–ML-025 are DONE. Next ready task: **ML-026**.
+
 ## Session: ML-024 — exceptions you can review (2026-09-29)
 
 A suppression is the one thing a project can do to make a finding stop counting. ML-024 gives it
@@ -2590,7 +2632,7 @@ All three proposals were accepted and implemented; backward compatibility was no
 
 - New active work: accepted maintainability linter strategy, planned in
   `docs/plans/maintainability-linter/README.md`. ML-001–ML-022 are DONE.
-  Next ready task: **ML-025**. Implement one packet per
+  Next ready task: **ML-026**. Implement one packet per
   commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:

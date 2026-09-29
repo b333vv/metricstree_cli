@@ -153,6 +153,23 @@ final class GateCommand implements Callable<Integer> {
                     + "path as --output, and cannot be stdout.")
     private Path jsonOutputFile;
 
+    @CommandLine.Option(names = {"--findings-baseline"}, paramLabel = "PATH",
+            description = "Read accepted debt from this findings baseline. Fails if it was written"
+                    + " under a different policy, and is never refreshed automatically.")
+    private Path findingsBaselineFile;
+
+    @CommandLine.Option(names = {"--write-findings-baseline"}, paramLabel = "PATH",
+            description = "Write the current matches as an accepted baseline and exit. Exports every"
+                    + " current match, not only changed ones, and does not also apply a baseline in"
+                    + " the same run.")
+    private Path writeFindingsBaselineFile;
+
+    @CommandLine.Option(names = {"--replace-findings-baseline"},
+            description = "Allow --write-findings-baseline to overwrite an existing file. Refused"
+                    + " by default: overwriting accepts the current findings as debt, which is a"
+                    + " decision to make after reading what is there.")
+    private boolean replaceFindingsBaseline;
+
     @CommandLine.Option(names = {"--format"}, converter = OutputFormatConverter.class, paramLabel = "FORMAT",
             description = "Report format: json (default) or html. SARIF is rejected: the gate's "
                     + "output is a verdict over a diff, not a findings list. agent-md is available for compact agent output.")
@@ -160,6 +177,23 @@ final class GateCommand implements Callable<Integer> {
 
     @Override
     public Integer call() throws IOException {
+        // Flags are checked before anything is read, so a contradictory invocation is refused
+        // without creating a temporary tree or touching Git.
+        if (writeFindingsBaselineFile != null && findingsBaselineFile != null) {
+            // Export decides what the debt is; reading decides what to do about it. Doing both in
+            // one run would compare this run's findings against a file it had just created, which
+            // is a guaranteed pass meaning nothing.
+            stderr.println("Error: --write-findings-baseline and --findings-baseline cannot be used"
+                    + " together. Export the debt in one run, then read it in the next.");
+            stderr.flush();
+            return 2;
+        }
+        if (replaceFindingsBaseline && writeFindingsBaselineFile == null) {
+            stderr.println("Error: --replace-findings-baseline only means something with"
+                    + " --write-findings-baseline.");
+            stderr.flush();
+            return 2;
+        }
         // Config warnings (unknown keys) are buffered so the verdict line stays first on stderr.
         StringWriter warningBuffer = new StringWriter();
         ProjectConfig config = ProjectConfigs.resolve(
@@ -484,10 +518,129 @@ final class GateCommand implements Callable<Integer> {
         // licence to publish a pass over a check that did not run.
         List<EvaluationIssue> issues = new java.util.ArrayList<>(result.issues());
         issues.addAll(policyIssues(completeness));
-        String status = !result.blocking().isEmpty() ? "FAILED"
+
+        String digest = activePolicy.settings().digest();
+        if (writeFindingsBaselineFile != null) {
+            exportBaseline(result, issues, digest);
+        }
+        FindingBaseline baseline = findingsBaselineFile == null ? null
+                : FindingBaselineStore.read(findingsBaselineFile, digest);
+        List<Finding> findings = baseline == null ? result.findings()
+                : applyBaseline(result, baseline);
+
+        String status = !blocking(findings).isEmpty() ? "FAILED"
                 : issues.stream().anyMatch(EvaluationIssue::required) ? "INCOMPLETE" : "PASSED";
         return new FindingReport(FindingReport.SCHEMA_VERSION, status, activePolicy.settings(),
-                result.findings(), issues, result.suppressions());
+                findings, issues, result.suppressions());
+    }
+
+    /** The findings eligible to block, computed from the baseline-adjusted list. */
+    private static List<Finding> blocking(List<Finding> findings) {
+        return findings.stream().filter(Finding::blocks).toList();
+    }
+
+    /**
+     * Writes the current matches as accepted debt.
+     *
+     * <p>Refuses to write when a <em>required</em> check could not be run: a baseline built from an
+     * incomplete analysis would accept as debt only the findings that happened to be measurable,
+     * which is a quiet way of forgetting the rest. Optional unavailability is different — the entry
+     * for that entity simply has no measured value and is written with what is known, with the count
+     * reported.
+     */
+    private void exportBaseline(MaintainabilityAnalysisService.Result result,
+            List<EvaluationIssue> issues, String digest) {
+        List<EvaluationIssue> required = issues.stream()
+                .filter(EvaluationIssue::required).toList();
+        if (!required.isEmpty()) {
+            throw new IllegalStateException("Refusing to write a findings baseline: "
+                    + required.size() + " required check(s) could not be completed, so this run did"
+                    + " not see everything and the baseline would silently accept only what it"
+                    + " happened to measure. First issue: " + required.get(0).message());
+        }
+        FindingBaseline baseline = FindingBaseline.empty(digest);
+        Map<String, Integer> ruleVersions = new java.util.TreeMap<>();
+        int withoutEvidence = 0;
+        for (Finding finding : result.findings()) {
+            if (!finding.disposition().isMatch() || finding.disposition() != FindingDisposition.ACTIVE) {
+                continue;
+            }
+            MaintainabilityRule rule = MaintainabilityRules.byId(finding.ruleId()).orElse(null);
+            if (rule == null) {
+                continue;
+            }
+            ruleVersions.put(rule.id(), rule.version());
+            Map<org.b333vv.metric.library.core.MetricCode, Double> values =
+                    new java.util.EnumMap<>(org.b333vv.metric.library.core.MetricCode.class);
+            for (FindingEvidence evidence : finding.evidence()) {
+                if (evidence.after() != null) {
+                    values.put(evidence.metric(), evidence.after());
+                }
+            }
+            if (values.isEmpty()) {
+                withoutEvidence++;
+            }
+            baseline = baseline.withEntry(new FindingBaseline.Entry(
+                    FindingFingerprint.of(rule.id(), rule.version(), finding.entityKey()),
+                    rule.id(), finding.entityKey(), values));
+        }
+        FindingBaselineStore.write(writeFindingsBaselineFile,
+                baseline.withRuleVersions(ruleVersions), replaceFindingsBaseline);
+        stderr.println("Wrote " + baseline.entries().size() + " accepted finding(s) to "
+                + writeFindingsBaselineFile.toAbsolutePath().normalize()
+                + (withoutEvidence == 0 ? ""
+                        : "; " + withoutEvidence + " had no measured value and were written with"
+                                + " none, so they cannot be compared for worsening"));
+        stderr.flush();
+    }
+
+    /**
+     * Marks the findings a stored baseline already accounts for.
+     *
+     * <p>Only exact matches are accepted. An entity that merely moved is mapped before it gets here
+     * by the correspondence step, which maps an exact relocation; a changed signature or package is a
+     * different entity, and accepting its debt would transfer one method's history onto its
+     * replacement.
+     */
+    private List<Finding> applyBaseline(MaintainabilityAnalysisService.Result result,
+            FindingBaseline baseline) {
+        FindingBaselineFilter filter = new FindingBaselineFilter(baseline,
+                new FindingDeltaEvaluator());
+        List<Finding> adjusted = new java.util.ArrayList<>(result.findings().size());
+        for (Finding finding : result.findings()) {
+            MaintainabilityRule rule = MaintainabilityRules.byId(finding.ruleId()).orElse(null);
+            if (rule == null) {
+                adjusted.add(finding);
+                continue;
+            }
+            if (!filter.isAcceptedDebt(finding, rule)) {
+                adjusted.add(finding);
+                continue;
+            }
+            // Worse than the values this debt was accepted at, even if the base revision says it is
+            // unchanged: growth too slow to trip the per-commit budget is exactly what the stored
+            // evidence exists to catch.
+            adjusted.add(filter.worsensAcceptedValues(finding, rule)
+                    ? finding.withDisposition(finding.disposition(), "worsened beyond accepted debt")
+                    : finding.withDisposition(FindingDisposition.BASELINE_ACCEPTED,
+                            "accepted baseline debt at " + acceptedValuesOf(finding, baseline, rule)));
+        }
+        return adjusted;
+    }
+
+    /** The values a finding was accepted at, rendered for the disposition reason. */
+    private static String acceptedValuesOf(Finding finding, FindingBaseline baseline,
+            MaintainabilityRule rule) {
+        FindingBaseline.Entry entry = baseline.entries().get(
+                FindingFingerprint.of(rule.id(), rule.version(), finding.entityKey()));
+        if (entry == null || entry.acceptedValues().isEmpty()) {
+            return "its recorded value";
+        }
+        return entry.acceptedValues().entrySet().stream()
+                .map(values -> values.getKey().name() + " " + values.getValue())
+                .sorted()
+                .reduce((left, right) -> left + ", " + right)
+                .orElse("its recorded value");
     }
 
     /** The analysed reports plus the path translation, carried past the snapshot lifecycle. */

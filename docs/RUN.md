@@ -290,6 +290,52 @@ itself, so the only signal in a pull request is the added line.
 There is no automatic suppression generation, and none will be added: a tool that writes its own
 exceptions cannot review them.
 
+### Findings baseline (`--findings-baseline` / `--write-findings-baseline`)
+
+A baseline records debt a project has **explicitly accepted**, so adopting the policy does not mean
+adopting a backlog. It is a different format from the legacy `--baseline` file and is never
+reinterpreted as one: a legacy file holds metric values against thresholds, this one holds findings.
+
+**Exporting** writes every current match, not only changed ones — an export is not a diff, and
+filtering it by the current change would silently accept only part of the debt:
+
+```sh
+metricstree gate --base origin/main --policy maintainability \
+  --write-findings-baseline findings-baseline.json
+```
+
+**Reading** it in a later run:
+
+```sh
+metricstree gate --base origin/main --policy maintainability \
+  --findings-baseline findings-baseline.json
+```
+
+Four rules govern it:
+
+- **Overwriting needs a flag.** `--replace-findings-baseline` is required to write over an existing
+  file. A run that silently replaced it would make the tool the author of its own policy: you could
+  accept a batch of new findings by re-running a command, which is a decision, not an observation.
+- **A changed policy is an error, not a warning.** The file records the digest of the policy it was
+  written under. If the policy has changed, the accepted debt means something different and the run
+  fails with instructions. Nothing refreshes it automatically.
+- **Slow growth is caught.** Entries store the values debt was accepted *at*, not merely that it
+  matched. A method can gain a branch, then a second, then a third — each below the rule's per-commit
+  worsening budget — and the third is caught against the stored evidence rather than only against the
+  base revision.
+- **Improvement changes nothing on disk.** The baseline is left exactly as written. A tool that
+  rewrote it on improvement would be editing a decision you made, and the entries worth reviewing are
+  the ones that have not moved.
+
+**What it will not do:** accept anything whose identity it cannot match exactly. An entity that merely
+moved file is mapped; a renamed method or a moved package is a different entity, and its debt is not
+inherited. Stale entries are reported, not pruned — the difference between "this was fixed" and "this
+entry never matched" is worth seeing.
+
+Export is refused when a **required** check could not run: a baseline built from an incomplete
+analysis would accept as debt only what happened to be measurable. Export and read cannot be combined
+in one run, and writing a baseline does not update the config, the source, or Git.
+
 ## Project configuration (`.metrics-gate.yml`)
 
 A single YAML or JSON file at the repository root can hold thresholds, rules, exclusions and
