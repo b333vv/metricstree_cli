@@ -1,0 +1,28 @@
+{
+  "schemaVersion" : "v2",
+  "toolVersion" : "2026.0.0",
+  "status" : "PASSED",
+  "policyDigest" : "95b7d9b6eef967e8bb1e5eb1a0930026d0ce7b1516942701d0f4c2e6b60eb4f0",
+  "enabledRules" : [ "MT-M001", "MT-M002", "MT-M003", "MT-C002" ],
+  "enforcement" : "ADVISORY",
+  "summary" : {
+    "activeFindings" : 0,
+    "blocking" : 0,
+    "existing" : 0,
+    "suppressed" : 0,
+    "baselineAccepted" : 0,
+    "resolved" : 0,
+    "total" : 0,
+    "entities" : 0,
+    "issues" : 0,
+    "requiredIssues" : 0
+  },
+  "comparison" : {
+    "base" : "HEAD",
+    "mergeBase" : "0e5763068d6de0b0ad79a36396f2b09560b71b47",
+    "head" : "0e5763068d6de0b0ad79a36396f2b09560b71b47"
+  },
+  "findings" : [ ],
+  "issues" : [ ],
+  "suppressions" : [ ]
+}

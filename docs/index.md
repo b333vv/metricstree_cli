@@ -7,6 +7,8 @@
   agent may not do; [`guides/migrate-to-maintainability.md`](guides/migrate-to-maintainability.md) — moving
   from thresholds to findings, in order
 - **Rules:** [`rules/`](rules) — what each rule observes and what it is known to get wrong
+- **Performance:** [`evaluation/benchmark/README.md`](../evaluation/benchmark/README.md) — how to
+  reproduce the recorded measurements, and what they do not establish
 - **Ready-to-run configs:** [`examples/maintainability/`](../examples/maintainability)
 - **Agent Instructions:** `AGENTS.md` — Development workflow and rules
 - **Architecture:** `docs/ARCHITECTURE.md` — System design

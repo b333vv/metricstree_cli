@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "v1",
+  "default": "synthetic",
+  "corpora": [
+    {
+      "name": "synthetic",
+      "kind": "synthetic",
+      "seed": 20260930,
+      "packages": 12,
+      "classesPerPackage": 8,
+      "license": "generated; contains no third-party code",
+      "notes": "Deterministic from the seed. The same seed produces byte-identical sources, which is what makes two machines comparable at all. Nothing is downloaded."
+    },
+    {
+      "name": "a-real-project",
+      "kind": "local",
+      "path": null,
+      "revision": null,
+      "license": "YOUR PROJECT's license -- record it here",
+      "notes": "A manifest entry, not a corpus. Fill in path and revision and record the license before benchmarking against private or third-party sources. No private source is ever committed: this repository records the digest and the revision, and the sources stay where they are."
+    }
+  ]
+}

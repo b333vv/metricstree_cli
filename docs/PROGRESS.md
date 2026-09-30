@@ -2835,7 +2835,7 @@ All three proposals were accepted and implemented; backward compatibility was no
 
 - New active work: accepted maintainability linter strategy, planned in
   `docs/plans/maintainability-linter/README.md`. ML-001–ML-022 are DONE.
-  Next ready task: **ML-031**. Implement one packet per
+  Next ready task: **ML-032**. Implement one packet per
   commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:

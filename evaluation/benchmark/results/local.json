@@ -1,0 +1,115 @@
+{
+  "cli_path": "/Users/vadim/code/metricstree_cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli",
+  "cold_summary": {
+    "maxSeconds": 1.3017,
+    "medianSeconds": 1.3017,
+    "method": "median and nearest-rank p95 over 1 cold samples; every sample is retained",
+    "minSeconds": 1.3017,
+    "p95Seconds": 1.3017,
+    "samples": 1
+  },
+  "comparison_mode": "committed",
+  "corpus": {
+    "classesPerPackage": 8,
+    "digest": "da0aae25c8ce184bfae42bc379d85544ddfb4f849aa5242abe39a65f1281d5e8",
+    "fileCount": 96,
+    "kind": "synthetic",
+    "packages": 12,
+    "revision": "3f62e2f174559d65a30ae3a548aaf257a0054c3a",
+    "root": "/tmp/bm5/corpus",
+    "seed": 20260930
+  },
+  "environment": {
+    "cliPath": "/Users/vadim/code/metricstree_cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli",
+    "cpuCount": 8,
+    "javaVersion": "openjdk version \"21.0.3\" 2024-04-16",
+    "machine": "arm64",
+    "platform": "macOS-27.0-arm64-arm-64bit",
+    "processor": "arm",
+    "python": "3.12.4"
+  },
+  "method": {
+    "changedFileCount": 12,
+    "measuredTrials": 5,
+    "memoryMethod": "the tool's own 'Heap after GC' reading, taken at its phase boundary",
+    "mode": "committed",
+    "percentile": "nearest-rank",
+    "warmupTrials": 1
+  },
+  "mode": "local",
+  "problems": [
+    "warm local median 1.261s against the 2.0s target: met"
+  ],
+  "samples": [
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 0,
+      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
+      "seconds": 1.3017,
+      "warm": false
+    },
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 0,
+      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
+      "seconds": 1.2613,
+      "warm": true
+    },
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 1,
+      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
+      "seconds": 1.2596,
+      "warm": true
+    },
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 2,
+      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
+      "seconds": 1.2598,
+      "warm": true
+    },
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 3,
+      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
+      "seconds": 1.3254,
+      "warm": true
+    },
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 4,
+      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
+      "seconds": 1.3611,
+      "warm": true
+    }
+  ],
+  "schema_version": "v1",
+  "tool_version": "2026.0.0",
+  "warm_summary": {
+    "maxSeconds": 1.3611,
+    "medianSeconds": 1.2613,
+    "method": "median and nearest-rank p95 over 5 warm samples; every sample is retained",
+    "minSeconds": 1.2596,
+    "p95Seconds": 1.3611,
+    "samples": 5
+  }
+}
