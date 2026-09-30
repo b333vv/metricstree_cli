@@ -141,6 +141,18 @@ class MaintainabilityWorkflowTest {
                 + "        return 0;\n    }\n}\n";
     }
 
+    /**
+     * A commit that is deliberately not pushed.
+     *
+     * <p>The shape of a pull request: the base ref stays where it was and HEAD carries the change.
+     * With the change pushed, {@code HEAD~1} would be the change itself and the gate would correctly
+     * report that nothing differed — which is a different test than the one intended.
+     */
+    private static void commitLocally(GitFixture git, String message) throws Exception {
+        git.git("add", "-A");
+        git.git("commit", "-q", "-m", message);
+    }
+
     private static String config(String policy) {
         return "gate:\n  policy: " + policy + "\nmaintainability:\n  enabledRules: [MT-M001]\n";
     }
@@ -213,6 +225,94 @@ class MaintainabilityWorkflowTest {
             assertTrue(found.findValuesAsText("disposition").contains("EXISTING"),
                     "and the debt is reported as pre-existing rather than quietly dropped");
             assertEquals(0, exit, "a change that did not worsen anything must not fail the build");
+        }
+    }
+
+    @Nested
+    @DisplayName("The accepted-debt workflow")
+    class Baselines {
+
+        /**
+         * Export, read, and the build passes on debt the project has agreed to carry.
+         *
+         * <p>Two separate defects made this impossible, and the second only showed up once the first
+         * was fixed, which is why both are asserted here rather than the workflow being taken on
+         * trust:
+         *
+         * <ol>
+         *   <li>every method-level rule was also evaluated against its *class*, whose metrics hold no
+         *       CC, so each class raised a required "could not be evaluated" issue -- and the export
+         *       refused to write a file describing debt the tool had measured perfectly well;</li>
+         *   <li>under this policy the legacy threshold violations still decided the verdict, so a
+         *       baseline that accepted the debt left the exit code at 1 while the findings report the
+         *       run had just written said PASSED.</li>
+         * </ol>
+         */
+        @Test
+        @DisplayName("exports debt, reads it back, and stops blocking")
+        void acceptedDebtStopsBlocking() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(20));
+            commitLocally(git, "complex");
+            Path baseline = repo.resolve("findings-baseline.json");
+
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            assertEquals(0, gate(err, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--write-findings-baseline", baseline.toString()),
+                    "the export must succeed, or the documented workflow does not exist: "
+                            + err.toString());
+            assertTrue(Files.exists(baseline));
+
+            ByteArrayOutputStream readErr = new ByteArrayOutputStream();
+            assertEquals(0, gate(readErr, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--enforcement", "enforce",
+                    "--findings-baseline", baseline.toString()),
+                    "accepted debt must stop blocking, and the exit code must agree with the"
+                            + " findings report: " + readErr.toString());
+        }
+
+        @Test
+        @DisplayName("a regression with no baseline still fails the build")
+        void regressionWithoutBaselineStillFails() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(20));
+            commitLocally(git, "complex");
+
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            assertNotEquals(0, gate(err, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--enforcement", "enforce"), err.toString());
+        }
+
+        /**
+         * A method-level rule is not evaluated against its class.
+         *
+         * <p>The class has no method metrics, so the evaluation came back unavailable and was counted
+         * as a required gap — for every class, on every method-level rule, regardless of whether
+         * anything was wrong.
+         */
+        @Test
+        @DisplayName("a method-level rule raises no phantom issue about the class")
+        void methodLevelRuleDoesNotEvaluateTheClass() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(20));
+            commitLocally(git, "complex");
+            Path report = repo.resolve("findings.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            gateWithReport(report, err, "--base", "HEAD~1", "--policy", "maintainability");
+
+            JsonNode issues = mapper.readTree(Files.readString(report)).get("issues");
+            assertTrue(issues.isEmpty(),
+                    "the only reason a rule could be unevaluated here is a class-level phantom: "
+                            + issues);
+            assertEquals(0,
+                    mapper.readTree(Files.readString(report)).get("summary").get("requiredIssues")
+                            .asInt());
         }
     }
 

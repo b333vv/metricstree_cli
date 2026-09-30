@@ -452,10 +452,16 @@ final class GateCommand implements Callable<Integer> {
         // changes that. Only when nothing failed can incompleteness matter, and then it is INCOMPLETE
         // rather than PASSED, because "no finding" and "no finding could be established" are different
         // answers and a gate that conflates them is worse than one that does not run.
-        if (maintainabilityReport != null && !maintainabilityReport.blocking().isEmpty()) {
-            status = "FAILED";
-            exitCode = 1;
-        } else if (!violations.isEmpty()) {
+        //
+        // Under the maintainability policy the policy's own status is the verdict, and the legacy
+        // threshold evaluator's violations are only reported. Letting them decide meant a project
+        // that had accepted its debt through a baseline still failed on the legacy thresholds, with
+        // the exit code saying FAILED while the findings report it had just written said PASSED.
+        // Two documents disagreeing about the same run is worse than either one.
+        boolean policyFailed = maintainabilityReport != null
+                && "FAILED".equals(maintainabilityReport.status());
+        boolean legacyDecides = maintainabilityReport == null;
+        if (policyFailed || (legacyDecides && !violations.isEmpty()) || !parseErrors.isEmpty()) {
             status = "FAILED";
             exitCode = 1;
         } else if (completeness.hasRequiredGaps()) {
@@ -471,7 +477,7 @@ final class GateCommand implements Callable<Integer> {
         // cut off, and a config warning printed above it both hides the verdict and makes a
         // passing-looking build the first thing a reviewer sees.
         String verdict = verdictLine(status, violations, result.warnings(), subjectPaths.size(),
-                completeness);
+                completeness, maintainabilityReport == null, parseErrors.size());
         stderr.println(verdict);
         stderr.flush();
         flushWarnings(warningBuffer);
@@ -563,7 +569,16 @@ final class GateCommand implements Callable<Integer> {
         Map<String, Integer> ruleVersions = new java.util.TreeMap<>();
         int withoutEvidence = 0;
         for (Finding finding : result.findings()) {
-            if (!finding.disposition().isMatch() || finding.disposition() != FindingDisposition.ACTIVE) {
+            // Everything that matched at this revision, whatever the current enforcement would do
+            // about it.
+            //
+            // Filtering to `ACTIVE` was wrong in a way that made the documented first step useless:
+            // advisory re-dispositions every eligible finding to EXISTING, and advisory is the
+            // default, so the export wrote an empty baseline -- a file that accepted nothing while
+            // looking exactly like one that had been reviewed. A baseline records the debt a project
+            // is carrying; whether the run in force today would block on it is a separate question,
+            // and answering it here silently narrowed the file.
+            if (!finding.disposition().isMatch()) {
                 continue;
             }
             MaintainabilityRule rule = MaintainabilityRules.byId(finding.ruleId()).orElse(null);
@@ -980,9 +995,10 @@ final class GateCommand implements Callable<Integer> {
             List<GateFinding> violations,
             List<GateFinding> warnings,
             int changedFiles,
-            AnalysisCompleteness completeness) {
+            AnalysisCompleteness completeness,
+            boolean legacyDecides, int parseErrors) {
         if ("FAILED".equals(status)) {
-            return failedLine(violations, warnings, changedFiles);
+            return failedLine(violations, warnings, changedFiles, legacyDecides, parseErrors);
         }
         if ("INCOMPLETE".equals(status)) {
             int required = completeness.requiredGapCount();
@@ -1018,7 +1034,8 @@ final class GateCommand implements Callable<Integer> {
      * now names the policy's own count.
      */
     private String failedLine(
-            List<GateFinding> violations, List<GateFinding> warnings, int changedFiles) {
+            List<GateFinding> violations, List<GateFinding> warnings, int changedFiles,
+            boolean legacyDecides, int parseErrors) {
         Map<GateFinding.Type, Integer> counts = new LinkedHashMap<>();
         for (GateFinding violation : violations) {
             counts.merge(violation.type(), 1, Integer::sum);
@@ -1027,6 +1044,23 @@ final class GateCommand implements Callable<Integer> {
             int blocking = maintainabilityBlockingCount;
             return "FAILED: " + blocking + " maintainability finding"
                     + (blocking == 1 ? "" : "s") + " blocked; no gate violation";
+        }
+        if (!legacyDecides) {
+            // The counts are the legacy evaluator's, which under this policy are reported and not
+            // obeyed. Naming them would say the run failed for a reason it did not fail for.
+            //
+            // A file that would not parse is not a finding either. "0 maintainability findings
+            // blocked" would be a technically-true reason for a run that failed because the code
+            // could not be read at all, and a CI author reading it would go looking for a finding
+            // that does not exist.
+            if (parseErrors > 0) {
+                return "FAILED: " + parseErrors + " file" + (parseErrors == 1 ? "" : "s")
+                        + " could not be parsed; " + violations.size()
+                        + " reported";
+            }
+            int blocking = maintainabilityBlockingCount;
+            return "FAILED: " + blocking + " maintainability finding"
+                    + (blocking == 1 ? "" : "s") + " blocked";
         }
         StringBuilder line = new StringBuilder("FAILED:");
         for (Map.Entry<GateFinding.Type, Integer> entry : counts.entrySet()) {

@@ -285,8 +285,10 @@ class GitHubActionConsumerTest {
 
             assertNotEquals(0, result.exitCode(),
                     "code that does not parse cannot be a clean scan: " + result.output());
-            assertTrue(result.output.contains("parse error"),
-                    "and it has to say what it could not read: " + result.output());
+            assertTrue(result.output.contains("could not be parsed"),
+                    "and it has to say what it could not read. '0 findings blocked' would be a true"
+                            + " statement about a run that failed because the code was unreadable:"
+                            + " " + result.output());
             assertEquals("FAILED", result.output("status"));
         }
     }

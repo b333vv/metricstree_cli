@@ -138,12 +138,26 @@ final class MaintainabilityAnalysisService {
                 String path = logicalPath.apply(classReport.sourcePath());
                 EntityKey classKey = EntityKey.ofClass(path, classReport.qualifiedName());
 
-                RuleEvaluation classEvaluation =
-                        classEvaluator.evaluate(rule, classKey, classReport.metrics(), scope);
-                collect(rule, classEvaluation, base, classKey, false, path, logicalPath, scope,
-                        correspondence, findings, issues);
+                // A rule is evaluated only against the entity kind it is about.
+                //
+                // Evaluating a method-level rule against a class looked harmless and was not: the
+                // class has no method metrics, so CC came back absent and every method-level rule
+                // raised a *required* "could not be evaluated" issue on every class in the project.
+                // Those issues were counted, published, and then made a baseline export refuse to
+                // write a file describing debt the tool had in fact measured perfectly well. The
+                // finding for the method was there all along, beside a phantom complaint about the
+                // class it lives in.
+                if (rule.level() == MaintainabilityRule.RuleLevel.CLASS) {
+                    RuleEvaluation classEvaluation =
+                            classEvaluator.evaluate(rule, classKey, classReport.metrics(), scope);
+                    collect(rule, classEvaluation, base, classKey, false, path, logicalPath, scope,
+                            correspondence, findings, issues);
+                }
 
                 for (MethodReport method : classReport.methods()) {
+                    if (rule.level() != MaintainabilityRule.RuleLevel.METHOD) {
+                        break;
+                    }
                     EntityKey methodKey =
                             EntityKey.ofMethod(path, classReport.qualifiedName(), method.signature());
                     RuleEvaluation methodEvaluation = methodEvaluator.evaluate(rule, methodKey,
