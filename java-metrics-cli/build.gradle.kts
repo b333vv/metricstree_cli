@@ -128,6 +128,11 @@ tasks.register<Test>("integrationTest") {
     // The version and the unpacked distribution, so the artifact tests assert against the build
     // rather than against a hard-coded number that would drift on the next bump.
     systemProperty("javaMetricsCliVersion", metricsVersion)
+    // The action's script, so the consumer tests exercise the same file the action runs rather than
+    // a copy of it. A test of a reimplementation proves nothing about the thing that ships.
+    systemProperty(
+            "metricsGateActionScript",
+            rootProject.file("scripts/run-metrics-gate-action.sh").absolutePath)
     systemProperty(
             "javaMetricsCliDistribution",
             layout.buildDirectory.dir("dist-unpacked/java-metrics-cli").get().asFile.absolutePath)

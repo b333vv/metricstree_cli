@@ -4,11 +4,31 @@ author: 'b333vv'
 
 inputs:
   base:
-    description: 'Base git reference to compare against (defaults to origin/${{ github.base_ref }} or origin/main)'
+    description: 'Base git reference to compare against. Defaults to origin/${{ github.base_ref }}, or origin/main on a push.'
+    required: false
+    default: ''
+  tool-version:
+    description: 'Version of the released CLI to download. Ignored when cli-path is set.'
+    required: false
+    default: 'latest'
+  cli-path:
+    description: 'Path to an already-present java-metrics-cli executable. Use for an offline or air-gapped runner, and for a locally built distribution. Nothing is downloaded when this is set.'
+    required: false
+    default: ''
+  checksum:
+    description: 'SHA-256 of the distribution archive. When set, the download is verified against it and the action stops before analysing anything if it does not match.'
     required: false
     default: ''
   config:
     description: 'Path to .metrics-gate.yml project configuration file'
+    required: false
+    default: ''
+  policy:
+    description: 'Policy deciding the verdict: legacy (default) uses thresholds; maintainability uses the versioned rule catalogue'
+    required: false
+    default: ''
+  enforcement:
+    description: 'For --policy maintainability: advisory (default) reports findings without failing; enforce blocks on them'
     required: false
     default: ''
   profile:
@@ -24,7 +44,7 @@ inputs:
     required: false
     default: ''
   report-format:
-    description: 'Report format: json or html'
+    description: 'Report format: json, html or agent-md. The findings JSON is always produced as well, because the counts come from it.'
     required: false
     default: 'json'
   report-path:
@@ -34,120 +54,169 @@ inputs:
 
 outputs:
   status:
-    description: 'Gate status: PASSED or FAILED'
+    description: 'Gate status: PASSED, FAILED, INCOMPLETE or ERROR'
     value: ${{ steps.run-gate.outputs.status }}
-  violations-count:
-    description: 'Number of violations detected by the gate'
-    value: ${{ steps.run-gate.outputs.violations-count }}
+  exit-code:
+    description: 'The tool''s own exit code: 0 passed, 1 failed, 2 incomplete or a usage error'
+    value: ${{ steps.run-gate.outputs.exit-code }}
+  blocking-count:
+    description: 'Findings eligible to block the build'
+    value: ${{ steps.run-gate.outputs.blocking-count }}
+  total-count:
+    description: 'Total findings, whatever their disposition'
+    value: ${{ steps.run-gate.outputs.total-count }}
+  entities:
+    description: 'Entities carrying at least one finding'
+    value: ${{ steps.run-gate.outputs.entities }}
+  issues:
+    description: 'Evaluation issues: checks that could not be run'
+    value: ${{ steps.run-gate.outputs.issues }}
+  tool-version:
+    description: 'The CLI version that produced the report'
+    value: ${{ steps.run-gate.outputs.tool-version }}
   report-path:
     description: 'Path to the generated gate report'
     value: ${{ steps.run-gate.outputs.report-path }}
+  findings-path:
+    description: 'Path to the findings JSON, the document the counts come from'
+    value: ${{ steps.run-gate.outputs.findings-path }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Determine base ref
-      id: determine-base
+    # ------------------------------------------------------------------ the tool
+    #
+    # Two ways in, and only two: a verified download of a release, or a path the caller already has.
+    # There is deliberately no "build the CLI from this action's checkout" fallback: an action that
+    # falls back to running Gradle in the *consumer's* repository builds their project with a tool
+    # they never asked for, fails on a Gradle they may not have, and writes into their source tree.
+
+    - name: Resolve the CLI
+      id: cli
       shell: bash
+      env:
+        INPUT_CLI_PATH: ${{ inputs.cli-path }}
+        INPUT_TOOL_VERSION: ${{ inputs.tool-version }}
+        INPUT_CHECKSUM: ${{ inputs.checksum }}
+        GITHUB_OUTPUT: ${{ github.output }}
       run: |
-        BASE="${{ inputs.base }}"
-        if [ -z "$BASE" ]; then
-          if [ -n "$GITHUB_BASE_REF" ]; then
-            BASE="origin/$GITHUB_BASE_REF"
+        set -euo pipefail
+        work="$RUNNER_TEMP/metricstree-cli"
+
+        if [ -n "$INPUT_CLI_PATH" ]; then
+          if [ ! -x "$INPUT_CLI_PATH" ]; then
+            echo "Error: cli-path was set to '$INPUT_CLI_PATH', which is not an executable file." >&2
+            echo "Point it at a java-metrics-cli launcher or at a self-contained jar's java." >&2
+            exit 2
+          fi
+          echo "Using the CLI supplied by the workflow at $INPUT_CLI_PATH"
+          echo "cli-path=$INPUT_CLI_PATH" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        version="$INPUT_TOOL_VERSION"
+        if [ "$version" = "latest" ]; then
+          echo "Resolving the latest release"
+          version=$(curl -fsSL --retry 3 \
+            "https://api.github.com/repos/b333vv/metricstree_cli/releases/latest" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].lstrip("v"))')
+        fi
+        echo "cli-version=$version" >> "$GITHUB_OUTPUT"
+
+        url="https://github.com/b333vv/metricstree_cli/releases/download/v${version}/metricstree-cli-${version}.zip"
+        archive="$RUNNER_TEMP/metricstree-cli-${version}.zip"
+        echo "Downloading $url"
+        curl -fsSL --retry 3 -o "$archive" "$url"
+
+        # Verified before the tool is ever executed. A checksum that does not match means we stop
+        # here, having analysed nothing: running an unverified binary and reporting its verdict would
+        # publish a quality claim from an artifact nobody can account for.
+        if [ -n "$INPUT_CHECKSUM" ]; then
+          expected=$(printf '%s' "$INPUT_CHECKSUM" | tr '[:upper:]' '[:lower:]')
+          if command -v sha256sum >/dev/null 2>&1; then
+            actual=$(sha256sum "$archive" | cut -d' ' -f1)
           else
-            BASE="origin/main"
+            actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
           fi
-        fi
-        echo "base_ref=$BASE" >> $GITHUB_OUTPUT
-        echo "Using base ref: $BASE"
-
-    - name: Ensure base ref is fetched
-      shell: bash
-      run: |
-        BASE="${{ steps.determine-base.outputs.base_ref }}"
-        # Strip origin/ prefix for git fetch if present
-        FETCH_REF="${BASE#origin/}"
-        if ! git rev-parse --verify --quiet "$BASE" > /dev/null 2>&1; then
-          echo "Base ref $BASE not found locally, fetching..."
-          git fetch origin "$FETCH_REF" --depth=100 || git fetch --unshallow || git fetch origin
-        fi
-
-    - name: Build java-metrics-cli distribution
-      id: build-cli
-      shell: bash
-      run: |
-        CLI_BIN="${{ github.action_path }}/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli"
-        if [ ! -x "$CLI_BIN" ]; then
-          # Check if current repo root has gradlew
-          if [ -f "${{ github.action_path }}/gradlew" ]; then
-            (cd "${{ github.action_path }}" && ./gradlew :java-metrics-cli:installDist -q)
-          elif [ -f "./gradlew" ]; then
-            ./gradlew :java-metrics-cli:installDist -q
+          if [ "$actual" != "$expected" ]; then
+            echo "Error: the downloaded archive does not match the expected checksum." >&2
+            echo "  expected $expected" >&2
+            echo "  actual   $actual" >&2
+            echo "Nothing was analysed." >&2
+            exit 2
           fi
-        fi
-        if [ -x "$CLI_BIN" ]; then
-          echo "cli_path=$CLI_BIN" >> $GITHUB_OUTPUT
-        elif [ -x "./java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli" ]; then
-          echo "cli_path=$(pwd)/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli" >> $GITHUB_OUTPUT
+          echo "Checksum verified"
         else
-          echo "Error: java-metrics-cli executable could not be prepared." >&2
+          echo "::warning::No checksum was supplied, so the download was not verified. Set the"
+          echo "::warning::'checksum' input to pin the artifact you expect."
+        fi
+
+        rm -rf "$work"
+        mkdir -p "$work"
+        unzip -q "$archive" -d "$work"
+        launcher="$work/metricstree-cli/bin/java-metrics-cli"
+        if [ ! -x "$launcher" ]; then
+          echo "Error: the archive did not contain the expected launcher." >&2
           exit 2
         fi
+        echo "cli-path=$launcher" >> "$GITHUB_OUTPUT"
 
-    - name: Run diff-aware gate
+    # ------------------------------------------------------------------ the gate
+
+    - name: Run the metrics gate
       id: run-gate
       shell: bash
+      env:
+        # Every input crosses into the script as an environment variable. None is interpolated into
+        # the script's source text, so a branch name or a path containing a quote, a semicolon or a
+        # command substitution is a string and never code.
+        MG_CLI: ${{ steps.cli.outputs.cli-path }}
+        MG_BASE_OVERRIDE: ${{ inputs.base }}
+        MG_REPORT: ${{ inputs.report-path }}
+        MG_FINDINGS: ${{ runner.temp }}/metrics-findings.json
+        MG_FORMAT: ${{ inputs.report-format }}
+        MG_MODE: committed
+        MG_CONFIG: ${{ inputs.config }}
+        MG_PROFILE: ${{ inputs.profile }}
+        MG_THRESHOLDS: ${{ inputs.thresholds }}
+        MG_EXCLUDE_FILE: ${{ inputs.exclude-file }}
+        MG_POLICY: ${{ inputs.policy }}
+        MG_ENFORCEMENT: ${{ inputs.enforcement }}
+        GITHUB_OUTPUT: ${{ steps.run-gate.outputs }}
+        GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
       run: |
-        CLI="${{ steps.build-cli.outputs.cli_path }}"
-        BASE="${{ steps.determine-base.outputs.base_ref }}"
-        REPORT="${{ inputs.report-path }}"
-        FORMAT="${{ inputs.report-format }}"
+        "${{ github.action_path }}/scripts/run-metrics-gate-action.sh"
 
-        ARGS=("gate" "--base=$BASE" "-o" "$REPORT" "--format=$FORMAT")
+    # ------------------------------------------------------------------ the evidence
 
-        if [ -n "${{ inputs.config }}" ]; then
-          ARGS+=("--config=${{ inputs.config }}")
+    - name: Stage the reports
+      id: stage-reports
+      if: always()
+      shell: bash
+      env:
+        INPUT_REPORT_PATH: ${{ inputs.report-path }}
+      run: |
+        # Uploaded on every outcome, not only on failure. A run that reported INCOMPLETE and left no
+        # evidence is the case where a person most needs to see what was actually checked.
+        reports=""
+        [ -f "$INPUT_REPORT_PATH" ] && reports="$reports $INPUT_REPORT_PATH"
+        [ -f "${{ runner.temp }}/metrics-findings.json" ] && \
+          reports="$reports ${{ runner.temp }}/metrics-findings.json"
+        if [ -z "$reports" ]; then
+          echo "No report was produced; there is nothing to upload." >&2
+          exit 0
         fi
-        if [ -n "${{ inputs.profile }}" ]; then
-          ARGS+=("-p" "${{ inputs.profile }}")
-        fi
-        if [ -n "${{ inputs.thresholds }}" ]; then
-          ARGS+=("-t" "${{ inputs.thresholds }}")
-        fi
-        if [ -n "${{ inputs.exclude-file }}" ]; then
-          ARGS+=("-e" "${{ inputs.exclude-file }}")
-        fi
+        mkdir -p "$RUNNER_TEMP/metrics-gate-reports"
+        for report in $reports; do
+          cp "$report" "$RUNNER_TEMP/metrics-gate-reports/$(basename "$report")"
+        done
+        echo "Reports collected:"
+        ls -1 "$RUNNER_TEMP/metrics-gate-reports"
 
-        set +e
-        "$CLI" "${ARGS[@]}"
-        GATE_EXIT=$?
-        set -e
-
-        STATUS="FAILED"
-        if [ $GATE_EXIT -eq 0 ]; then
-          STATUS="PASSED"
-        fi
-
-        VIOLATIONS=0
-        if [ -f "$REPORT" ] && [ "$FORMAT" = "json" ]; then
-          # Extract violations count if jq or python is available
-          if command -v jq >/dev/null 2>&1; then
-            VIOLATIONS=$(jq '.violations | length' "$REPORT" 2>/dev/null || echo 0)
-          elif command -v python3 >/dev/null 2>&1; then
-            VIOLATIONS=$(python3 -c "import json; d=json.load(open('$REPORT')); print(len(d.get('violations', [])))" 2>/dev/null || echo 0)
-          fi
-        fi
-
-        echo "status=$STATUS" >> $GITHUB_OUTPUT
-        echo "violations-count=$VIOLATIONS" >> $GITHUB_OUTPUT
-        echo "report-path=$REPORT" >> $GITHUB_OUTPUT
-
-        # Output GitHub Step Summary
-        if [ -n "$GITHUB_STEP_SUMMARY" ]; then
-          echo "### Java Metrics Gate: $STATUS" >> $GITHUB_STEP_SUMMARY
-          echo "- **Base Ref:** \`$BASE\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Violations:** $VIOLATIONS" >> $GITHUB_STEP_SUMMARY
-          echo "- **Report:** \`$REPORT\`" >> $GITHUB_STEP_SUMMARY
-        fi
-
-        exit $GATE_EXIT
+    - name: Upload the reports
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: metrics-gate-report
+        path: ${{ runner.temp }}/metrics-gate-reports/
+        if-no-files-found: warn

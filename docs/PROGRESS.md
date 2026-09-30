@@ -1,5 +1,50 @@
 # what has been done
 
+## Session: ML-029 — the action, tested the way a consumer runs it (2026-09-29)
+
+The action had four steps of inline `run:` blocks and no test. Four steps of YAML that can only be
+exercised by pushing a tag is four steps nobody has verified, and the interesting failures were
+exactly the ones that only appear on a real consumer.
+
+**What changed**
+
+- `scripts/run-metrics-gate-action.sh` holds the gate step, and `action.yml` calls it. Every input
+  crosses into it as an environment variable and every value reaches the CLI through a quoted array
+  element. Nothing is interpolated into source text.
+- The action brings its own tool: a checksum-verified release download, or a `cli-path` the workflow
+  supplies. **The Gradle fallback is gone.** An action that falls back to building the CLI from the
+  *consumer\'s* checkout builds their project with a tool they never asked for, fails on a Gradle they
+  may not have, and writes into their source tree.
+- Outputs grew from `violations-count` to `blocking-count`, `total-count`, `entities`, `issues`,
+  `exit-code` and `tool-version`, all read from the findings JSON — which is now always produced,
+  whichever format was rendered. Counting by scraping HTML would have meant two numbers from one run
+  and a chance for them to disagree.
+- Exit codes pass through unchanged, and a base ref that cannot be resolved publishes
+  `status=INCOMPLETE` plus a summary before failing.
+
+**Decisions worth keeping**
+
+- **The tests run the file, not a copy of it.** `GitHubActionConsumerTest` executes
+  `scripts/run-metrics-gate-action.sh` directly — the same file `action.yml` invokes — in repositories
+  with a bare remote, a clone and no build system. A test of a reimplementation proves nothing about
+  the thing that ships.
+- **The fixture is shaped like a pull request**: the base is `origin/main` and the change is a local
+  commit that was never pushed, so the action\'s real defaults do the work. A fixture whose "remote"
+  is itself has no `origin/main` to fetch, and every scenario would have quietly tested "nothing
+  changed" — which several of them did, until the fixture asserted `git rev-parse origin/main` rather
+  than assuming it.
+- **Two defects the tests found were real.** The jq branch of the counter read a path where the
+  python branch read a key, so a failing gate published `blocking-count=0` — a wrong number stated
+  confidently, which is worse than publishing none. And a base ref that could not be resolved exited
+  with nothing written, leaving a job with an error and no verdict.
+- **A hostile base ref is asserted literally.** `main; touch canary.txt; $(touch canary.txt)` is
+  passed in, and the test asserts the file does not exist.
+
+**Verification:** `./gradlew check` and `:java-metrics-cli:integrationTest` pass; 13 consumer cases
+plus the 9 distribution cases green.
+
+ML-001–ML-029 are DONE. Next ready task: **ML-030**.
+
 ## Session: ML-028 — a consumer should not have to build the analyzer (2026-09-29)
 
 Until now the only way to run this tool was to clone a repository and have Gradle. ML-028 makes the
@@ -2750,7 +2795,7 @@ All three proposals were accepted and implemented; backward compatibility was no
 
 - New active work: accepted maintainability linter strategy, planned in
   `docs/plans/maintainability-linter/README.md`. ML-001–ML-022 are DONE.
-  Next ready task: **ML-029**. Implement one packet per
+  Next ready task: **ML-030**. Implement one packet per
   commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:

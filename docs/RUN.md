@@ -400,6 +400,45 @@ archive and the checksum manifest; `archiveChecksum` produces the archive's own 
 are built by `.github/workflows/release.yml` on a `v*` tag, across Ubuntu, macOS and Windows on JDK
 17 and 21. Creating and pushing the tag is deliberately a human step.
 
+### Using the GitHub Action
+
+```yaml
+- uses: b333vv/metricstree_cli@v1
+  with:
+    policy: maintainability
+    enforcement: enforce
+```
+
+**It brings its own tool.** There is no Gradle fallback: the action downloads a verified release
+distribution (or uses the `cli-path` you give it), so it never builds your project and never needs a
+build toolchain in your repository.
+
+| Input | Meaning |
+|---|---|
+| `base` | Base ref. Defaults to `origin/${{ github.base_ref }}`, or `origin/main` on a push. |
+| `tool-version` | Release to download. Defaults to `latest`. |
+| `cli-path` | An existing launcher to use instead. Nothing is downloaded when set. |
+| `checksum` | SHA-256 of the archive. Verified before anything is analysed. |
+| `policy`, `enforcement` | `maintainability` plus `advisory` (default) or `enforce`. |
+| `profile`, `thresholds`, `exclude-file`, `config` | The legacy policy's settings, still supported. |
+| `report-format` | `json`, `html` or `agent-md`. The findings JSON is produced either way. |
+| `report-path` | Where the report is written. |
+
+**Outputs:** `status` (`PASSED`, `FAILED`, `INCOMPLETE` or `ERROR`), `exit-code`, `blocking-count`,
+`total-count`, `entities`, `issues`, `tool-version`, `report-path`, `findings-path`.
+
+**What the exit codes mean.** The tool's own codes are passed through unchanged: `0` passed, `1`
+failed, `2` incomplete or a usage error. The action never collapses `2` into `1`, because "this
+change is bad" and "this analysis could not run" are different answers and a CI job that cannot tell
+them apart is worse than one that finds nothing.
+
+**Verify the download.** Set `checksum` and the action stops before running anything if the archive
+does not match. Without it the action warns: an unverified binary reporting a quality verdict is
+still a quality verdict.
+
+**Reports are uploaded on every outcome**, not only on failure, and the step summary says
+`INCOMPLETE` rather than "clean" whenever the analysis could not be completed.
+
 ## Project configuration (`.metrics-gate.yml`)
 
 A single YAML or JSON file at the repository root can hold thresholds, rules, exclusions and

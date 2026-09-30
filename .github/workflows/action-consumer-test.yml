@@ -1,0 +1,174 @@
+# The action, exercised the way a consumer runs it: in a repository that has nothing to do with
+# this one, on a fixture built at run time.
+#
+# This is the test the local integration suite cannot be. Locally, `GitHubActionConsumerTest` runs
+# the action's script against the CLI built here — which proves the logic, not the wiring. Only a
+# hosted run can prove that the action resolves, downloads, verifies and runs in a repository that
+# never heard of this project.
+#
+# It runs on a schedule and on workflow_dispatch as well as on changes to the action, so a
+# regression in the runner environment is caught rather than discovered by a consumer.
+name: action-consumer-test
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Early on a Monday UTC: a weekly check that lands when someone is around to read it.
+    - cron: '37 6 * * 1'
+  push:
+    paths:
+      - 'action.yml'
+      - 'scripts/**'
+      - '.github/workflows/action-consumer-test.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  consumer:
+    name: Action on a fixture consumer repository
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out the action
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Set up Java 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build the CLI
+        # Outside the workspace, because the fixture replaces the workspace below. The action is
+        # exercised against a locally built CLI so this workflow needs no published release to exist
+        # yet; the download-and-verify path is covered by the action's own step, not here.
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cli"
+          git clone -q . "$RUNNER_TEMP/cli/source"
+          cd "$RUNNER_TEMP/cli/source"
+          ./gradlew :java-metrics-cli:installDist -q
+
+      - name: Build a fixture consumer repository
+        run: |
+          set -euo pipefail
+          consumer="$RUNNER_TEMP/consumer"
+          remote="$RUNNER_TEMP/remote"
+          mkdir -p "$remote" "$consumer"
+          git init -q --bare "$remote"
+          git init -q -b main "$consumer"
+          git -C "$consumer" config user.email fixture@test
+          git -C "$consumer" config user.name fixture
+          git -C "$consumer" config commit.gpgsign false
+          git -C "$consumer" remote add origin "$remote"
+          mkdir -p "$consumer/src/main/java/app"
+          {
+            echo 'package app;'
+            echo 'public class Order {'
+            echo '    public int f(int x) {'
+            for i in $(seq 1 25); do echo "        if (x == $i) return $i;"; done
+            echo '        return 0;'
+            echo '    }'
+            echo '}'
+          } > "$consumer/src/main/java/app/Order.java"
+          git -C "$consumer" add -A
+          git -C "$consumer" commit -q -m 'initial'
+          git -C "$consumer" push -q -u origin main
+          # A change that is committed but not pushed: the shape of a pull request's head.
+          {
+            echo 'package app;'
+            echo 'public class Order {'
+            echo '    public int f(int x) { return x; }'
+            echo '}'
+          } > "$consumer/src/main/java/app/Trivial.java"
+          git -C "$consumer" add -A
+          git -C "$consumer" commit -q -m 'added a trivial class'
+
+      # A composite action runs in the caller's working directory, so the fixture has to *be* that
+      # directory. The step copies it over the checkout: `uses: ./` is resolved before this step
+      # runs, and everything afterwards — including the action — reads the fixture.
+      - name: Make the fixture the working repository
+        run: |
+          set -euo pipefail
+          consumer="$RUNNER_TEMP/consumer"
+          remote="$RUNNER_TEMP/remote"
+          git -C "$consumer" config user.email fixture@test
+          git -C "$consumer" config user.name fixture
+          git -C "$consumer" config commit.gpgsign false
+          # A pull request's head, already committed and not pushed.
+          git -C "$consumer" checkout -q -b pr-head
+          git -C "$consumer" config remote.origin.url "file://$remote"
+          # The action's own source, kept outside the tree it is about to replace. A composite
+          # action is resolved by path, so `uses:` has to point at something that survives the swap.
+          cp -R action.yml scripts "$RUNNER_TEMP/action-source"
+          rm -rf ./.git
+          cp -R "$consumer/." ./
+          git init -q
+          git remote add origin "file://$remote"
+          git config user.email fixture@test
+          git config user.name fixture
+          git fetch -q origin
+          git checkout -q -B pr-head FETCH_HEAD
+          echo "working tree is the fixture:"
+          git log --oneline -3
+          ls
+
+      - name: Run the action in the fixture repository
+        id: gate
+        uses: ${{ runner.temp }}/action-source
+        with:
+          cli-path: ${{ github.workspace }}/../cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli
+          policy: maintainability
+          enforcement: enforce
+          report-format: json
+          report-path: metrics-gate-report.json
+        # The verdict is asserted below rather than allowed to fail the step here, so the assertion
+        # can read the outputs and explain what went wrong.
+        continue-on-error: true
+
+      - name: Assert the action behaved as a consumer expects
+        run: |
+          set -euo pipefail
+          echo "status: ${{ steps.gate.outputs.status }}"
+          echo "exit-code: ${{ steps.gate.outputs.exit-code }}"
+          echo "blocking-count: ${{ steps.gate.outputs.blocking-count }}"
+          echo "tool-version: ${{ steps.gate.outputs.tool-version }}"
+
+          # The action runs in the runner's working directory, so its outputs name files relative to
+          # it. A run that could not find the fixture would report a clean scan, which is the one
+          # outcome this workflow exists to rule out.
+          if [ "${{ steps.gate.outputs.status }}" = "PASSED" ]; then
+            echo "::error::The action reported PASSED on a change that made a method complex."
+            exit 1
+          fi
+          if [ "${{ steps.gate.outputs.exit-code }}" != "1" ]; then
+            echo "::error::Expected exit code 1 for a violation, got ${{ steps.gate.outputs.exit-code }}."
+            exit 1
+          fi
+          if [ "${{ steps.gate.outputs.blocking-count }}" = "0" ]; then
+            echo "::error::A failing gate published zero blocking findings."
+            exit 1
+          fi
+          if [ -z "${{ steps.gate.outputs.tool-version }}" ]; then
+            echo "::error::The action published no tool version."
+            exit 1
+          fi
+
+      - name: Upload the consumer run's reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: action-consumer-${{ matrix.os }}
+          path: |
+            metrics-gate-report.json
+            ${{ runner.temp }}/metrics-findings.json
+          if-no-files-found: warn

@@ -17,12 +17,12 @@ jobs:
 
     steps:
       - name: Checkout PR branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           fetch-depth: 0 # Required to accurately compare against base ref
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -30,18 +30,30 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      # The CLI is built here and handed to the action by path. That is deliberate for this
+      # repository's own gate: it is the one place where the checkout under analysis *is* the
+      # analyzer, and building the tool from source is exactly right there. A consumer repository
+      # would use the downloaded release instead — and the action no longer has a Gradle fallback that
+      # would quietly build their project for them.
+      - name: Build the CLI
+        run: ./gradlew :java-metrics-cli:installDist -q
+
       - name: Run Java Metrics Gate Action
         id: gate
         uses: ./ # uses action.yml from repo root
         with:
           base: origin/${{ github.base_ref }}
+          cli-path: ${{ github.workspace }}/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli
           report-format: json
           report-path: metrics-gate-report.json
 
-      - name: Upload Gate Report Artifact
+      # The action uploads its own reports on every outcome; this one is for the sidecar JSON the
+      # action writes to the runner temp directory, which does not live in the workspace.
+      - name: Upload the findings JSON
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: metrics-gate-report
-          path: metrics-gate-report.json
+          name: metrics-findings
+          path: ${{ runner.temp }}/metrics-findings.json
           retention-days: 7
+          if-no-files-found: warn
