@@ -1,0 +1,22 @@
+{
+  "id": "branchy-method-flags",
+  "split": "tuning",
+  "provenance": {
+    "origin": "synthetic",
+    "license": "generated in this repository; contains no third-party code",
+    "revision": null,
+    "note": "Written by hand for this corpus, not sampled from a real codebase."
+  },
+  "repository": {
+    "files": [
+      "src/main/java/app/Calculator.java"
+    ]
+  },
+  "changes": [
+    {
+      "path": "src/main/java/app/Calculator.java",
+      "edit": "replace",
+      "content": "package app;\npublic class Calculator {\n    public int route(int x) {\n        if (x == 1) return 1;\n        if (x == 2) return 2;\n        if (x == 3) return 3;\n        if (x == 4) return 4;\n        if (x == 5) return 5;\n        if (x == 6) return 6;\n        if (x == 7) return 7;\n        if (x == 8) return 8;\n        if (x == 9) return 9;\n        if (x == 10) return 10;\n        if (x == 11) return 11;\n        if (x == 12) return 12;\n        if (x == 13) return 13;\n        if (x == 14) return 14;\n        if (x == 15) return 15;\n        if (x == 16) return 16;\n        if (x == 17) return 17;\n        if (x == 18) return 18;\n        if (x == 19) return 19;\n        if (x == 20) return 20;\n        return 0;\n    }\n}\n"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "caseId": "small-branchy-method-stays-quiet",
+  "reviewer": "corpus author",
+  "reviewKind": "synthetic-author",
+  "notes": "Labelled by whoever wrote the fixture. This is not maintainer feedback and is counted separately from it.",
+  "expectations": [
+    {
+      "ruleId": "MT-M001",
+      "outcome": "should-not-flag"
+    }
+  ]
+}

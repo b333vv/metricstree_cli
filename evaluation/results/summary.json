@@ -1,0 +1,70 @@
+{
+  "agreement": {
+    "MT-M001": {
+      "agreement": {
+        "denominator": 3,
+        "numerator": 2,
+        "value": 0.6667
+      },
+      "uncertainLabels": 0,
+      "uncertainNote": "counted separately and folded into neither side of the rate"
+    },
+    "MT-M002": {
+      "agreement": {
+        "denominator": 2,
+        "numerator": 1,
+        "value": 0.5
+      },
+      "uncertainLabels": 0,
+      "uncertainNote": "counted separately and folded into neither side of the rate"
+    }
+  },
+  "conclusions": [
+    "Agreement rates describe this corpus only. They are not population recall: what the tool finds in code nobody labelled is not measured here.",
+    "Every label in the bundled corpus is the corpus author's own conclusion, so it is not maintainer feedback and carries no claim about how anybody uses the tool.",
+    "A case excluded from the rates is missing data, not agreement."
+  ],
+  "corpus": {
+    "casesLabelled": 5,
+    "casesRun": 5,
+    "splits": {
+      "holdout": 0,
+      "tuning": 5
+    }
+  },
+  "excludedFromRates": [],
+  "flaggedWithoutExpectation": [
+    {
+      "caseId": "generated-dispatch-table",
+      "group": "group:generated-code",
+      "ruleId": "MT-M001"
+    }
+  ],
+  "missed": [
+    {
+      "caseId": "deep-nesting-flags",
+      "group": "group:nesting-depth",
+      "reason": "",
+      "ruleId": "MT-M002"
+    }
+  ],
+  "missedIssueCoverage": {
+    "coverage": 0.0,
+    "note": "No sampling has been performed. Missed issues are counted, not reviewed; a coverage of zero is an honest zero, not an unmeasured one.",
+    "sampledMissedIssues": 0,
+    "totalMissedIssues": 1
+  },
+  "pmd": {
+    "comparison": "unavailable: no PMD was supplied, so nothing was compared. This is not a result saying PMD found nothing.",
+    "note": "No PMD was supplied, so no comparison is reported. An absent comparator is recorded as absent; it is never an empty list of findings.",
+    "path": null,
+    "status": "unavailable"
+  },
+  "reviewEffort": {
+    "note": "unique problems a reviewer must adjudicate; instances are how many ways the same problem was written down",
+    "uniqueProblems": 1,
+    "writtenDownInstances": 1
+  },
+  "schemaVersion": "v1",
+  "toolVersion": "2026.0.0"
+}

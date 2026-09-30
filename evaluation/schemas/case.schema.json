@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evaluation case",
+  "description": "One reproducible comparison unit: a disposable repository, a change to make, and what the rules are expected to say about it.",
+  "type": "object",
+  "required": ["id", "split", "provenance", "repository", "changes"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Lower-case, hyphenated, unique across the corpus. A malformed id is rejected rather than normalised: a corpus whose ids only sort of match is a corpus whose results cannot be looked up."
+    },
+    "split": { "enum": ["tuning", "holdout"] },
+    "provenance": {
+      "type": "object",
+      "required": ["origin", "license"],
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "enum": ["synthetic", "bundled", "external"],
+          "description": "Where the sources came from. 'synthetic' and 'bundled' are generated in this repository; 'external' names a project someone else holds a license to."
+        },
+        "license": { "type": "string", "minLength": 1 },
+        "revision": { "type": ["string", "null"] },
+        "note": { "type": "string" }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "required": ["files"],
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Repository-relative paths, written verbatim before the change."
+        }
+      }
+    },
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "edit"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "edit": { "enum": ["replace", "append"] },
+          "content": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

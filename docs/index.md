@@ -7,6 +7,8 @@
   agent may not do; [`guides/migrate-to-maintainability.md`](guides/migrate-to-maintainability.md) — moving
   from thresholds to findings, in order
 - **Rules:** [`rules/`](rules) — what each rule observes and what it is known to get wrong
+- **Evaluation:** [`evaluation/README.md`](../evaluation/README.md) — the labelled corpus, what the
+  recorded rates mean, and what they do not establish
 - **Performance:** [`evaluation/benchmark/README.md`](../evaluation/benchmark/README.md) — how to
   reproduce the recorded measurements, and what they do not establish
 - **Ready-to-run configs:** [`examples/maintainability/`](../examples/maintainability)

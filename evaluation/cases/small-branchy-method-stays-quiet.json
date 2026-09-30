@@ -1,0 +1,22 @@
+{
+  "id": "small-branchy-method-stays-quiet",
+  "split": "tuning",
+  "provenance": {
+    "origin": "synthetic",
+    "license": "generated in this repository; contains no third-party code",
+    "revision": null,
+    "note": "Written by hand for this corpus, not sampled from a real codebase."
+  },
+  "repository": {
+    "files": [
+      "src/main/java/app/Calculator.java"
+    ]
+  },
+  "changes": [
+    {
+      "path": "src/main/java/app/Calculator.java",
+      "edit": "replace",
+      "content": "package app;\npublic class Calculator {\n    public int route(int x) {\n        if (x == 1) return 1;\n        if (x == 2) return 2;\n        if (x == 3) return 3;\n        if (x == 4) return 4;\n        return 0;\n    }\n}\n"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "v1",
+  "description": "The bundled evaluation corpus. Synthetic by construction: every case is generated or hand-written in this repository, and every label is the author's own conclusion. Nothing here is evidence about how maintainers use the tool.",
+  "cases": [
+    "branchy-method-flags",
+    "clean-method-stays-quiet",
+    "generated-dispatch-table",
+    "deep-nesting-flags",
+    "small-branchy-method-stays-quiet"
+  ]
+}

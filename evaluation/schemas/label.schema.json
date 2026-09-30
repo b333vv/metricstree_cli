@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evaluation labels",
+  "description": "What an independent reviewer concluded about one case. Authored by a person, never derived from a tool's own output.",
+  "type": "object",
+  "required": ["caseId", "reviewer", "reviewKind", "expectations"],
+  "additionalProperties": false,
+  "properties": {
+    "caseId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "reviewer": { "type": "string", "minLength": 1 },
+    "reviewKind": {
+      "enum": ["maintainer", "synthetic-author"],
+      "description": "'maintainer' means somebody who owns the code said so. A generated case can only ever be labelled by whoever wrote the generator, and calling that maintainer feedback would be claiming a human judgement that never happened."
+    },
+    "notes": { "type": "string" },
+    "expectations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["ruleId", "outcome"],
+        "additionalProperties": false,
+        "properties": {
+          "ruleId": { "type": "string", "minLength": 1 },
+          "outcome": {
+            "enum": ["should-flag", "should-not-flag", "uncertain"],
+            "description": "'uncertain' is a real answer. It is counted separately and never folded into either side of a rate, because a label nobody is sure of is evidence about the label, not about the tool."
+          },
+          "group": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Cases sharing a group describe the same underlying problem. Deduplicated by group, so one problem cannot be counted three times by being written down three ways."
+          },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}
