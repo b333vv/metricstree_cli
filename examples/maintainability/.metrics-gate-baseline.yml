@@ -1,0 +1,29 @@
+# Accepting the debt you already have.
+#
+# A baseline is a separate file and a separate step, and the separation is the point: deciding what
+# to accept is a decision, and it should not be something a later run does for you.
+#
+# 1. Export, on a commit where the policy says what you intend:
+#      java-metrics-cli gate --base origin/main --policy maintainability \
+#          --write-findings-baseline findings-baseline.json
+# 2. Commit that file and review the diff. Adding an entry means accepting a finding as debt; a
+#    re-export that rewrites the file wholesale would make the diff meaningless.
+# 3. From then on, read it:
+#      java-metrics-cli gate --base origin/main --policy maintainability \
+#          --findings-baseline findings-baseline.json
+#
+# The export writes EVERY current match, not only changed ones -- an export is not a diff, and
+# filtering it by the current change would silently accept only part of the debt.
+#
+# Entries store the values debt was accepted *at*, not merely that it matched. A method can gain a
+# branch, then a second, then a third -- each below the rule's per-commit budget -- and the third is
+# caught against the stored evidence rather than only against the base revision.
+#
+# Overwriting needs `--replace-findings-baseline`. A run that silently replaced the file would let
+# you accept a batch of new findings by re-running a command.
+
+gate:
+  policy: maintainability
+
+maintainability:
+  enabledRules: [MT-M001, MT-M002, MT-M003, MT-C002]

@@ -46,7 +46,12 @@ final class ProjectConfigLoader {
             "profile", "thresholds",
             "classRules", "classRulesFile", "methodRules", "methodRulesFile",
             "packageRules", "packageRulesFile",
-            "exclusions", "validate", "detect", "analyze", "gate");
+            "exclusions", "validate", "detect", "analyze", "gate",
+            // Read by RuleConfigLoader, on its own schema. Listing it here is not a merge of the two
+            // policies: it only stops the loader warning that a key it does not own is unknown, when
+            // the key is in fact honoured. A warning that says "ignored" about a setting that is
+            // applied is worse than no warning, because it teaches a reader to ignore warnings.
+            "maintainability");
 
     private ProjectConfigLoader() {
     }

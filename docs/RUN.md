@@ -1520,9 +1520,9 @@ Project     : 4074 files, 289665 lines, 4020 classes, 19994 methods, 1318 packag
 - The `benchmark` task runs with `-Xmx4g`; if peak heap approaches that ceiling the run is measuring
   the heap limit rather than the analyzer.
 
-The recorded reference numbers live in
-[`docs/prd/implementation-plan.md`](prd/implementation-plan.md#baseline-2026-09). Compare new runs on
-the **same machine** — these are wall-clock and heap figures, not normalized units.
+No recorded reference numbers are checked in. These are wall-clock and heap figures for your own
+machine rather than normalized units, so a number from another machine is not a baseline; measure
+before and after on the same hardware, and record what you measured.
 
 `PerformanceBenchmarkTest` wraps the same runner for CI. It **skips** (does not fail) when no corpus
 is configured, so a plain `./gradlew check` stays green:

@@ -1,6 +1,13 @@
 # Java Metrics CLI Documentation
 
 ## Getting Started
+- **Start here:** [`README.md`](../README.md) — install, check a change, read a finding
+- **Run first:** [`RUN.md`](RUN.md) — every command, flag, config key and exit code
+- **Guides:** [`guides/agent-workflow.md`](guides/agent-workflow.md) — the edit-check-fix loop and what an
+  agent may not do; [`guides/migrate-to-maintainability.md`](guides/migrate-to-maintainability.md) — moving
+  from thresholds to findings, in order
+- **Rules:** [`rules/`](rules) — what each rule observes and what it is known to get wrong
+- **Ready-to-run configs:** [`examples/maintainability/`](../examples/maintainability)
 - **Agent Instructions:** `AGENTS.md` — Development workflow and rules
 - **Architecture:** `docs/ARCHITECTURE.md` — System design
 - **Work progress:** `docs/PROGRESS.md`
@@ -26,6 +33,9 @@ docs/
 ├── index.md              # This file — main entry point
 ├── ARCHITECTURE.md       # System architecture specification
 ├── PROGRESS.md           # Progress fixation
+├── guides/               # Task-oriented guides: the agent workflow, the migration
+├── reference/             # Metric semantics and other reference material
+├── rules/                 # One page per rule: what it observes, what it gets wrong
 ├── adr/                  # Architecture Decision Records (0001 — the per-class snapshot contract; 0002 — bounded AST residency; 0003 — the metric registry)
 ├── plans/                # Active maintainability-linter plan, contracts and ML task packets
 ├── prd/                  # Earlier feature PRDs

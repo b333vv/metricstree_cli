@@ -1,0 +1,32 @@
+# An explicit exception, and the rule about what may be one.
+#
+# A suppression names ONE rule on ONE entity. There is no wildcard form: `**/*.java` and `*` are
+# ordinary strings that match nothing, because a glob that could cover a family of entities is a
+# policy change wearing the costume of an exception.
+#
+# Copy `entityKey` verbatim out of a finding's JSON -- `path`, `class` and `signature`. Matching is
+# field by field, so a sibling method and another rule on the same method are both left alone.
+#
+# Every entry appears in the report's `suppressions` array with the state it ended in: applied,
+# expired, stale or unused. An exception that quietly stopped working is otherwise indistinguishable
+# from a finding that quietly came back.
+
+gate:
+  policy: maintainability
+
+maintainability:
+  enabledRules: [MT-M001]
+
+  suppressions:
+    - ruleId: MT-M001
+      entity:
+        path: src/main/java/app/Order.java
+        class: app.Order
+        signature: total(int)
+      # The reason is required, and it is the review artefact: a suppression has no effect on the
+      # diff itself, so this line is the only signal a reviewer sees.
+      reason: >-
+        Legacy hot path; splitting it is tracked in ISSUE-42. Re-check after that lands.
+      # Valid through this UTC date, written as YYYY-MM-DD. Omit it and the entry does not expire --
+      # a missing expiry is a decision to revisit, where a missing reason is an oversight.
+      expiresOn: '2026-12-31'

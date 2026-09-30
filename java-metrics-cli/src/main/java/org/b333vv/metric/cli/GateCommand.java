@@ -302,7 +302,7 @@ final class GateCommand implements Callable<Integer> {
         }
 
         GateMetricSelection metricSelection = GateMetricSelection.forMetrics(
-                requestedMetrics(thresholds, growth), resolveAnalysisScope(config));
+                requestedMetrics(thresholds, growth, activePolicy), resolveAnalysisScope(config));
         if (!metricSelection.isComplete()) {
             for (GateMetricSelection.UnavailableMetric metric : metricSelection.unavailable()) {
                 warningBuffer.append("WARNING: ").append(metric.reason()).append(System.lineSeparator());
@@ -393,7 +393,7 @@ final class GateCommand implements Callable<Integer> {
                     currentReport,
                     after,
                     subjectPaths,
-                    requestedMetrics(thresholds, growth),
+                    requestedMetrics(thresholds, growth, activePolicy),
                     unparseableBase,
                     metricSelection.unavailable(),
                     plan.unsupported(),
@@ -727,10 +727,21 @@ final class GateCommand implements Callable<Integer> {
      * would make the gate as slow as {@code analyze} while checking a fraction of what that does.
      */
     private static Set<org.b333vv.metric.library.core.MetricCode> requestedMetrics(
-            Map<String, Threshold> thresholds, Map<String, Double> growth) {
+            Map<String, Threshold> thresholds, Map<String, Double> growth,
+            MaintainabilityPolicy activePolicy) {
         Set<org.b333vv.metric.library.core.MetricCode> requested = new java.util.LinkedHashSet<>();
         thresholds.keySet().forEach(name -> MetricCodeNames.find(name).ifPresent(requested::add));
         growth.keySet().forEach(name -> MetricCodeNames.find(name).ifPresent(requested::add));
+        // The enabled rules' own metrics. Without this the selection was derived only from thresholds,
+        // so a maintainability run measured nothing its rules read: every check reported UNAVAILABLE
+        // and the gate said "this analysis could not run" for a configuration it was perfectly able to
+        // evaluate. The rules are configured, so what they need is a cost the run has agreed to pay.
+        if (activePolicy != null && activePolicy.isMaintainability()) {
+            activePolicy.settings().enabledRules().stream()
+                    .map(MaintainabilityRules::byId)
+                    .flatMap(java.util.Optional::stream)
+                    .forEach(rule -> requested.addAll(rule.conditions().keySet()));
+        }
         return requested;
     }
 

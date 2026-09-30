@@ -1,0 +1,36 @@
+# A maintainability policy that reports without blocking, then one that blocks.
+#
+# Every number here is a *candidate* threshold: a starting point, not a fact about good code. The
+# catalogue's rules are observations about structure, and where a number belongs depends entirely on
+# your codebase. Retune these after a few runs, and expect to raise them for generated parsers and
+# dispatch tables that look exactly like what MT-M001 flags.
+
+gate:
+  policy: maintainability
+
+maintainability:
+  # The four candidate rules. MT-C001 is deliberately absent: it is experimental, and a project
+  # adopting the policy should not start with a rule whose thresholds are still being argued about.
+  enabledRules: [MT-M001, MT-M002, MT-M003, MT-C002]
+
+  rules:
+    # Two rules set to error, so a build actually stops. The rest stay at their catalogued `warn`.
+    MT-M001:
+      mode: error
+    MT-M002:
+      mode: error
+
+    # A rule that only applies to production code. Generated code and tests are real code that
+    # somebody has to maintain; they simply are not the code this threshold is about.
+    MT-M003:
+      roles: [production]
+
+  roles:
+    - pathRegex: (.*/)?generated/.*
+      role: generated
+    - pathRegex: (.*/)?src/test/java/.*
+      role: test
+    - pathRegex: (.*/)?src/main/java/.*
+      role: production
+    - pathRegex: (.*)
+      role: unknown

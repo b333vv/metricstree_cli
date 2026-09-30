@@ -89,6 +89,14 @@ tasks.test {
     systemProperty("user.language", "en")
     systemProperty("user.country", "US")
 
+    // The documentation tests read README, RUN and the shipped example configs from the source
+    // tree, so the repository root is passed rather than assumed: a test run from an IDE with a
+    // different working directory would otherwise check nothing and pass.
+    // The repository root, not this module: the documents under test are README.md and docs/,
+    // which sit above java-metrics-cli. Resolved from the module directory so it does not depend
+    // on the working directory a test happens to run in.
+    systemProperty("docsRepoRoot", layout.projectDirectory.dir("..").asFile.absolutePath)
+
     // Golden (snapshot) tests of the JSON output contract resolve their fixtures from the source
     // tree, so the module directory is passed explicitly instead of relying on the working
     // directory. See org.b333vv.metric.cli.JsonContractGoldenTest.

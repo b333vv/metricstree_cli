@@ -1,5 +1,45 @@
 # what has been done
 
+## Session: ML-030 — documentation that a reader can act on (2026-09-29)
+
+The README led with "computes metrics and detects antipatterns" and a quick start that built the
+project from source. It described a tool nobody had to build, and it promised nothing about the part
+that is actually new.
+
+**What changed**
+
+- The README now leads with what `gate` does — reports what a change made worse — then installation
+  from a release archive with a checksum, then the one command a reader needs. `--enforcement
+  advisory` is explicit, because it is the right first run and because the alternative reads as
+  "nothing was found".
+- `docs/guides/agent-workflow.md` and `docs/guides/migrate-to-maintainability.md`, and three
+  ready-to-run configurations under `examples/maintainability/`: a reporting policy, an exception, and
+  the baseline workflow — each a file a reader can copy rather than reconstruct.
+- Every example config was executed before being shipped.
+
+**Decisions worth keeping**
+
+- **The documentation test checks what can be checked, and says so.** It verifies that relative links
+  resolve, that every shipped config loads, that every named rule exists, and that the README does
+  not claim a universal quality verdict. It does not pretend to check that a described behaviour is
+  the right one — a documentation test asserting its own prose would be theatre.
+- **It found three broken links and one obsolete claim.** `docs/prd/road-map.md` and
+  `prd/implementation-plan.md` did not exist; and the README still said method-level antipatterns
+  were "not implemented", which stopped being true when MT-M001 landed.
+- **Two real defects came out of writing the docs, not out of testing them.**
+  `ProjectConfigLoader` warned that `maintainability` was "an unknown key — ignored" while
+  `RuleConfigLoader` was applying it: a warning that says a setting was ignored, about a setting that
+  was in force. And the gate derived its metric selection from thresholds alone, so a maintainability
+  run measured nothing its own rules read — every check reported UNAVAILABLE and the tool said "this
+  analysis could not run" for a configuration it could evaluate perfectly well.
+- **The quick start was executed, and the README corrected.** The example finding showed
+  `disposition: ACTIVE` under an advisory run; advisory re-dispositions eligible findings, so the
+  honest reading is `EXISTING`, and the README now says so and says why the two modes differ.
+
+**Verification:** `./gradlew check` passes. New: `DocumentationTest` (7 cases).
+
+ML-001–ML-030 are DONE. Next ready task: **ML-031**.
+
 ## Session: ML-029 — the action, tested the way a consumer runs it (2026-09-29)
 
 The action had four steps of inline `run:` blocks and no test. Four steps of YAML that can only be
@@ -2795,7 +2835,7 @@ All three proposals were accepted and implemented; backward compatibility was no
 
 - New active work: accepted maintainability linter strategy, planned in
   `docs/plans/maintainability-linter/README.md`. ML-001–ML-022 are DONE.
-  Next ready task: **ML-030**. Implement one packet per
+  Next ready task: **ML-031**. Implement one packet per
   commit. The prior roadmap below is completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
