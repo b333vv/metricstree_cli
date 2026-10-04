@@ -636,6 +636,55 @@ class MaintainabilityWorkflowTest {
     class Scope {
 
         /**
+         * The two scopes are two different policies, and the digest has to say so.
+         *
+         * <p>Scope was deliberately excluded from the digest, on the reasoning that it changes what a
+         * run produces rather than what it judges. That reasoning does not survive what the scopes can
+         * actually compute: local scope has no resolved symbols, so MT-C001's TCC and ATFD are
+         * unavailable and the rule is not evaluated at all. Switching scope does not render the same
+         * judgement differently -- it withdraws a rule from the run.
+         *
+         * <p>With one digest for both, a baseline accepted under project scope was accepted against
+         * a finding set that a local run never produces, and the mismatch check that exists to catch
+         * exactly this could not see it. The findings contract requires the scope in the digest.
+         */
+        @Test
+        @DisplayName("the policy digest differs between local and project scope")
+        void scopeChangesThePolicyDigest() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
+            git.commitAll("initial");
+            // A real change: the empty-diff path returns before a comparison and is not what the
+            // digest is about.
+            git.write(SOURCE, withBranches(30));
+            commitLocally(git, "the change under review");
+
+            String local = digestOfReport("local");
+            String project = digestOfReport("project");
+
+            assertNotEquals(local, project,
+                    "two runs that could not evaluate the same rules are the same policy, and a"
+                            + " baseline written under one would be silently accepted under the other");
+        }
+
+        /**
+         * The policyDigest of a gate run in the given scope.
+         *
+         * <p>Both runs get a source root, because project scope refuses to start without one and the
+         * comparison would otherwise be between a digest and an error message.
+         */
+        private String digestOfReport(String scope) throws Exception {
+            Path report = repo.resolve("digest-" + scope + ".json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            gateWithReport(report, err, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--analysis-scope", scope, "--source-root", "src/main/java");
+            assertTrue(Files.exists(report),
+                    "scope " + scope + " wrote nothing: " + err.toString(StandardCharsets.UTF_8));
+            return mapper.readTree(Files.readString(report)).get("policyDigest").asText();
+        }
+
+        /**
          * Project scope must not turn the gate into a scanner.
          *
          * <p>The audit's A07. Project mode analyses the whole declared source root, because metrics

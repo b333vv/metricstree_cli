@@ -134,7 +134,9 @@ Base-to-current and baseline-to-current comparisons both apply; either eligible 
 reported once. A new entity/rule absent from baseline is not suppressed. Digest/version mismatch
 requires explicit regeneration; report an actionable usage error, not silent reacceptance.
 The digest excludes report format and suppression reasons, and includes catalog version, enabled
-rules/limits/roles, metric semantic versions and analysis scope. Baseline entries carry previous
+rules/limits/roles, metric semantic versions and analysis scope. Scope is in it because local scope
+cannot resolve symbols, so project-global rules are not evaluated there at all: the two scopes are
+two different policies, and a baseline accepted under one must not be accepted under the other. Baseline entries carry previous
 fingerprint mapping only for exact entities moved by the current comparison.
 
 ## Output schema and presentation

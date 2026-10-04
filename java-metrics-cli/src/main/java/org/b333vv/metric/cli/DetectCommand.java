@@ -278,7 +278,8 @@ final class DetectCommand implements Callable<Integer> {
                     new MaintainabilityAnalysisService().evaluate(
                             null, report, this::logicalPathOf,
                             resolveScope(),
-                            activePolicy.settings(), null, activePolicy.enforcement());
+                            activePolicy.settings().withAnalysisScope(resolveScope().name()),
+                            null, activePolicy.enforcement());
             if (jsonOutputFile != null
                     && outputFile.toAbsolutePath().normalize()
                             .equals(jsonOutputFile.toAbsolutePath().normalize())) {

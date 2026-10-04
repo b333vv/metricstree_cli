@@ -69,6 +69,40 @@ record MaintainabilitySettings(
                 suppressions);
     }
 
+    /**
+     * The same settings, judged in {@code scope}, with a digest that says so.
+     *
+     * <p>The scope was deliberately left out of the digest, on the reasoning that it changes what a
+     * run <em>produces</em> rather than what it <em>judges</em>. That reasoning does not survive
+     * contact with what the scopes can actually compute. Local scope has no resolved symbols, so
+     * MT-C001's TCC and ATFD are unavailable and the rule cannot be evaluated at all -- switching
+     * to it does not render the same judgement differently, it withdraws a rule from the run. A
+     * baseline accepted under project scope was accepted against a finding set that a local run
+     * never produced and would never compare against.
+     *
+     * <p>The findings contract already requires this: the digest "includes catalog version, enabled
+     * rules/limits/roles, metric semantic versions and analysis scope".
+     *
+     * <p>Mismatching digests require an explicit baseline regeneration, which is the behaviour the
+     * contract specifies for any policy change. A scope change is one.
+     *
+     * @param scopeId the scope's canonical identifier, as the report records it
+     */
+    MaintainabilitySettings withAnalysisScope(String scopeId) {
+        return new MaintainabilitySettings(file, enabledRules, overrides,
+                hash(digest + "\nscope:" + scopeId), roleRules, enforcement, suppressions);
+    }
+
+    private static String hash(String material) {
+        try {
+            return java.util.HexFormat.of().formatHex(
+                    java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(material.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required to identify a policy", e);
+        }
+    }
+
     /** Whether the role rules were configured at all, as opposed to being absent. */
     boolean hasConfiguredRoles() {
         return !roleRules.isEmpty();

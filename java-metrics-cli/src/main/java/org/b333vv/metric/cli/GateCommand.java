@@ -139,6 +139,19 @@ final class GateCommand implements Callable<Integer> {
                     + "usable classpath. Overrides gate.analysis.scope in a project config.")
     private String analysisScope;
 
+    /**
+     * The policy as this run actually applies it, with the analysis scope folded into its digest.
+     *
+     * <p>Set once, where the scope is resolved, and read by everything that renders or compares
+     * against the policy's identity. Four call sites each recomputing it was how the report and the
+     * baseline check could disagree: both are correct individually and neither is right if the
+     * scope they were told about differs.
+     */
+    private MaintainabilitySettings scopedPolicy;
+
+    /** The analysis scope this run resolved to, held so the policy identity and the analysis agree. */
+    private org.b333vv.metric.library.core.MetricRequirements.Scope analysisScopeValue;
+
     @CommandLine.Option(names = {"--base"}, required = true, paramLabel = "REF",
             description = "Base ref to diff against (e.g. origin/main). Resolved once, together "
                     + "with HEAD, and their single merge base supplies both the changed file set "
@@ -231,6 +244,12 @@ final class GateCommand implements Callable<Integer> {
             return 2;
         }
 
+        // Before anything that can return: the empty-diff fast path still publishes a report, and a
+        // report built from a policy that has not been given its scope would carry a digest that
+        // says nothing about what was judged.
+        analysisScopeValue = resolveAnalysisScope(config);
+        scopedPolicy = activePolicy.settings().withAnalysisScope(analysisScopeValue.name());
+
         Map<String, Threshold> thresholds = resolveThresholds(config);
         Map<String, Double> growth = config.gateGrowth() != null
                 ? config.gateGrowth()
@@ -322,7 +341,7 @@ final class GateCommand implements Callable<Integer> {
         }
 
         GateMetricSelection metricSelection = GateMetricSelection.forMetrics(
-                requestedMetrics(thresholds, growth, activePolicy), resolveAnalysisScope(config));
+                requestedMetrics(thresholds, growth, activePolicy), analysisScopeValue);
         if (!metricSelection.isComplete()) {
             for (GateMetricSelection.UnavailableMetric metric : metricSelection.unavailable()) {
                 warningBuffer.append("WARNING: ").append(metric.reason()).append(System.lineSeparator());
@@ -482,7 +501,7 @@ final class GateCommand implements Callable<Integer> {
         int exitCode;
         if (activePolicy.isMaintainability()) {
             maintainabilityReport = runMaintainabilityPolicy(activePolicy, policyInput, plan,
-                    resolveAnalysisScope(config), completeness);
+                    analysisScopeValue, completeness);
         }
 
         List<GateFinding> violations = new ArrayList<>(parseErrors);
@@ -600,7 +619,7 @@ final class GateCommand implements Callable<Integer> {
         // not a scanner; the context is what the analysis may see, never what the comparison is about.
         MaintainabilityAnalysisService.Result result = new MaintainabilityAnalysisService().evaluate(
                 input.baseReport(), input.currentReport(), input.logicalPath(), scope,
-                activePolicy.settings(), correspondence, activePolicy.enforcement(),
+                scopedPolicy, correspondence, activePolicy.enforcement(),
                 java.time.Clock.systemUTC(), input.eligiblePaths());
 
         // A gap the analysis already established is a gap under this policy too: a policy is not a
@@ -608,7 +627,9 @@ final class GateCommand implements Callable<Integer> {
         List<EvaluationIssue> issues = new java.util.ArrayList<>(result.issues());
         issues.addAll(policyIssues(completeness));
 
-        String digest = activePolicy.settings().digest();
+        // The digest carries the scope this run judged in, because scope decides which rules could
+        // run at all and not merely what they printed.
+        String digest = scopedPolicy.digest();
         if (writeFindingsBaselineFile != null) {
             exportBaseline(result, issues, digest);
         }
@@ -628,7 +649,7 @@ final class GateCommand implements Callable<Integer> {
         // were parsed, how many checks could not run, and in which schedule. Without it a verdict and a
         // finding list are published with no statement of what was looked at -- which is how the audit's
         // A20 could not be seen from the harness's own output.
-        return new FindingReport(FindingReport.SCHEMA_VERSION, status, activePolicy.settings(),
+        return new FindingReport(FindingReport.SCHEMA_VERSION, status, scopedPolicy,
                 findings, issues, result.suppressions(), completeness);
     }
 
@@ -1300,7 +1321,7 @@ final class GateCommand implements Callable<Integer> {
         violations.forEach(violation -> findings.add(legacyFinding(violation, true)));
         warnings.forEach(warning -> findings.add(legacyFinding(warning, false)));
         List<EvaluationIssue> issues = policyIssues(completeness);
-        return new FindingReport(FindingReport.SCHEMA_VERSION, status, activePolicy.settings(),
+        return new FindingReport(FindingReport.SCHEMA_VERSION, status, scopedPolicy,
                 findings, issues, List.of(), completeness);
     }
 
