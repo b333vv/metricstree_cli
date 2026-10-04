@@ -21,6 +21,13 @@ import java.util.Objects;
  * caller cannot pass one in, so a finding can never claim an identity that does not match its content
  * — which is the failure a stored baseline would then accept forever.
  *
+ * <h2>The previous fingerprint is a field, not a string recovered from prose</h2>
+ * <p>{@link #previousFingerprint()} names the base counterpart's identity so a consumer can correlate
+ * a finding with the debt it replaces across runs, which is what a SARIF consumer and a baseline diff
+ * both need. It used to be parked in {@code dispositionReason} and recovered by recognising 64 hex
+ * characters, which meant a reason that happened to look like one would have been promoted into an
+ * identity field -- and a reason that was edited for readability silently dropped the correlation.
+ *
  * <h2>Nothing here is a threshold verdict</h2>
  * <p>A finding records what a rule observed. Whether that observation blocks is {@link #disposition()}
  * combined with the rule's mode, decided by policy in a separate step. Keeping the two apart is what
@@ -46,7 +53,25 @@ record Finding(
         EntityRole role,
         FindingDisposition disposition,
         String dispositionReason,
-        boolean blocking) {
+        boolean blocking,
+        String previousFingerprint) {
+
+    /**
+     * The pre-ML-024 shape, which had no previous fingerprint.
+     *
+     * <p>Kept so a finding built where no base counterpart exists reads as having none, rather than
+     * having to be reconstructed.
+     */
+    Finding(String ruleId, int ruleVersion, EntityKey entityKey, String title, String message,
+            FindingLocation location, FindingLocation baseLocation, RuleSeverity severity,
+            RuleMaturity maturity, EvaluationStatus evaluationStatus, FindingLifecycle lifecycle,
+            List<FindingEvidence> evidence, List<FindingLocation> relatedLocations,
+            String remediationHint, String documentationPath, EntityRole role,
+            FindingDisposition disposition, String dispositionReason, boolean blocking) {
+        this(ruleId, ruleVersion, entityKey, title, message, location, baseLocation, severity,
+                maturity, evaluationStatus, lifecycle, evidence, relatedLocations, remediationHint,
+                documentationPath, role, disposition, dispositionReason, blocking, null);
+    }
 
     /**
      * The pre-decoupling shape: a finding blocks exactly when its disposition and lifecycle say so.
@@ -65,7 +90,7 @@ record Finding(
                 maturity, evaluationStatus, lifecycle, evidence, relatedLocations, remediationHint,
                 documentationPath, role, disposition, dispositionReason,
                 disposition.isBlocking() && lifecycle.eligibleForBlocking()
-                        && evaluationStatus == EvaluationStatus.COMPLETE_MATCH);
+                        && evaluationStatus == EvaluationStatus.COMPLETE_MATCH, null);
     }
 
     Finding {
@@ -135,7 +160,8 @@ record Finding(
     Finding withDisposition(FindingDisposition newDisposition, String reason) {
         return new Finding(ruleId, ruleVersion, entityKey, title, message, location, baseLocation,
                 severity, maturity, evaluationStatus, lifecycle, evidence, relatedLocations,
-                remediationHint, documentationPath, role, newDisposition, reason, blocking);
+                remediationHint, documentationPath, role, newDisposition, reason, blocking,
+                previousFingerprint);
     }
 
     /**
@@ -162,7 +188,7 @@ record Finding(
         return new Finding(ruleId, ruleVersion, entityKey, title, message, location, baseLocation,
                 severity, maturity, evaluationStatus, FindingLifecycle.WORSENED, evidence,
                 relatedLocations, remediationHint, documentationPath, role,
-                FindingDisposition.ACTIVE, reason, blocking);
+                FindingDisposition.ACTIVE, reason, blocking, previousFingerprint);
     }
 
     /** The same finding with a different blocking decision, as policy decides it. */
@@ -170,6 +196,6 @@ record Finding(
         return mayBlock == blocking ? this : new Finding(ruleId, ruleVersion, entityKey, title,
                 message, location, baseLocation, severity, maturity, evaluationStatus, lifecycle,
                 evidence, relatedLocations, remediationHint, documentationPath, role, disposition,
-                dispositionReason, mayBlock);
+                dispositionReason, mayBlock, previousFingerprint);
     }
 }

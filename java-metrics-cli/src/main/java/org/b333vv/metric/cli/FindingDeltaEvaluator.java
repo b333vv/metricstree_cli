@@ -84,7 +84,7 @@ final class FindingDeltaEvaluator {
                 // asserts a history the run never established. It is the audit's A08, and the difference
                 // is the difference between "you added this" and "this matches", both printed to a reader
                 // who has no way to tell which one they are looking at.
-                findings.add(finding(rule, current,
+                findings.add(finding(rule, current, base,
                         comparing ? FindingLifecycle.NEW_ENTITY : FindingLifecycle.CURRENT,
                         FindingDisposition.ACTIVE, null, path, null, role));
             } else if (current.status().isUnavailable()) {
@@ -98,7 +98,7 @@ final class FindingDeltaEvaluator {
             return new Delta(findings, issues);
         }
         if (current.status().isUnavailable() || base.status().isUnavailable()) {
-            findings.add(finding(rule, current, FindingLifecycle.COMPARISON_UNAVAILABLE,
+            findings.add(finding(rule, current, base, FindingLifecycle.COMPARISON_UNAVAILABLE,
                     FindingDisposition.NOT_MATCHED, "comparison-unavailable", path,
                     base.entityKey(), role));
             issues.addAll(base.issues());
@@ -110,17 +110,17 @@ final class FindingDeltaEvaluator {
         boolean currentMatched = current.status() == EvaluationStatus.COMPLETE_MATCH;
 
         if (!baseMatched && currentMatched) {
-            findings.add(finding(rule, current, FindingLifecycle.INTRODUCED,
+            findings.add(finding(rule, current, base, FindingLifecycle.INTRODUCED,
                     FindingDisposition.ACTIVE, null, path, base.entityKey(), role));
         } else if (baseMatched && !currentMatched) {
-            findings.add(finding(rule, base, FindingLifecycle.RESOLVED,
+            findings.add(finding(rule, base, base, FindingLifecycle.RESOLVED,
                     FindingDisposition.RESOLVED, "no-longer-matches", path, base.entityKey(), role));
         } else if (baseMatched) {
             if (isSignificantlyWorse(rule, base, current)) {
-                findings.add(finding(rule, current, FindingLifecycle.WORSENED,
+                findings.add(finding(rule, current, base, FindingLifecycle.WORSENED,
                         FindingDisposition.ACTIVE, null, path, base.entityKey(), role));
             } else {
-                findings.add(finding(rule, current, FindingLifecycle.EXISTING,
+                findings.add(finding(rule, current, base, FindingLifecycle.EXISTING,
                         FindingDisposition.EXISTING, "not-worsened", path, base.entityKey(), role));
             }
         }
@@ -240,6 +240,38 @@ final class FindingDeltaEvaluator {
     }
 
     /**
+     * The current evaluation's evidence, with the base values filled in.
+     *
+     * <p>A finding about a change is a claim about two revisions, and the contract requires the report
+     * to carry both. The evaluators only ever measure one side at a time -- that is what makes them
+     * reusable against a report, a baseline entry or each other -- so the pairing happens here, where
+     * both sides are in hand. Before this, every finding published {@code before: null} and a delta of
+     * {@code null} even for the findings whose whole reason for existing is a comparison, so a consumer
+     * reading the JSON could see what a value is now and never what it was.
+     *
+     * <p>A metric measured at only one side keeps its own null: the pairing never invents the missing
+     * side, and never recomputes a value that was not measured.
+     */
+    private static List<FindingEvidence> pairedEvidence(RuleEvaluation current, RuleEvaluation base) {
+        if (base == null || current == null || current.evidence().isEmpty()) {
+            return current == null ? List.of() : current.evidence();
+        }
+        java.util.Map<org.b333vv.metric.library.core.MetricCode, FindingEvidence> byMetric =
+                new java.util.LinkedHashMap<>();
+        for (FindingEvidence evidence : base.evidence()) {
+            byMetric.put(evidence.metric(), evidence);
+        }
+        List<FindingEvidence> paired = new ArrayList<>();
+        for (FindingEvidence evidence : current.evidence()) {
+            FindingEvidence before = byMetric.get(evidence.metric());
+            paired.add(before == null || evidence.before() != null
+                    ? evidence
+                    : evidence.withBefore(before.after()));
+        }
+        return paired;
+    }
+
+    /**
      * Builds one finding, applying the rule's effective mode to decide whether it may block.
      *
      * <p>This is where A01's second half is settled. A match on a rule in {@code warn} mode is a real
@@ -249,8 +281,11 @@ final class FindingDeltaEvaluator {
      * like {@code error} and {@code --enforcement enforce} failed builds nobody asked it to fail.
      */
     private Finding finding(MaintainabilityRule rule, RuleEvaluation evaluation,
-            FindingLifecycle lifecycle, FindingDisposition disposition, String dispositionReason,
-            String path, EntityKey baseKey, EntityRole role) {
+            RuleEvaluation base, FindingLifecycle lifecycle, FindingDisposition disposition,
+            String dispositionReason, String path, EntityKey baseKey, EntityRole role) {
+        // The base counterpart's identity, kept as a field so a consumer can correlate this finding
+        // with the debt it replaces. It is also still written into the reason when there is no other
+        // explanation, because a reader of the human reports wants to see it there too.
         String previous = baseKey == null ? null
                 : FindingFingerprint.of(rule.id(), rule.version(), baseKey);
         boolean mayBlock = rule.defaultMode() == RuleMode.ERROR
@@ -261,11 +296,11 @@ final class FindingDeltaEvaluator {
                 FindingLocation.of(path, 1),
                 baseKey == null ? null : FindingLocation.of(baseKey.path(), 1),
                 rule.severity(), rule.maturity(), evaluation.status(), lifecycle,
-                evaluation.evidence(), List.of(),
+                pairedEvidence(evaluation, base), List.of(),
                 rule.description(), rule.documentationPath(),
                 role == null ? EntityRole.PRODUCTION : role,
                 disposition, dispositionReason == null ? previous : dispositionReason,
-                mayBlock);
+                mayBlock, previous);
     }
 
     private static String message(MaintainabilityRule rule, FindingLifecycle lifecycle) {
@@ -303,7 +338,7 @@ final class FindingDeltaEvaluator {
     Delta reportRemovedEntity(MaintainabilityRule rule, RuleEvaluation base, String path,
             EntityRole role) {
         return new Delta(
-                List.of(finding(rule, base, FindingLifecycle.RESOLVED,
+                List.of(finding(rule, base, base, FindingLifecycle.RESOLVED,
                         FindingDisposition.RESOLVED, REASON_ENTITY_REMOVED, path, base.entityKey(),
                         role)),
                 List.of());

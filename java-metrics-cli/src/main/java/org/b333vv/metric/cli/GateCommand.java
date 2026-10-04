@@ -296,7 +296,7 @@ final class GateCommand implements Callable<Integer> {
             stderr.println(verdict);
             stderr.flush();
             flushWarnings(warningBuffer);
-            if (outputFile != null) {
+            if (outputFile != null || jsonOutputFile != null) {
                 writeReport(effectiveFormat, "PASSED",
                         new GateReportView("PASSED", base, 0, List.of(), List.of(), List.of(),
                                 comparison(plan, null, null, null),
@@ -541,7 +541,7 @@ final class GateCommand implements Callable<Integer> {
 
         // The report is written for an incomplete run too. That is the case a reader most needs it:
         // the verdict line says something could not be checked, and only the report says what.
-        if (outputFile != null) {
+        if (outputFile != null || jsonOutputFile != null) {
             writeReport(effectiveFormat, status,
                     new GateReportView(status, base, subjectPaths.size(), violations,
                             result.warnings(), byFile(violations, result.warnings()),
@@ -1223,17 +1223,27 @@ final class GateCommand implements Callable<Integer> {
      */
     private void writeReport(OutputFormat format, String status, GateReportView view)
             throws IOException {
-        String content = maintainabilityReport != null && activePolicy != null
-                && activePolicy.isMaintainability()
-                ? reportAdapters.render(ReportType.FINDINGS, format,
-                        new FindingReportContext(maintainabilityReport, sidecarComparison()))
-                : reportAdapters.render(ReportType.GATE, format, new GateReportContext(view));
-        if (STDOUT.equals(outputFile.toString())) {
-            stdout.println(content);
-            stdout.flush();
-        } else {
-            writeAtomically(outputFile.toAbsolutePath().normalize(), content);
+        if (outputFile != null) {
+            String content = maintainabilityReport != null && activePolicy != null
+                    && activePolicy.isMaintainability()
+                    ? reportAdapters.render(ReportType.FINDINGS, format,
+                            new FindingReportContext(maintainabilityReport, sidecarComparison()))
+                    : reportAdapters.render(ReportType.GATE, format, new GateReportContext(view));
+            if (STDOUT.equals(outputFile.toString())) {
+                stdout.println(content);
+                stdout.flush();
+            } else {
+                writeAtomically(outputFile.toAbsolutePath().normalize(), content);
+            }
         }
+
+        // The sidecar is written on its own terms, not as a consequence of the primary report existing.
+        //
+        // It used to be written inside the primary-report branch, so `--json-output` with no
+        // `--output` -- which is the natural way to ask for machine-readable findings and nothing
+        // else -- exited 0 having written nothing. The Action relies on exactly that invocation, which
+        // is why this was not noticed: the caller asked for a file it did not receive and had no way to
+        // tell.
         if (jsonOutputFile != null) {
             // Rendered directly rather than through the registry: the registry resolves one adapter
             // per format, and JSON already belongs to the gate report. The sidecar is a second

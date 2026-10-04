@@ -85,6 +85,26 @@ record FindingEvidence(
                 completenessReasons, contributions);
     }
 
+    /**
+     * The same measurement with its base value supplied, computing the delta.
+     *
+     * <p>The delta is derived here rather than left null, and only when both sides are present: a
+     * delta with one side missing is not "no change", it is a number nobody can compute. That is the
+     * distinction the whole {@code Double}-valued design exists to keep, and a paired finding is
+     * exactly the case where both sides exist.
+     *
+     * <p>A no-op when a value is already present, so pairing is idempotent and cannot overwrite a
+     * measurement the evaluator actually took at the base side.
+     */
+    FindingEvidence withBefore(Double beforeValue) {
+        if (beforeValue == null || before != null) {
+            return this;
+        }
+        Double computedDelta = after == null ? delta : after - beforeValue;
+        return new FindingEvidence(metric, beforeValue, after, minThreshold, maxThreshold,
+                computedDelta, unit, completenessReasons, contributions);
+    }
+
     /** Both sides measured and neither carrying a caveat. */
     static FindingEvidence measured(MetricCode metric, double before, double after, String unit) {
         return new FindingEvidence(metric, before, after, null, null, after - before, unit,

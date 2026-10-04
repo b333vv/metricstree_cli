@@ -663,6 +663,38 @@ class MaintainabilityWorkflowTest {
          * the only answer that lets them find out, and the message has to name the input rather than
          * merely refusing.
          */
+        /**
+         * The findings sidecar is written on its own, not as a side effect of the primary report.
+         *
+         * <p>Asking for machine-readable findings and nothing else is the natural invocation, and it
+         * used to exit 0 having written no file at all: the sidecar was written inside the branch that
+         * handles {@code --output}. A caller had no way to tell, and the composite Action asks for
+         * exactly this, so the gap survived every run it was exercised in.
+         */
+        @Test
+        @DisplayName("the findings sidecar is written without --output")
+        void findingsSidecarIsWrittenOnItsOwn() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(20));
+            commitLocally(git, "complex");
+
+            Path sidecar = repo.resolve("findings-only.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            // Plain gate(), deliberately without --output: that is the invocation under test.
+            int exit = gate(err, "--base", "HEAD~1", "--json-output", sidecar.toString(),
+                    "--enforcement", "enforce");
+
+            assertTrue(Files.exists(sidecar),
+                    "--json-output was asked for and nothing was written: "
+                            + err.toString(StandardCharsets.UTF_8));
+            JsonNode written = mapper.readTree(Files.readString(sidecar));
+            assertEquals("MT-M001", written.get("findings").get(0).get("ruleId").asText());
+            assertNotEquals(0, exit, err.toString(StandardCharsets.UTF_8));
+        }
+
         @Test
         @DisplayName("an explicit legacy profile is a usage error, not a silent no-op")
         void explicitProfileConflictsWithMaintainability() throws Exception {

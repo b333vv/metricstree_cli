@@ -189,7 +189,7 @@ record FindingView(
     static FindingView of(Finding finding) {
         return new FindingView(
                 finding.ruleId(), finding.ruleVersion(), finding.fingerprint(),
-                previousFingerprintOf(finding),
+                finding.previousFingerprint(),
                 finding.title(), finding.message(), finding.severity(), finding.maturity(),
                 finding.evaluationStatus(), finding.lifecycle(), finding.disposition(),
                 finding.dispositionReason(), finding.role(),
@@ -204,29 +204,6 @@ record FindingView(
                 finding.remediationHint(), finding.documentationPath(), finding.blocks());
     }
 
-    /**
-     * The base counterpart's fingerprint, read back from the disposition reason.
-     *
-     * <p>A seam rather than a field: ML-018 parked the previous fingerprint in the reason because the
-     * record was already frozen, and ML-020 is where it becomes a real property. The recognition is
-     * deliberately narrow \u2014 exactly 64 lowercase hex characters, nothing else is promoted into an
-     * identity field.
-     */
-    private static String previousFingerprintOf(Finding finding) {
-        String reason = finding.dispositionReason();
-        if (reason == null || reason.length() != 64) {
-            return null;
-        }
-        for (int index = 0; index < reason.length(); index++) {
-            char character = reason.charAt(index);
-            boolean hex = (character >= '0' && character <= '9')
-                    || (character >= 'a' && character <= 'f');
-            if (!hex) {
-                return null;
-            }
-        }
-        return reason;
-    }
 }
 
 /**

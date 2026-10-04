@@ -300,4 +300,45 @@ class FindingReportJsonTest {
         assertFalse(legacy.get("summary").has("methodRules"),
                 "the method-rules section stays absent when no method rules ran");
     }
+
+
+    /**
+     * A finding about a change carries both of the numbers the change is about.
+     *
+     * <p>Before, every finding published {@code before: null} and {@code delta: null} -- including the
+     * findings whose entire reason for existing is a comparison between two revisions. The evaluators
+     * each measure one side at a time, so nothing filled the gap in, and a consumer reading the JSON
+     * could see what a value is now and never what it was. That is the audit's A10, and it makes the
+     * report unusable for the one question a diff-aware gate exists to answer.
+     */
+    @Test
+    void evidenceCarriesBothRevisionsAndTheirDifference() throws Exception {
+        Finding paired = new Finding("MT-M001", 1,
+                EntityKey.ofMethod("src/main/java/app/Order.java", "app.Order", "f(int)"),
+                "High method complexity", "matched", FindingLocation.of("src/Order.java", 1),
+                FindingLocation.of("src/Order.java", 1), RuleSeverity.WARNING, RuleMaturity.CANDIDATE,
+                EvaluationStatus.COMPLETE_MATCH, FindingLifecycle.WORSENED,
+                List.of(FindingEvidence.measured(MetricCode.CC, 16.0, 21.0, "complexity")),
+                List.of(), null, "docs/rules/mt-m001.md", EntityRole.PRODUCTION,
+                FindingDisposition.ACTIVE, null, true,
+                FindingFingerprint.of("MT-M001", 1,
+                        EntityKey.ofMethod("src/Order.java", "app.Order", "f(int)")));
+
+        JsonNode json = MAPPER.readTree(adapter.render(new FindingReportContext(
+                new FindingReport(FindingReport.SCHEMA_VERSION, "FAILED",
+                        new MaintainabilitySettings(null, List.of("MT-M001"), Map.of(), "d", List.of(),
+                                "ENFORCE"),
+                        List.of(paired), List.of()), null)));
+
+        JsonNode evidence = json.get("findings").get(0).get("evidence").get(0);
+        assertEquals(16.0, evidence.get("before").asDouble(),
+                "a worsening finding must show what it worsened from");
+        assertEquals(21.0, evidence.get("after").asDouble());
+        assertEquals(5.0, evidence.get("delta").asDouble(),
+                "and the difference, which is what the rule's budget is stated in");
+        assertEquals(paired.previousFingerprint(),
+                json.get("findings").get(0).get("previousFingerprint").asText(),
+                "the base counterpart's identity is a field, not a 64-hex string recovered from the"
+                        + " disposition reason -- an edited reason used to drop it silently");
+    }
 }
