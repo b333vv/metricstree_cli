@@ -1012,22 +1012,41 @@ public class JavaParserJavaMetricsAnalyzer implements JavaMetricsAnalyzer {
 
     /** Merges what every tracing visitor collected for the method just analysed. */
     private static MetricEvidence freezeContributions(List<JavaParserMethodMetricVisitor> visitors) {
+        // The cap is per metric, which is the audit's A12.
+        //
+        // It used to be a single budget shared by every metric, applied to one flat list. A method with
+        // 110 CC branches filled it completely, so the MND trace -- the deepest nesting the method
+        // contained, and the one a reader would most want to see -- came back with zero records and an
+        // omitted count. One metric's abundance silently deleted another's evidence, and the two are
+        // independent measurements: there is no reading under which 110 branches is a reason to stop
+        // recording how deep they nest.
+        //
+        // Each metric therefore gets its own bound, and a metric that runs out records how many it
+        // dropped. The aggregate value is unaffected either way: this is a cap on the explanation, not
+        // on the measurement.
+        int limit = org.b333vv.metric.library.core.MetricEvidence.DEFAULT_LIMIT;
         java.util.List<MetricContribution> all = new java.util.ArrayList<>();
         java.util.Map<MetricCode, Integer> omitted = new java.util.TreeMap<>();
+        java.util.Map<MetricCode, Integer> kept = new java.util.TreeMap<>();
         for (JavaParserMethodMetricVisitor visitor : visitors) {
             if (!(visitor instanceof ContributesToTrace contributing)) {
                 continue;
             }
             MetricEvidence traced = contributing.collectedEvidence();
             for (org.b333vv.metric.library.core.MetricCode metric : traced.metrics()) {
+                int already = kept.getOrDefault(metric, 0);
                 for (MetricContribution contribution : traced.forMetric(metric)) {
-                    if (all.size() < org.b333vv.metric.library.core.MetricEvidence.DEFAULT_LIMIT) {
+                    if (already < limit) {
                         all.add(contribution);
+                        kept.put(metric, already + 1);
                     } else {
                         omitted.merge(metric, 1, Integer::sum);
                     }
                 }
-                omitted.merge(metric, traced.omitted(metric), Integer::sum);
+                int visitorOmitted = traced.omitted(metric);
+                if (visitorOmitted > 0) {
+                    omitted.merge(metric, visitorOmitted, Integer::sum);
+                }
             }
         }
         return org.b333vv.metric.library.core.MetricEvidence.of(all, omitted);

@@ -265,6 +265,46 @@ class DetectCommandTest {
                 "the one matching method is the one finding");
     }
 
+    /**
+     * Every output format reports the same method findings.
+     *
+     * <p>The audit's A15. A method-level finding appeared in the JSON report and vanished from HTML,
+     * agent-md and SARIF, because the detection adapters called writer overloads that took only class
+     * and package matches. The writers had accepted method matches all along; nothing passed them.
+     *
+     * <p>A rule a format silently omits is indistinguishable from a rule that did not match, and that is
+     * the one thing a report format must never be -- especially SARIF, which is the document a consumer
+     * trusts to enumerate what was found. The two tests called "method rules, from a JSON file" and
+     * "from a YAML file" were both rendered as JSON, so the gap was in neither: the pair varied the
+     * input format and not the output, which is the wrong axis for this question.
+     *
+     * <p>Asserted on the rule name and the method signature in every format, rather than on a count, so
+     * a format that reported the rule without its entities would fail too.
+     */
+    @Test
+    void everyOutputFormatCarriesTheMethodFindings(@TempDir Path tempDir) throws Exception {
+        Path rules = tempDir.resolve("method-rules.json");
+        Files.writeString(rules, """
+                [{"name":"ComplexMethod","conditions":[{"metric":"CC","min":10}]}]
+                """);
+        Path source = tempDir.resolve("Demo.java");
+        Files.writeString(source, "class Demo { int f(int x){ if(x>0) return 1; return 0; } }");
+
+        for (String format : List.of("json", "html", "agent-md", "sarif")) {
+            Path output = tempDir.resolve("out-" + format + ".txt");
+            createApp(request -> reportWithMethods()).run(new String[]{
+                    "detect", "-s", source.toString(), "--method-rules", rules.toString(),
+                    "--format", format, "-o", output.toString()},
+                    new ByteArrayOutputStream(), new ByteArrayOutputStream());
+
+            String rendered = Files.readString(output);
+            assertTrue(rendered.contains("ComplexMethod"),
+                    format + " must report the rule that matched: " + rendered);
+            assertTrue(rendered.contains("compute(int)"),
+                    format + " must report the entity that matched, not only the rule: " + rendered);
+        }
+    }
+
     /** The same rules, written as YAML. Both spellings are one configuration. */
     @Test
     void methodRulesEndToEndFromYamlFile(@TempDir Path tempDir) throws Exception {

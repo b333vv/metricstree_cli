@@ -17,6 +17,9 @@ final class DetectionAgentMarkdownAdapter implements ReportAdapter {
     }
     @Override public String render(ReportContext context) {
         DetectionReportContext value = (DetectionReportContext) context;
-        return new AgentMarkdownReportWriter().forDetect(value.baseDir(), value.classMatches(), value.classRules(), value.packageMatches(), value.packageRules());
+        // Method matches included: see DetectionHtmlReportAdapter and the audit's A15.
+        return new AgentMarkdownReportWriter().forDetect(value.baseDir(), value.classMatches(),
+                value.classRules(), value.packageMatches(), value.packageRules(),
+                value.methodMatches());
     }
 }

@@ -115,15 +115,53 @@ different situations; expired-and-matched is now `EXPIRED` (it will start produc
 and expired-never-matched is `STALE` (it is finished).
 
 
-**Not yet done.** A09 (remaining detect report-parity gaps), A12 (per-metric trace cap), A14 (digest
-coverage of roles and metric semantic versions), A15 (legacy method findings absent from the other
-report formats), A18 (release workflow: real version, unversioned builds report `-dev` rather than
-`unspecified`, pinned action SHAs) and A19 (Action: no `latest` download without a verified checksum,
-required findings-count/completeness outputs, the documented legacy violations-count alias, shallow
-ancestry, and re-running the CLI for the human format instead of rendering every format from the one
-report). Two harness details also remain: the PMD adapter expects a JSON array rather than PMD's
-documented `files`/`violations` object, and the case schemas still lack project ID, roots/classpath
-digest and configuration identity.
+**Closed — the last five mechanical items (A09, A12, A14, A15, and the A19 sidecar).**
+
+**A09.** `detect` on malformed Java returned exit 0, `PASSED`, zero findings and zero issues. It now
+builds the completeness picture the gate already builds and decides its verdict by the same precedence.
+Parse failures come from the analyzer's own diagnostics rather than from an absent finding, because a
+parser with error recovery hands back a partial AST for a badly broken file — the inventory can report
+it as parsed, and "no finding" is not evidence a file was read. `detect.policy` and `detect.enforcement`
+were accepted by the loader and read by nobody, so a config selecting the maintainability policy ran the
+legacy one; both are read now, with flag-beats-config precedence, and the `detect:` section is validated
+like `gate:` so a typo is refused rather than inert.
+
+**A19 (sidecar).** Under the legacy policy the sidecar published an empty findings report while the gate
+exited 1: `status: PASSED, blocking: 0` beside `FAILED: growth budget breach`. The composite Action reads
+its outputs from that document, so a consumer saw a clean scan and a failure simultaneously. Legacy
+violations are now projected into the findings vocabulary rather than the sidecar being emptied, so one
+schema serves both policies and `blocking-count` means what a consumer filtering on it expects.
+
+**A12.** The contribution-trace cap was one budget shared by every metric, so 110 CC branches filled it
+and MND came back with zero records — the deepest nesting in the method, absent because an unrelated
+measurement was large. The cap is per metric now; verified end to end at CC 116 / MND 5, both with 100
+records.
+
+**A14.** Role classification was parsed outside the digest entirely, so reclassifying every file from
+`production` to `dto` changed the finding set and left the digest byte-identical — a stored baseline
+could accept debt measured under a policy it had never been compared against. In the other direction the
+free-text suppression reason was hashed, so rewording a justification invalidated every baseline. Roles
+and expiries are hashed, reasons are not; each boundary is asserted against the *other* value rather than
+against a constant.
+
+**A15.** Method-level findings appeared in JSON and vanished from HTML, agent-md and SARIF: the
+detection adapters called writer overloads taking only class and package matches, though the writers had
+accepted method matches all along. SARIF had no method mapping at all and gained one, with a real line
+range rather than line 1. The two pre-existing "method rules, from a JSON file / YAML file" tests varied
+the input format and both rendered JSON — the wrong axis for this question — so the new test varies the
+*output* format and asserts the rule name and the method signature in each.
+
+
+**Not yet done.** A18 (release workflow: pass `-PmetricsVersion` from the tag so a `v*` tag does not
+produce archives named `2026.0.0`, give development builds an explicit `-dev` suffix, and replace the
+`softprops/action-gh-release` pin marked `UNVERIFIED`) and the rest of A19 (refuse a `latest` download
+without a verified checksum, add the required findings-count/completeness outputs and the documented
+legacy violations-count alias, establish shallow ancestry rather than fetching only missing refs, and
+render every format from the one report instead of rerunning the CLI). The first needs a decision I
+cannot make offline — the contract says to consult current upstream releases for the SHA rather than
+guess, and the composite YAML is not exercised by any local test. Two harness details also remain: the
+PMD adapter expects a JSON array rather than PMD's documented `files`/`violations` object, and the case
+schemas lack project ID, roots/classpath digest and configuration identity.
 
 ## Session: acceptance audit of ML-001–ML-032 (2026-10-04)
 

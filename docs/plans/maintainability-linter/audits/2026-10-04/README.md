@@ -32,7 +32,15 @@ Also closed since: A07 (project-scope findings are limited to the changed paths)
 carries both revisions and their delta; `previousFingerprint` is a field; the findings sidecar is written
 without `--output`).
 
-**Open:** A09, A12, A14, A15, A18, A19. Also still open from the detail sections: the
+Also closed since: A09 (detect builds the completeness picture the gate builds, and reads
+`detect.policy` / `detect.enforcement` from the config), A12 (the contribution-trace cap is per metric,
+so one metric's volume cannot delete another's evidence), A14 (role classification and expiries are
+hashed into the policy digest, and suppression reasons are not), A15 (method findings reach every output
+format, including SARIF, with a real line range).
+
+**Open:** A18, and the remainder of A19 (checksum enforcement, the extra Action outputs, shallow
+ancestry, and rendering every format from the one report rather than rerunning the CLI). The sidecar
+half of A19 — the legacy policy publishing `PASSED` beside a failing gate — is closed. Also still open from the detail sections: the
 PMD adapter's array-shaped input, and the case schemas' missing project ID, roots/classpath digest and
 configuration identity.
 

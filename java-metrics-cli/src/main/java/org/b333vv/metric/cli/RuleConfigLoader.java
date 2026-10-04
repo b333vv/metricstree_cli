@@ -96,10 +96,11 @@ final class RuleConfigLoader {
         List<String> enabled = enabledRules(file, section.get("enabledRules"));
         Map<String, MaintainabilitySettings.RuleOverride> overrides =
                 overrides(file, section.get("rules"));
+        List<FindingSuppression> configuredSuppressions = suppressions(file, section.get("suppressions"));
+        List<RoleClassifier.Rule> roleRules = roles(file, section.get("roles"));
         return new MaintainabilitySettings(file, enabled, overrides,
-                digest(enabled, overrides, suppressions(file, section.get("suppressions"))),
-                roles(file, section.get("roles")), null,
-                suppressions(file, section.get("suppressions")));
+                digest(enabled, overrides, configuredSuppressions, roleRules),
+                roleRules, null, configuredSuppressions);
 
     }
     /**
@@ -443,8 +444,20 @@ final class RuleConfigLoader {
     /** The digest of the effective policy: which rules run, and how each one was changed. */
     private static String digest(List<String> enabled,
             Map<String, MaintainabilitySettings.RuleOverride> overrides,
-            List<FindingSuppression> suppressions) {
+            List<FindingSuppression> suppressions,
+            List<RoleClassifier.Rule> roleRules) {
         StringBuilder material = new StringBuilder(MaintainabilityRules.digest()).append('\n');
+        // Global role classification decides which code each rule applies to, so it is part of what the
+        // policy judges rather than something that only affects presentation. It was parsed outside the
+        // digest entirely, which is the audit's A14: moving every file from `production` to `dto`
+        // changed what the rules ran over and left the digest byte-identical, so a stored baseline
+        // accepted a finding set it had never been compared against.
+        if (roleRules != null) {
+            for (RoleClassifier.Rule rule : roleRules) {
+                material.append("role:").append(rule.pathRegex())
+                        .append('=').append(rule.role().id()).append('\n');
+            }
+        }
         List<String> sortedEnabled = new ArrayList<>(enabled);
         java.util.Collections.sort(sortedEnabled);
         material.append("enabled:").append(String.join(",", sortedEnabled)).append('\n');
@@ -456,10 +469,14 @@ final class RuleConfigLoader {
                 .comparing(FindingSuppression::ruleId)
                 .thenComparing(s -> s.entityKey().render())
                 .thenComparing(FindingSuppression::reason));
+        // The reason is deliberately excluded. It is prose a maintainer writes for the next reader of
+        // the diff, and it cannot change which findings the policy produces or whether they block --
+        // but including it means rewording a justification invalidates every stored baseline, so people
+        // stop touching the reasons and the explanations go stale. What does change the run is hashed:
+        // the rule, the exact entity, and the expiry, since a date in the past stops the entry applying.
         sortedSuppressions.forEach(suppression -> material.append("suppress:")
                 .append(suppression.ruleId())
                 .append('|').append(suppression.entityKey().render())
-                .append('|').append(suppression.reason())
                 .append('|').append(suppression.expiresOn() == null ? "" : suppression.expiresOn())
                 .append('\n'));
         new TreeMap<>(overrides).forEach((ruleId, override) -> {

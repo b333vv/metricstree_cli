@@ -501,4 +501,80 @@ class GateCommandTest {
         String stderr = err.toString(StandardCharsets.UTF_8);
         assertTrue(stderr.contains("--config") && stderr.contains("--no-config"), stderr);
     }
+
+    /**
+     * The legacy policy's sidecar reports the legacy result.
+     *
+     * <p>The audit's A19, and the shape of it is why it matters: the gate exited 1 over a growth budget
+     * breach and the findings sidecar it published said PASSED with zero findings and zero blocking. The
+     * composite Action reads its outputs from that document, so a consumer saw a clean scan and a
+     * non-zero exit at the same time and had no way to say which one was the analysis.
+     *
+     * <p>The violation is projected into the findings vocabulary rather than replacing the sidecar with
+     * a legacy-shaped document, so one schema serves both policies and the counts mean what a consumer
+     * filtering by {@code blocking} expects them to mean.
+     */
+    @Test
+    void theLegacySidecarCarriesTheLegacyResult() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 2));
+        write("thresholds.json", "{\"CC\":{\"min\":5,\"max\":10}}");
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 20));
+        commitAll("complex");
+
+        Path sidecar = repo.resolve("findings.json");
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGateIn(repo, err, "gate", "--base", "HEAD~1",
+                "-t", repo.resolve("thresholds.json").toString(),
+                "--json-output", sidecar.toString());
+
+        assertEquals(1, exitCode,
+                "a growth budget breach fails the gate: " + err.toString(StandardCharsets.UTF_8));
+
+        JsonNode json = mapper.readTree(Files.readString(sidecar));
+        assertEquals("FAILED", json.get("status").asText(),
+                "and the sidecar says so: the exit code and the machine-readable report are one"
+                        + " statement about one run");
+        assertEquals(1, json.get("summary").get("blocking").asInt(),
+                "the violation that decided the verdict is a blocking finding");
+        assertEquals("legacy.growth-budget", json.get("findings").get(0).get("ruleId").asText(),
+                "named for what it is; a legacy violation is not a catalogue rule and is not dressed"
+                        + " up as one");
+    }
+
+    /**
+     * The sidecar and the primary report are two renderings of one set of facts.
+     *
+     * <p>Stated separately because they are written at different moments by different adapters, and a
+     * document pair that can disagree is the failure this whole sidecar arrangement exists to prevent.
+     */
+    @Test
+    void theSidecarAndThePrimaryReportAgree() throws Exception {
+        initRepo();
+        write("app/Demo.java", classWithIfs("Demo", 2));
+        commitAll("base");
+        write("app/Demo.java", classWithIfs("Demo", 20));
+        commitAll("complex");
+
+        Path report = repo.resolve("gate.json");
+        Path sidecar = repo.resolve("findings.json");
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        runGateIn(repo, err, "gate", "--base", "HEAD~1", "--output", report.toString(),
+                "--json-output", sidecar.toString());
+
+        JsonNode primary = mapper.readTree(Files.readString(report));
+        JsonNode findings = mapper.readTree(Files.readString(sidecar));
+        assertEquals(primary.get("status").asText(), findings.get("status").asText(),
+                "two documents about one run that disagree about the verdict is worse than either"
+                        + " one");
+        assertEquals(primary.get("violations").size(),
+                findings.get("summary").get("blocking").asInt(),
+                "and the blocking count is the number of violations the primary report lists");
+        assertEquals(primary.get("violations").size() + primary.get("warnings").size(),
+                findings.get("findings").size(),
+                "every legacy finding is carried: a violation blocks, a warning is reported, and"
+                        + " neither is dropped on the way into the sidecar");
+    }
+
 }

@@ -17,7 +17,8 @@ final class DetectionSarifReportAdapter implements ReportAdapter {
     @Override public String render(ReportContext context) throws java.io.IOException {
         DetectionReportContext value = (DetectionReportContext) context;
         SarifReportWriter writer = new SarifReportWriter();
-        return writer.toSarif(writer.forAntipatterns(value.classMatches(), value.packageMatches()));
+        return writer.toSarif(writer.forAntipatterns(value.classMatches(), value.packageMatches(),
+                value.methodMatches()));
     }
 
     /**

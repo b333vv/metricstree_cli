@@ -116,6 +116,21 @@ final class SarifReportWriter {
     SarifLog forAntipatterns(
             List<CombinationDetector.ClassMatch> classMatches,
             List<CombinationDetector.PackageMatch> packageMatches) {
+        return forAntipatterns(classMatches, packageMatches, List.of());
+    }
+
+    /**
+     * The legacy antipattern vocabulary, including method rules.
+     *
+     * <p>Method matches were absent from this mapping entirely, which is the audit's A15: a method-level
+     * finding appeared in the JSON report and vanished from SARIF, so a code-scanning consumer saw a
+     * clean file. A rule a format silently omits is indistinguishable from a rule that did not match,
+     * and SARIF is precisely the format a consumer trusts to enumerate what was found.
+     */
+    SarifLog forAntipatterns(
+            List<CombinationDetector.ClassMatch> classMatches,
+            List<CombinationDetector.PackageMatch> packageMatches,
+            List<CombinationDetector.MethodMatch> methodMatches) {
         RuleSet rules = new RuleSet(ANTIPATTERN_RULE_PREFIX);
         List<SarifLog.Result> sarifResults = new ArrayList<>();
 
@@ -153,6 +168,23 @@ final class SarifReportWriter {
                         // omitted entirely. An empty array would not do: it claims the result has
                         // locations and then names none. See the class comment.
                         null));
+            }
+        }
+
+        for (CombinationDetector.MethodMatch match : methodMatches == null ? List.<CombinationDetector.MethodMatch>of() : methodMatches) {
+            String ruleId = rules.ruleFor(
+                    match.name(),
+                    match.name(),
+                    "Methods matching the '" + match.name() + "' rule");
+            for (CombinationDetector.MethodEntityRef entity : match.matches()) {
+                sarifResults.add(new SarifLog.Result(
+                        ruleId,
+                        rules.indexOf(ruleId),
+                        SarifLog.Level.WARNING,
+                        new SarifLog.Message(
+                                "Method " + entity.signature() + " in " + entity.qualifiedName()
+                                        + " matches the '" + match.name() + "' rule"),
+                        locationsFor(entity.sourcePath(), entity.startLine(), entity.endLine())));
             }
         }
 
@@ -324,9 +356,20 @@ final class SarifReportWriter {
     }
 
     private static List<SarifLog.Location> locationsFor(String file) {
+        return locationsFor(file, WHOLE_ENTITY_START_LINE, WHOLE_ENTITY_START_LINE);
+    }
+
+    /**
+     * The location of a method, at the lines it occupies.
+     *
+     * <p>A method is a range in the file, not the whole of it, so the region is the method's own lines.
+     * Pointing every method result at line 1 would still be a valid SARIF file and would still be
+     * useless: a consumer shows the reader the top of the class for a finding about the bottom of it.
+     */
+    private static List<SarifLog.Location> locationsFor(String file, int startLine, int endLine) {
         return List.of(new SarifLog.Location(new SarifLog.PhysicalLocation(
                 new SarifLog.ArtifactLocation(toUri(file)),
-                new SarifLog.Region(WHOLE_ENTITY_START_LINE))));
+                new SarifLog.Region(Math.max(1, startLine), Math.max(1, endLine)))));
     }
 
     /**

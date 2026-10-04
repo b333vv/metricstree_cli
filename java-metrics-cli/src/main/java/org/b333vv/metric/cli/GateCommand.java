@@ -66,6 +66,14 @@ final class GateCommand implements Callable<Integer> {
     private MaintainabilityPolicy activePolicy;
     private ComparisonPlan plan;
 
+    // What the findings sidecar publishes when the legacy policy ran. Captured from the run rather
+    // than recomputed at write time, so the sidecar and the primary report are two renderings of one
+    // set of facts and cannot disagree about what happened -- which is the whole of A19.
+    private String sidecarStatus = "PASSED";
+    private List<GateFinding> sidecarViolations = List.of();
+    private List<GateFinding> sidecarWarnings = List.of();
+    private AnalysisCompleteness sidecarCompleteness;
+
     GateCommand(
             JavaMetricsAnalyzer analyzer,
             Supplier<Path> currentWorkingDirectorySupplier,
@@ -297,18 +305,18 @@ final class GateCommand implements Callable<Integer> {
             stderr.flush();
             flushWarnings(warningBuffer);
             if (outputFile != null || jsonOutputFile != null) {
+                sidecarCompleteness = new AnalysisCompleteness(
+                        excludedPaths.stream()
+                                .map(path -> CheckEvaluationIssue.optional(path,
+                                        "excluded", path
+                                                + " was excluded by configuration and was not checked"))
+                                .toList(),
+                        0,
+                        excludedPaths,
+                        List.of());
                 writeReport(effectiveFormat, "PASSED",
                         new GateReportView("PASSED", base, 0, List.of(), List.of(), List.of(),
-                                comparison(plan, null, null, null),
-                                new AnalysisCompleteness(
-                                        excludedPaths.stream()
-                                                .map(path -> CheckEvaluationIssue.optional(path,
-                                                        "excluded", path
-                                                                + " was excluded by configuration and was not checked"))
-                                                .toList(),
-                                        0,
-                                        excludedPaths,
-                                        List.of())));
+                                comparison(plan, null, null, null), sidecarCompleteness));
             }
             return 0;
         }
@@ -542,6 +550,14 @@ final class GateCommand implements Callable<Integer> {
         // The report is written for an incomplete run too. That is the case a reader most needs it:
         // the verdict line says something could not be checked, and only the report says what.
         if (outputFile != null || jsonOutputFile != null) {
+            // Captured before rendering, so the sidecar describes this run rather than a recomputation
+            // of it. Under the legacy policy these are the whole result: the sidecar used to publish an
+            // empty findings report while the gate exited 1, and a consumer reading both saw a clean
+            // scan and a failure at the same time.
+            sidecarStatus = status;
+            sidecarViolations = List.copyOf(violations);
+            sidecarWarnings = List.copyOf(result.warnings());
+            sidecarCompleteness = completeness;
             writeReport(effectiveFormat, status,
                     new GateReportView(status, base, subjectPaths.size(), violations,
                             result.warnings(), byFile(violations, result.warnings()),
@@ -1250,15 +1266,92 @@ final class GateCommand implements Callable<Integer> {
             // document about the same run, not a second rendering choice for --format.
             writeAtomically(jsonOutputFile.toAbsolutePath().normalize(),
                     new FindingJsonReportAdapter().render(new FindingReportContext(
-                            findingsForSidecar(), sidecarComparison())));
+                            findingsForSidecar(sidecarStatus, sidecarViolations, sidecarWarnings,
+                                    sidecarCompleteness),
+                            sidecarComparison())));
         }
     }
 
-    /** The findings report the sidecar renders, from the same run as the primary report. */
-    private FindingReport findingsForSidecar() {
-        return maintainabilityReport != null
-                ? maintainabilityReport
-                : FindingReport.empty(activePolicy.settings());
+    /**
+     * The findings report the sidecar renders, from the same run as the primary report.
+     *
+     * <p>Under the legacy policy the legacy result <em>is</em> the result: it is projected into findings
+     * rather than replaced with an empty report. That empty report is the audit's A19, and it is the
+     * worst shape a defect can take here — the gate exited 1 over a growth budget breach and the
+     * sidecar it published said PASSED, zero findings, zero blocking. The composite Action reads its
+     * outputs from this document, so a consumer saw a clean scan and a non-zero exit code at the same
+     * time, and had no way to say which one was the analysis.
+     *
+     * <p>Projecting rather than special-casing keeps one JSON schema for both policies, which is what
+     * the contract asks for, and keeps the counts honest: a legacy violation that decides the verdict
+     * is a blocking finding here, and one that is only reported is not.
+     *
+     * @param status   the verdict this run actually reached, which may differ from the policy's own
+     * @param violations the legacy violations, which decide the verdict under the legacy policy
+     * @param warnings   the legacy warnings, reported but not blocking
+     * @param completeness what the analysis established, when there is a report to carry it
+     */
+    private FindingReport findingsForSidecar(String status, List<GateFinding> violations,
+            List<GateFinding> warnings, AnalysisCompleteness completeness) {
+        if (maintainabilityReport != null) {
+            return maintainabilityReport;
+        }
+        List<Finding> findings = new java.util.ArrayList<>(violations.size() + warnings.size());
+        violations.forEach(violation -> findings.add(legacyFinding(violation, true)));
+        warnings.forEach(warning -> findings.add(legacyFinding(warning, false)));
+        List<EvaluationIssue> issues = policyIssues(completeness);
+        return new FindingReport(FindingReport.SCHEMA_VERSION, status, activePolicy.settings(),
+                findings, issues, List.of(), completeness);
+    }
+
+    /**
+     * One legacy violation or warning as a finding.
+     *
+     * <p>The rule ID is the legacy finding type, because that is what it is and what a consumer
+     * filtering by rule would look for. A legacy violation is not a catalogue rule and is not dressed up
+     * as one: giving it a catalogue ID would make it look like something the maintainability policy
+     * decided, and {@code policyDigest} beside it would imply a policy that was never in force.
+     */
+    private static Finding legacyFinding(GateFinding legacy, boolean blocking) {
+        return new Finding(
+                "legacy." + legacy.type().id(),
+                1,
+                EntityKey.ofMethod(legacy.file(), legacy.entity(), legacy.entity()),
+                legacy.type().id().replace('-', ' '),
+                legacy.message(),
+                FindingLocation.of(legacy.file(), 1),
+                null,
+                legacy.severity() == Severity.HIGH ? RuleSeverity.ERROR : RuleSeverity.WARNING,
+                RuleMaturity.VALIDATED,
+                EvaluationStatus.COMPLETE_MATCH,
+                blocking ? FindingLifecycle.INTRODUCED : FindingLifecycle.EXISTING,
+                legacyEvidence(legacy),
+                List.of(),
+                null,
+                null,
+                EntityRole.PRODUCTION,
+                blocking ? FindingDisposition.ACTIVE : FindingDisposition.EXISTING,
+                blocking ? null : "reported, not blocking",
+                blocking);
+    }
+
+    /** The measured sides of a legacy finding, as evidence, with absent ones left absent. */
+    private static List<FindingEvidence> legacyEvidence(GateFinding legacy) {
+        if (legacy.metric() == null) {
+            return List.of();
+        }
+        org.b333vv.metric.library.core.MetricCode code;
+        try {
+            code = org.b333vv.metric.library.core.MetricCode.valueOf(legacy.metric());
+        } catch (IllegalArgumentException notAMetricCode) {
+            return List.of();
+        }
+        return List.of(new FindingEvidence(code, legacy.baseValue(), legacy.value(),
+                legacy.expectedMin(), legacy.expectedMax(),
+                legacy.baseValue() == null || legacy.value() == null
+                        ? null
+                        : legacy.value() - legacy.baseValue(),
+                MethodRuleEvaluator.unitOf(code), List.of()));
     }
 
     /** The comparison the findings were made against, or {@code null} for a current-only run. */

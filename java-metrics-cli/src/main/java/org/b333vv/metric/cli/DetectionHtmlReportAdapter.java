@@ -17,6 +17,12 @@ final class DetectionHtmlReportAdapter implements ReportAdapter {
     }
     @Override public String render(ReportContext context) {
         DetectionReportContext value = (DetectionReportContext) context;
-        return new HtmlReportWriter().forDetect(value.baseDir(), value.classMatches(), value.classRules(), value.packageMatches(), value.packageRules());
+        // The method matches go too, which is the audit's A15: they were dropped here even though the
+        // writer had accepted them all along, so a method-level finding appeared in JSON and vanished
+        // from HTML. A rule that a report format silently omits is indistinguishable from a rule that
+        // did not match, which is the one thing a format must never be.
+        return new HtmlReportWriter().forDetect(value.baseDir(), value.classMatches(),
+                value.classRules(), value.packageMatches(), value.packageRules(),
+                value.methodMatches());
     }
 }

@@ -1,6 +1,7 @@
 package org.b333vv.metric.library.javaparser.visitor.method;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -81,6 +82,52 @@ class MethodContributionTraceTest {
                 .mapToInt(MetricContribution::amount).sum();
         assertEquals(values.get(MetricCode.CC), total,
                 "the trace must account for every point of the reported complexity");
+    }
+
+    /**
+     * One metric's volume cannot delete another's evidence.
+     *
+     * <p>The audit's A12. The cap on recorded contributions was a single budget shared by every metric,
+     * so a method with more than a hundred branches filled it and the nesting trace came back with
+     * nothing at all — the deepest structure in the method, and the thing a reader would most want to
+     * see, was absent because an unrelated measurement was large.
+     *
+     * <p>CC and MND are independent measurements. There is no reading under which 110 branches is a
+     * reason to stop recording how deep the method nests, and this asserts both survive.
+     */
+    @Test
+    @DisplayName("a metric that fills the trace cap does not starve another")
+    void oneMetricsVolumeDoesNotStarveAnother() {
+        StringBuilder branches = new StringBuilder("class Deep {\n    int f(int x) {\n");
+        for (int index = 1; index <= 110; index++) {
+            branches.append("        if (x == ").append(index).append(") return ")
+                    .append(index).append(";\n");
+        }
+        branches.append("        if (x > 0) {\n            if (x > 1) {\n")
+                .append("                if (x > 2) {\n")
+                .append("                    if (x > 3) {\n")
+                .append("                        if (x > 4) { return 9; }\n")
+                .append("                    }\n                }\n")
+                .append("            }\n        }\n        return 0;\n    }\n}\n");
+        MethodDeclaration deep = parse(branches.toString())
+                .findFirst(MethodDeclaration.class).orElseThrow();
+
+        JavaParserMcCabeCyclomaticComplexityMetricVisitor cc =
+                new JavaParserMcCabeCyclomaticComplexityMetricVisitor();
+        cc.withContributions(new MetricEvidence.Collector());
+        JavaParserMaximumNestingDepthMetricVisitor mnd =
+                new JavaParserMaximumNestingDepthMetricVisitor();
+        mnd.withContributions(new MetricEvidence.Collector());
+
+        visit(cc, deep);
+        visit(mnd, deep);
+
+        assertEquals(MetricEvidence.DEFAULT_LIMIT, cc.collectedEvidence()
+                        .forMetric(MetricCode.CC).size(),
+                "the branchy metric saturates its own cap");
+        assertFalse(mnd.collectedEvidence().forMetric(MetricCode.MND).isEmpty(),
+                "and the nesting metric still has its trace: 110 branches is not a reason to stop"
+                        + " recording how deep the method nests");
     }
 
     @Test

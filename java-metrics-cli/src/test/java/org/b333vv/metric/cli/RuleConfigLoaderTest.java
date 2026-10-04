@@ -267,6 +267,93 @@ class RuleConfigLoaderTest {
         assertTrue(failure.getMessage().contains("signature"), failure.getMessage());
     }
 
+    /**
+     * The digest is invalidated by what changes what the policy does, and by nothing else.
+     *
+     * <p>The audit's A14, and both halves of it. Role classification decided which code each rule
+     * applied to and was parsed outside the digest entirely, so moving every file from {@code production}
+     * to {@code dto} changed the finding set and left the digest byte-identical \u2014 a stored baseline
+     * could then accept debt measured under a policy it had never been compared against. In the other
+     * direction, the free-text justification on a suppression was hashed, so rewording a sentence for
+     * the next reader of the diff invalidated every stored baseline; people respond to that by leaving
+     * the explanations stale.
+     *
+     * <p>Each boundary is asserted separately and against the *other* value, rather than against a
+     * digest constant: a test that compares to a fixed string only proves the string has not changed,
+     * not that the thing being hashed is the right thing.
+     */
+    @Test
+    void roleClassificationInvalidatesTheDigest() throws IOException {
+        String withoutRoles = load("""
+                maintainability:
+                  enabledRules: [MT-M001]
+                """).digest();
+        String production = load("""
+                maintainability:
+                  enabledRules: [MT-M001]
+                  roles:
+                    - pathRegex: ".*"
+                      role: production
+                """).digest();
+        String dto = load("""
+                maintainability:
+                  enabledRules: [MT-M001]
+                  roles:
+                    - pathRegex: ".*"
+                      role: dto
+                """).digest();
+
+        assertNotEquals(withoutRoles, dto,
+                "reclassifying every file as DTO changes which code the rules run over, so a stored"
+                        + " baseline must not be accepted against it");
+        assertNotEquals(production, dto, "and two role classifications are two policies");
+    }
+
+    @Test
+    void aSuppressionReasonDoesNotInvalidateTheDigest() throws IOException {
+        String first = load("""
+                maintainability:
+                  suppressions:
+                    - ruleId: MT-M001
+                      entity: {path: src/Order.java, class: app.Order, signature: "f(int)"}
+                      reason: reviewed during the refactor
+                """).digest();
+        String reworded = load("""
+                maintainability:
+                  suppressions:
+                    - ruleId: MT-M001
+                      entity: {path: src/Order.java, class: app.Order, signature: "f(int)"}
+                      reason: approved in APP-42 after the extract-method change
+                """).digest();
+
+        assertEquals(first, reworded,
+                "the reason is prose for the next reader; it cannot change which findings the policy"
+                        + " produces, so rewording it must not invalidate stored baselines");
+    }
+
+    @Test
+    void anExpiryDoesInvalidateTheDigest() throws IOException {
+        String none = load("""
+                maintainability:
+                  suppressions:
+                    - ruleId: MT-M001
+                      entity: {path: src/Order.java, class: app.Order, signature: "f(int)"}
+                      reason: reviewed
+                """).digest();
+        String dated = load("""
+                maintainability:
+                  suppressions:
+                    - ruleId: MT-M001
+                      entity: {path: src/Order.java, class: app.Order, signature: "f(int)"}
+                      reason: reviewed
+                      expiresOn: 2027-01-01
+                """).digest();
+
+        assertNotEquals(none, dated,
+                "an expiry date changes when the entry stops applying, so it is behaviour and it"
+                        + " belongs in the digest");
+    }
+
     private MaintainabilitySettings load(String content) throws IOException {
         Path file = repo.resolve("suppression-" + System.nanoTime() + ".yml");
         Files.writeString(file, content);
