@@ -14,6 +14,29 @@ It distinguishes component coverage from integration acceptance. A shared defect
 several task criteria; the task rows below are not separate independent defect counts.
 "No gap found" describes this audit's scope, not an exhaustive certification.
 
+## Remediation status
+
+This report describes the audited revision and is left as written, because an audit that is edited to
+match its own fixes is no longer an audit. Fixes are tracked in [`docs/PROGRESS.md`](../../../PROGRESS.md).
+
+**Closed (2026-10-04):** A01 (effective policy, limits, roles, blocking mode), A02 (staged additions
+and local renames in worktree mode), A03 (the mid-run stability check was implemented and never
+called), A04 (explicit profile with the maintainability policy), A05 (empty selection and the reported
+execution schedule), A06 (one verdict, stamped on the report), A08 (`CURRENT` for a current-only run),
+A11 (SARIF reachable from both commands; results selected by disposition), A13 (cumulative baseline
+regression now blocks), A16 (advisory no longer relabels findings as debt), A20 (the benchmark compares
+against a pinned parent commit and publishes what it analysed), A21 (an unanalysable case is missing
+data, and the bundled corpus is valid Java).
+
+**Open:** A07, A09, A10, A12, A14, A15, A17, A18, A19. Also still open from the detail sections: the
+PMD adapter's array-shaped input, and the case schemas' missing project ID, roots/classpath digest and
+configuration identity.
+
+The replay scripts in this directory were written against the audited revision and are not expected to
+pass against the fixed one — several of them record the defective behaviour as the observed result.
+Re-verify with `./gradlew check` and `python3 -m unittest discover -s evaluation/tests`, which assert
+the corrected contracts.
+
 ## Verification evidence
 
 The checkout was clean before auditing. Consumer fixtures were created in temporary directories.

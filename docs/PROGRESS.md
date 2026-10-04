@@ -51,13 +51,52 @@ one of them changes what the code must do. New coverage: effective limits and ro
 blocking, optional vs required gaps by mode, `CURRENT` vs `NEW_ENTITY`, staged additions and renames
 in worktree mode, mid-run mutation detection, and the profile/threshold migration errors.
 
+**Closed — accepted debt must be able to fail a build (A13).** A stored baseline records the values a
+project agreed to carry. Comparing against them was implemented and its result was then merely
+reported: the finding kept the lifecycle the per-commit base comparison had given it (`existing`,
+because a single commit never moves far enough), so it never entered the blocking count. Growth that
+no one commit can see therefore passed forever, and the stored evidence detected the regression and
+did nothing about it. The lifecycle is now `worsened` against stored evidence, which is the truthful
+classification once a longer comparison exists, and the immediate per-commit result is preserved in the
+disposition reason so both readings stay visible. Tested by committing five one-unit complexity
+increments in a row: every step passes, and the one that crosses the aggregate budget fails on input
+that is byte-identical in shape to the four before it.
+
+**Closed — the two harnesses could flatter themselves (A20, A21).** These were the findings that made
+the other numbers untrustworthy, so they mattered more than their size.
+
+The benchmark introduced its change, committed it, and then ran the gate with `--base HEAD` —
+HEAD against itself. No changed files, no analysis, and every harness check satisfied anyway: the
+process exited 0, wrote a report and reported a status. The published local and project figures were
+JVM startup plus a fast path, and they agreed to within a millisecond, which is what two runs that
+analysed nothing look like. The base is now the parent commit, resolved to a SHA before the run, and
+every trial records and publishes `eligibleFiles` / `analysedFiles` so a timing over an empty
+comparison is visible in the artefact itself. Re-measured honestly, the warm local median is **2.98 s
+and the 2-second target is not met** — the previous "target met at 1.261 s" was the defect, not the
+result. Roughly half of that is fixed startup cost, which is stated rather than buried, because the
+next useful thing to measure is the phase split and not a smaller number.
+
+The evaluation harness accepted any of exit codes 0/1/2 as a usable result, so the bundled
+`deep-nesting-flags` fixture — eight opening braces, seven closing — produced an empty finding list,
+was recorded as `status=ok` with no problems, and was counted as MT-M002 having missed the case. The
+recorded rule rate was partly a measurement of that typo. An unanalysable case is now missing
+evaluation data, excluded from every rate with its reason recorded, and the whole bundled corpus has
+been made valid Java and re-verified: three of the five fixtures had defects (unbalanced braces, and a
+public class not matching its file name in two cases), and all five now compile and produce the finding
+they were written to produce.
+
+While fixing that, the v2 findings report was found to be missing the contract's `analysis` block
+entirely — `eligibleFiles`, `analyzedFiles`, `excludedFiles`, check counts and the execution schedule.
+That absence is why the benchmark could not see what it was measuring from outside; it is now
+published, null rather than zero-filled so "nothing was measured" and "measured nothing" stay
+distinguishable.
+
 **Not yet done.** A07 (changed-path filtering in project scope), A09 (remaining detect report-parity
-gaps), A10 (evidence ranges, before-values, fingerprint field), A12 (trace cap, per-metric), A13
-(cumulative baseline regression must block), A14 (digest coverage), A15 (legacy method findings in
-other formats), A17 (suppression identity for class rules, stale status), A18–A19 (release workflow
-and Action outputs), and the two harness defects: A20 (the benchmark measures HEAD against itself)
-and A21 (the evaluation harness counts an invalid Java fixture as a rule miss). A21 in particular
-means the recorded evaluation rates still cannot substantiate anything.
+gaps), A10 (evidence ranges, before-values, fingerprint field), A12 (trace cap, per-metric), A14
+(digest coverage), A15 (legacy method findings in other formats), A17 (suppression identity for class
+rules, stale status), A18–A19 (release workflow and Action outputs). The PMD adapter also still
+expects a JSON array rather than PMD's documented `files`/`violations` object, and the case schemas
+still lack project ID, roots/classpath digest and configuration identity.
 
 ## Session: acceptance audit of ML-001–ML-032 (2026-10-04)
 
