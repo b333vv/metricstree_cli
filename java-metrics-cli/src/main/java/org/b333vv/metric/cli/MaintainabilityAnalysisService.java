@@ -56,6 +56,15 @@ final class MaintainabilityAnalysisService {
     }
 
     /** Everything one run produced. */
+    /**
+     * The logical paths the base revision could not be read for, for the duration of one evaluation.
+     *
+     * <p>Held rather than passed down: it is consulted from base-side lookup, three call sites deep,
+     * and threading it through every signature to answer one membership test would make the
+     * evaluator harder to read than the field costs.
+     */
+    private Set<String> unparseableBase = Set.of();
+
     record Result(
             List<Finding> findings,
             List<EvaluationIssue> issues,
@@ -128,7 +137,7 @@ final class MaintainabilityAnalysisService {
             EntityCorrespondence correspondence, Enforcement enforcement, Clock clock) {
 
         return evaluate(base, current, logicalPath, scope, settings, correspondence, enforcement,
-                clock, null, base != null);
+                clock, null, base != null, Set.of());
     }
 
     /**
@@ -143,24 +152,25 @@ final class MaintainabilityAnalysisService {
             EntityCorrespondence correspondence, Enforcement enforcement, Clock clock,
             Set<String> eligiblePaths) {
         return evaluate(base, current, logicalPath, scope, settings, correspondence, enforcement,
-                clock, eligiblePaths, base != null);
+                clock, eligiblePaths, Set.of());
     }
 
-    /**
-     * The evaluation with an optional restriction on which entities may produce findings.
-     *
-     * <p>Eligibility is a <em>separate</em> decision from measurement. The contract requires full
-     * context so symbols resolve, and requires that findings be limited to changed paths. Passing both
-     * through one predicate would mean either an unsound measurement or a gate reporting files nobody
-     * touched, so the filter is applied to what may become a finding and never to what may be measured.
-     *
-     * @param eligiblePaths logical paths whose findings this run may publish, or {@code null} for all
-     */
+    /** The full evaluation, including which base files could not be read. */
     Result evaluate(MetricReport base, MetricReport current, Function<Path, String> logicalPath,
             MetricRequirements.Scope scope, MaintainabilitySettings settings,
             EntityCorrespondence correspondence, Enforcement enforcement, Clock clock,
-            Set<String> eligiblePaths, boolean comparing) {
+            Set<String> eligiblePaths, Set<String> unparseableBasePaths) {
+        return evaluate(base, current, logicalPath, scope, settings, correspondence, enforcement,
+                clock, eligiblePaths, base != null, unparseableBasePaths);
+    }
 
+    /** The evaluation proper. */
+    private Result evaluate(MetricReport base, MetricReport current, Function<Path, String> logicalPath,
+            MetricRequirements.Scope scope, MaintainabilitySettings settings,
+            EntityCorrespondence correspondence, Enforcement enforcement, Clock clock,
+            Set<String> eligiblePaths, boolean comparing, Set<String> unparseableBasePaths) {
+
+        unparseableBase = unparseableBasePaths == null ? Set.of() : Set.copyOf(unparseableBasePaths);
         List<Finding> findings = new ArrayList<>();
         List<Finding> ineligible = new ArrayList<>();
         List<EvaluationIssue> issues = new ArrayList<>();
@@ -351,12 +361,22 @@ final class MaintainabilityAnalysisService {
     private BaseSide baseSideOf(MaintainabilityRule rule, MetricReport base,
             EntityKey currentKey, boolean isMethod, Function<Path, String> logicalPath,
             MetricRequirements.Scope scope, EntityCorrespondence correspondence) {
-        if (base == null || correspondence == null) {
+        if (base == null) {
             return null;
+        }
+        if (correspondence == null) {
+            // No correspondence between the revisions. Nothing can be compared entity by entity,
+            // so every entity looks new -- which is true of a genuinely new entity and equally true
+            // of one in a base that never loaded.
+            return unreadableBase(rule, currentKey);
         }
         EntityKey baseKey = correspondence.baseOf(currentKey).orElse(null);
         if (baseKey == null) {
-            return null;
+            // No correspondence. Usually the entity is new and the base supports that by not
+            // containing it. Not always: a file the base could not read produces no entity to
+            // correspond to, and "no correspondence" and "no such entity" are then the same
+            // observation.
+            return unreadableBase(rule, currentKey);
         }
         for (ClassReport classReport : base.classes()) {
             if (!classReport.qualifiedName().equals(baseKey.qualifiedName())) {
@@ -381,8 +401,48 @@ final class MaintainabilityAnalysisService {
                 }
             }
         }
-        return null;
+        // The entity is absent from the base report. That is normally the new-code case, and a
+        // match is reported as NEW_ENTITY because the base supports it by not containing the
+        // entity.
+        //
+        // It is not the new-code case when the base could not be read at all: a file the parser
+        // rejected contributes no classes to the base report, and "no class here" then means "this
+        // report never saw this file". Reporting NEW_ENTITY on the strength of a base that failed
+        // to load is the gate blocking on its own blindness -- and it does it with the lifecycle
+        // that says "you added this", which is a claim about a revision the analysis never saw.
+        return unreadableBase(rule, baseKey);
     }
+
+    /**
+     * An unavailable base side when the base could not read this entity's file, or {@code null} when
+     * the base was read and simply does not contain the entity.
+     *
+     * <p>The test is a membership check against the set the caller built, not a re-scan of the base
+     * diagnostics. The base is analysed from a materialised snapshot, so its diagnostics carry
+     * absolute paths under the runner's temporary directory; the snapshot that owns those paths is
+     * the only thing that can map one back to a repository-relative one, and the gate already does
+     * it for the legacy evaluator. Re-deriving it here would be a second, worse answer to a question
+     * that already has a right one.
+     *
+     * <p>Both parse diagnostics qualify. PARSE_FAILED contributes no classes at all. PARSE_PROBLEM
+     * is a warning and the parser did recover something -- but what it recovered is not guaranteed
+     * to contain this entity, which is the case that matters: a method dropped by a broken parse is
+     * absent from the base, and absent has to mean something other than "this change added it".
+     */
+    private BaseSide unreadableBase(MaintainabilityRule rule, EntityKey key) {
+        if (!unparseableBase.contains(key.path())) {
+            return null;
+        }
+        return new BaseSide(
+                RuleEvaluation.unavailable(rule.id(), key, List.of(),
+                        List.of(EvaluationIssue.required(rule.id(), key, "base-unreadable",
+                                "The base revision could not be read for " + key.path() + ", so this"
+                                        + " entity's comparison is unavailable. The finding below"
+                                        + " says only that the entity matches, not that this change"
+                                        + " introduced it."))),
+                null);
+    }
+
 
     /** The rules this run evaluates, in catalogue order. */
     static List<MaintainabilityRule> enabledRules(MaintainabilitySettings settings) {

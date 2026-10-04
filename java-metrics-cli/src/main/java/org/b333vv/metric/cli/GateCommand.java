@@ -447,7 +447,7 @@ final class GateCommand implements Callable<Integer> {
                 // happens below so it can see the analysis-level completeness as well.
                 policyInput = new PolicyInput(baseReport, currentReport,
                         physical -> after.logicalPath(physical).orElse(physical.toString()),
-                        before, after, java.util.Set.copyOf(subjectPaths));
+                        before, after, java.util.Set.copyOf(subjectPaths), unparseableBase);
             }
 
             // Did the working copy move while we were reading it?
@@ -620,7 +620,7 @@ final class GateCommand implements Callable<Integer> {
         MaintainabilityAnalysisService.Result result = new MaintainabilityAnalysisService().evaluate(
                 input.baseReport(), input.currentReport(), input.logicalPath(), scope,
                 scopedPolicy, correspondence, activePolicy.enforcement(),
-                java.time.Clock.systemUTC(), input.eligiblePaths());
+                java.time.Clock.systemUTC(), input.eligiblePaths(), input.unparseableBasePaths());
 
         // A gap the analysis already established is a gap under this policy too: a policy is not a
         // licence to publish a pass over a check that did not run.
@@ -795,7 +795,8 @@ final class GateCommand implements Callable<Integer> {
             java.util.function.Function<Path, String> logicalPath,
             SourceSnapshot before,
             SourceSnapshot after,
-            java.util.Set<String> eligiblePaths) {
+            java.util.Set<String> eligiblePaths,
+            java.util.Set<String> unparseableBasePaths) {
     }
 
     /**

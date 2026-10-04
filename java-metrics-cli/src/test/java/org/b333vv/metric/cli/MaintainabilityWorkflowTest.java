@@ -433,6 +433,69 @@ class MaintainabilityWorkflowTest {
     }
 
     @Nested
+    @DisplayName("An unreadable base is not new code")
+    class BaseReadability {
+
+        /**
+         * A base that could not be parsed does not make the current code new.
+         *
+         * <p>The recheck replayed a base whose source was malformed into something measuring CC 18
+         * and got exit 1, FAILED and a NEW_ENTITY finding. NEW_ENTITY is the lifecycle that asserts
+         * "this change created it" -- a claim the run cannot support, because the base revision it
+         * was comparing against never loaded. A file the parser rejects contributes no classes to the
+         * base report, so "this class is not in the base" and "this base never saw this file" are
+         * the same observation, and the tool picked the first.
+         *
+         * <p>So the missing entity is reported as COMPARISON_UNAVAILABLE, which does not block, and
+         * as a required evaluation issue, so the gap is visible rather than inferred from a lifecycle.
+         * The finding still exists -- the code does match -- and now says only that.
+         */
+        @Test
+        @DisplayName("an unparseable base yields comparison-unavailable, not new entity")
+        void unparseableBaseIsNotEvidenceOfIntroduction() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.commitAll("base that parses");
+            // Repair it into something the parser will not read at all, then make the current
+            // revision complex: the base report will contain no class for this file.
+            git.write(SOURCE, "package app;\n/* unterminated\npublic class Order {}");
+            commitLocally(git, "unparseable base");
+            git.write(SOURCE, withBranches(30));
+            commitLocally(git, "complex but the base was never readable");
+
+            Path report = repo.resolve("base-unreadable.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gateWithReport(report, err, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--enforcement", "enforce");
+
+            JsonNode written = mapper.readTree(Files.readString(report));
+            JsonNode findings = written.get("findings");
+
+            assertTrue(lifecycles(findings).contains("COMPARISON_UNAVAILABLE"),
+                    "the entity is still reported -- the code does match -- and the lifecycle says"
+                            + " the comparison could not be made: " + findings + err.toString(
+                                    StandardCharsets.UTF_8));
+            assertFalse(lifecycles(findings).contains("NEW_ENTITY"),
+                    "a base the analysis could not read is not evidence that this change introduced"
+                            + " anything: " + findings);
+            assertEquals(0, written.get("summary").get("blocking").asInt(),
+                    "and a comparison that did not happen blocks nothing");
+            assertTrue(written.get("analysis").get("requiredGaps").asInt() > 0,
+                    "the gap is stated rather than inferred from a lifecycle: " + written);
+            assertEquals(2, exit,
+                    "an unreadable base is incomplete, not a failed regression: "
+                            + err.toString(StandardCharsets.UTF_8));
+        }
+
+        /** The lifecycles the report assigned, in order. */
+        private java.util.List<String> lifecycles(JsonNode findings) {
+            java.util.List<String> out = new java.util.ArrayList<>();
+            findings.forEach(finding -> out.add(finding.get("lifecycle").asText()));
+            return out;
+        }
+    }
+
+    @Nested
     @DisplayName("A finding says where it is")
     class Locations {
 
