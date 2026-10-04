@@ -69,14 +69,23 @@ final class FindingSuppressionFilter {
     record SuppressionStatus(FindingSuppression entry, State state, String ruleId, String entity) {
 
         enum State {
-            /** Matched a finding on this run. */
+            /** Matched a finding on this run, and is in force. */
             APPLIED,
-            /** Its date has passed. */
-            EXPIRED,
-            /** Its date has passed and it had already stopped matching. */
-            STALE,
             /** In force, but no finding on this run matched it. */
-            UNUSED
+            UNUSED,
+            /** Its date has passed. It would still match if it had not. */
+            EXPIRED,
+            /**
+             * Its date has passed <em>and</em> nothing matched it this run.
+             *
+             * <p>The distinction is the one a reviewer needs. An expired entry that still matched
+             * something is about to start producing findings again; an expired entry that matched
+             * nothing is genuinely finished. Both were reported {@code STALE} before, and an expired
+             * entry that had done nothing at all was also reported {@code STALE} -- so "stale" described
+             * three different situations and none of them could be acted on, which is the property that
+             * makes a suppression review worth doing.
+             */
+            STALE
         }
 
         String id() {
@@ -132,7 +141,12 @@ final class FindingSuppressionFilter {
             boolean active = entry.isActiveOn(clock);
             SuppressionStatus.State settled = state.get(i);
             if (!active && settled == SuppressionStatus.State.UNUSED) {
+                // Never applied, and no longer in force: nothing matched it and nothing will.
                 settled = SuppressionStatus.State.STALE;
+            } else if (!active && settled == SuppressionStatus.State.APPLIED) {
+                // It did match this run, so it was doing its job right up to the expiry. Reporting this
+                // as applied would hide that it has stopped being an exception.
+                settled = SuppressionStatus.State.EXPIRED;
             }
             status.add(new SuppressionStatus(entry, settled, entry.ruleId(),
                     entry.entityKey().render()));

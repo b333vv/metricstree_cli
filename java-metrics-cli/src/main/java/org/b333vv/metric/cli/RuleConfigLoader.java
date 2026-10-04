@@ -172,8 +172,10 @@ final class RuleConfigLoader {
     /**
      * The exact entity an entry names, built from the three fields an {@link EntityKey} holds.
      *
-     * <p>{@code signature} is required here in a way it is not for a class-level finding: an entry
-     * that omitted it would silently cover a whole class while looking like it named one method.
+     * <p>For a method-level rule {@code signature} is required: an entry that omitted it would
+     * silently cover a whole class while looking like it named one method. For a class-level rule it is
+     * forbidden, because the finding it has to name has no signature and an entry that supplied one
+     * would suppress nothing at all.
      */
     private static EntityKey entity(Path file, String where, JsonNode node, String ruleId) {
         String key = where + ".entity";
@@ -182,7 +184,8 @@ final class RuleConfigLoader {
         }
         if (!node.isObject()) {
             throw error(file, key,
-                    "must be a mapping with path, class and signature, not a " + kindOf(node));
+                    "must be a mapping with path, class and (for a method rule) signature, not a "
+                            + kindOf(node));
         }
         List<String> unknown = new ArrayList<>();
         node.fieldNames().forEachRemaining(field -> {
@@ -197,6 +200,32 @@ final class RuleConfigLoader {
         }
         String path = requiredText(file, where, node, "path");
         String className = requiredText(file, where, node, "class");
+
+        // Which kind of entity this rule is about decides whether a signature is required at all, and
+        // that is the audit's A17.
+        //
+        // The signature was unconditionally required, so suppressing a class-level rule (MT-C001,
+        // MT-C002) was impossible: the finding's entityKey has no signature, so nothing the author
+        // could copy out of the report would satisfy the loader, and the entry was rejected with a
+        // message demanding a field the finding does not have. The obvious workaround -- writing some
+        // signature -- silently suppresses nothing, which is the worst outcome for an exception: the
+        // author believes the finding is handled and it keeps appearing.
+        boolean classLevel = MaintainabilityRules.byId(ruleId)
+                .map(rule -> rule.level() == MaintainabilityRule.RuleLevel.CLASS)
+                .orElse(false);
+        if (classLevel) {
+            if (node.hasNonNull("signature")) {
+                throw error(file, key + ".signature",
+                        "must be absent for a class-level rule. " + ruleId + " matches a whole class,"
+                                + " so its finding has no signature; copy its entityKey without one.");
+            }
+            try {
+                return EntityKey.ofClass(path, className);
+            } catch (IllegalArgumentException e) {
+                throw error(file, key, e.getMessage());
+            }
+        }
+
         String signature = requiredText(file, where, node, "signature");
         try {
             return EntityKey.ofMethod(path, className, signature);

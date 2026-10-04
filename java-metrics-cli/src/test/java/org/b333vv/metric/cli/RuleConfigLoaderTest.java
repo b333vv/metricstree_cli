@@ -18,6 +18,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -201,6 +202,75 @@ class RuleConfigLoaderTest {
         assertThrows(IllegalArgumentException.class,
                 () -> write("maintainability:\n  rules:\n    MT-C001:\n      mode: error\n"),
                 "an experimental rule may not be switched to blocking");
+    }
+
+    /**
+     * A class-level rule's suppression names a class, with no signature.
+     *
+     * <p>The audit's A17. The signature was required unconditionally, so no entry could ever suppress
+     * MT-C001 or MT-C002: the finding's own {@code entityKey} has no signature, so nothing copyable
+     * out of the report satisfied the loader. The only thing an author could do to get past the error
+     * was invent a signature, which suppresses nothing -- so the entry loads, the finding keeps
+     * appearing, and the author believes it is handled.
+     */
+    @Test
+    void aClassLevelSuppressionNamesAClassWithoutASignature() throws IOException {
+        MaintainabilitySettings loaded = load("""
+                maintainability:
+                  suppressions:
+                    - ruleId: MT-C002
+                      entity:
+                        path: src/main/java/app/Order.java
+                        class: app.Order
+                      reason: reviewed; the split is tracked in APP-4
+                """);
+
+        assertEquals(1, loaded.suppressions().size());
+        EntityKey entity = loaded.suppressions().get(0).entityKey();
+        assertNull(entity.signature(),
+                "MT-C002 matches a whole class, so its identity carries no signature");
+        assertEquals("app.Order", entity.qualifiedName());
+    }
+
+    /** And supplying one is refused, rather than accepted as a suppression that suppresses nothing. */
+    @Test
+    void aClassLevelSuppressionRefusesASignature() {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> write("""
+                        maintainability:
+                          suppressions:
+                            - ruleId: MT-C002
+                              entity:
+                                path: src/main/java/app/Order.java
+                                class: app.Order
+                                signature: f(int)
+                              reason: not a method
+                        """),
+                "a signature on a class-level entry is an entry that can never match");
+        assertTrue(failure.getMessage().contains("must be absent for a class-level rule"),
+                failure.getMessage());
+    }
+
+    /** A method rule still requires one: omitting it would cover a whole class silently. */
+    @Test
+    void aMethodLevelSuppressionStillRequiresASignature() {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> write("""
+                        maintainability:
+                          suppressions:
+                            - ruleId: MT-M001
+                              entity:
+                                path: src/main/java/app/Order.java
+                                class: app.Order
+                              reason: no signature
+                        """));
+        assertTrue(failure.getMessage().contains("signature"), failure.getMessage());
+    }
+
+    private MaintainabilitySettings load(String content) throws IOException {
+        Path file = repo.resolve("suppression-" + System.nanoTime() + ".yml");
+        Files.writeString(file, content);
+        return RuleConfigLoader.load(file);
     }
 
     private void write(String content) throws IOException {
