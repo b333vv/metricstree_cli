@@ -164,7 +164,7 @@ final class FindingDeltaEvaluator {
             if (was == null || now == null) {
                 return false;
             }
-            if (now - was >= budget.getValue()) {
+            if (toward(budget.getKey(), rule, was, now) >= budget.getValue()) {
                 return true;
             }
         }
@@ -172,11 +172,46 @@ final class FindingDeltaEvaluator {
     }
 
     /**
-     * Whether the non-primary metrics stayed flat or improved.
+     * How far a metric moved toward being worse, positive when it moved the wrong way.
      *
-     * <p>This is what stops a change reading as an improvement when it is not. A method that grew more
-     * complex because it absorbed a responsibility has moved work into itself; the metrics describing
-     * what it used to do elsewhere fall, and without this clause the change would look like progress.
+     * <p>The direction comes from the rule's own bound rather than from an assumption that more is
+     * always worse. A rule that fires once a metric reaches a minimum \u2014 MT-C001's {@code WMC >= 47}
+     * \u2014 is worsened by that metric rising; a rule that fires once it falls to a maximum \u2014 the same
+     * rule's {@code TCC <= 0.33} \u2014 is worsened by it falling. Reading every metric the same way
+     * makes a cohesion rule report a degradation as an improvement, and lets a real complexity
+     * increase pass as harmless because the metric that fell was the one going the wrong way.
+     *
+     * @param metric      the metric that moved
+     * @param rule        the rule whose bounds say which direction is worse
+     * @param was         the value at the base
+     * @param now         the value now
+     * @return the signed change toward worse: negative for an improvement, zero for no change
+     */
+    private double toward(org.b333vv.metric.library.core.MetricCode metric,
+            MaintainabilityRule rule,
+            double was,
+            double now) {
+        // A metric the rule does not condition on has no declared direction. Rising is the
+        // assumption, because that is what every budgeted metric in the shipped catalogue means.
+        int sign = 1;
+        MaintainabilityRule.MetricBounds bounds = rule.conditions().get(metric);
+        if (bounds != null && bounds.max() != null && bounds.min() == null) {
+            sign = -1;
+        }
+        return (now - was) * sign;
+    }
+
+    /**
+     * Whether the non-primary metrics neither improved nor explain the growth.
+     *
+     * <p>This is what stops a change reading as an improvement when it is not. A class that grew
+     * more complex because it absorbed a responsibility has moved work into itself; the metric
+     * describing what it used to do elsewhere improves, and without this clause the change would
+     * look like progress.
+     *
+     * <p>Only an improvement disqualifies the growth. A metric that moved the other way is a
+     * second thing that got worse, and reading it as an explanation for the first would let a
+     * change that degraded two properties report as a wash.
      */
     private boolean othersHoldOrImprove(MaintainabilityRule rule,
             Map<org.b333vv.metric.library.core.MetricCode, Double> before,
@@ -188,7 +223,10 @@ final class FindingDeltaEvaluator {
             }
             Double was = before.get(metric);
             Double now = after.get(metric);
-            if (was == null || now == null || now < was) {
+            if (was == null || now == null) {
+                return false;
+            }
+            if (toward(metric, rule, was, now) < 0) {
                 return false;
             }
         }

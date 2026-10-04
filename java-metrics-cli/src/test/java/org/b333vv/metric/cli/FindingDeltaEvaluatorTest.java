@@ -222,6 +222,67 @@ class FindingDeltaEvaluatorTest {
                         + " being split rather than accumulating; both sides still match the rule");
     }
 
+    /**
+     * A metric that falls the wrong way is a second thing that got worse, not an explanation.
+     *
+     * <p>MT-C001 bounds three metrics, and they do not all get worse in the same direction: the rule
+     * fires once WMC reaches 47 and once TCC falls to 0.33, so WMC rising is the degradation and TCC
+     * falling is another one. Reading every metric as "lower is better" made a class whose
+     * complexity grew by its full budget while its cohesion decayed report as unchanged.
+     *
+     * <p>The numbers are the recheck's replay exactly: WMC 47 to 67 is the budget of 20, ATFD holds,
+     * TCC falls from 0.3 to 0.2. Nothing here improves, so nothing here explains the growth.
+     */
+    @Test
+    void classWmcGrowthWithDecliningCohesionIsWorsened() {
+        MaintainabilityRule rule = MaintainabilityRules.byId("MT-C001").orElseThrow();
+        EntityKey classKey = EntityKey.ofClass("src/Order.java", "app.Order");
+        ClassRuleEvaluator classEvaluator = new ClassRuleEvaluator();
+
+        RuleEvaluation base = classEvaluator.evaluate(rule, classKey,
+                values(MetricCode.WMC, 47, MetricCode.ATFD, 6, MetricCode.TCC, 0.3),
+                MetricRequirements.Scope.PROJECT_GLOBAL);
+        RuleEvaluation grownAndLessCohesive = classEvaluator.evaluate(rule, classKey,
+                values(MetricCode.WMC, 67, MetricCode.ATFD, 6, MetricCode.TCC, 0.2),
+                MetricRequirements.Scope.PROJECT_GLOBAL);
+
+        Finding finding = evaluator.compare(rule, base, grownAndLessCohesive, none(), PATH)
+                .findings().get(0);
+
+        assertEquals(FindingLifecycle.WORSENED, finding.lifecycle(),
+                "WMC rose by its full budget of 20 and cohesion fell from 0.3 to 0.2. Both sides"
+                        + " still match MT-C001, so this is the same match getting worse on two"
+                        + " properties, not a refactoring that moved work elsewhere.");
+    }
+
+    /**
+     * The same class, with the metric that did improve.
+     *
+     * <p>MT-C001's ATFD is bounded from below, so a fall in it is an improvement and does explain a
+     * growth in complexity. The two cases differ only in which direction the second metric moved,
+     * which is exactly what a hardcoded "higher is better" gets wrong in both directions at once.
+     */
+    @Test
+    void classWmcGrowthWithFewerForeignAccessesNotWorsened() {
+        MaintainabilityRule rule = MaintainabilityRules.byId("MT-C001").orElseThrow();
+        EntityKey classKey = EntityKey.ofClass("src/Order.java", "app.Order");
+        ClassRuleEvaluator classEvaluator = new ClassRuleEvaluator();
+
+        RuleEvaluation base = classEvaluator.evaluate(rule, classKey,
+                values(MetricCode.WMC, 47, MetricCode.ATFD, 8, MetricCode.TCC, 0.3),
+                MetricRequirements.Scope.PROJECT_GLOBAL);
+        RuleEvaluation grownButSimplerDataAccess = classEvaluator.evaluate(rule, classKey,
+                values(MetricCode.WMC, 67, MetricCode.ATFD, 6, MetricCode.TCC, 0.3),
+                MetricRequirements.Scope.PROJECT_GLOBAL);
+
+        Finding finding = evaluator.compare(rule, base, grownButSimplerDataAccess, none(), PATH)
+                .findings().get(0);
+
+        assertEquals(FindingLifecycle.EXISTING, finding.lifecycle(),
+                "WMC rose by 20 but foreign data accesses fell from 8 to 6, which is the work this"
+                        + " rule is asking to be moved out. Punishing it would punish the refactoring.");
+    }
+
     // ---------------------------------------------------------------- unavailable and off
 
     /**
