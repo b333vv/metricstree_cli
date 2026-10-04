@@ -526,6 +526,61 @@ class DetectCommandTest {
     }
 
     /**
+     * An error-mode rule fails a current-only run under enforcement.
+     *
+     * <p>The recheck's R01, and the awkward corner of {@link FindingLifecycle#CURRENT}. CURRENT exists
+     * because a current-only run cannot know whether the code it read was introduced by a change, so it
+     * asserts nothing about a comparison — and when it was introduced it was excluded from
+     * {@code eligibleForBlocking()} along with everything else that makes no comparison claim. The result
+     * was {@code detect --enforcement enforce} reporting a match on an error-mode rule, marking it
+     * ACTIVE, and exiting 0: the finding existed, said it matched, and did nothing.
+     *
+     * <p>The reasoning was right about lifecycle and wrong about the consequence. Eligibility and
+     * authority are separate questions and the finding already carries both: {@code blocking} is set only
+     * for an error-mode rule under an enforcing policy. So the pair below is the real contract — same
+     * rule, same input, one exit code apart — and neither half can hold without the other.
+     */
+    @Test
+    void anErrorModeRuleBlocksACurrentMatchUnderEnforcement(@TempDir Path tempDir) throws Exception {
+        Path config = tempDir.resolve(".metrics-gate.yml");
+        Files.writeString(config, """
+                maintainability:
+                  enabledRules: [MT-M001]
+                  rules:
+                    MT-M001:
+                      mode: error
+                """);
+        Path source = tempDir.resolve("Demo.java");
+        Files.writeString(source, "class Demo {}");
+        Path report = tempDir.resolve("report.json");
+        Path findings = tempDir.resolve("findings.json");
+
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                answering(), new MetricReportJsonWriter(), tempDir::toAbsolutePath);
+
+        assertEquals(1, app.run(new String[]{"detect", "-s", source.toString(),
+                "--policy", "maintainability", "--enforcement", "enforce",
+                "--output", report.toString(), "--json-output", findings.toString()},
+                new ByteArrayOutputStream(), new ByteArrayOutputStream()),
+                "a current match on an opted-in error rule is enforceable: there is no before/after"
+                        + " claim here, but there is a match, and the author asked for it to count");
+
+        JsonNode json = mapper.readTree(Files.readString(findings));
+        assertEquals("FAILED", json.get("status").asText());
+        assertEquals(1, json.get("summary").get("blocking").asInt(),
+                "and it is in the blocking count rather than merely reported");
+        assertEquals("CURRENT", json.get("findings").get(0).get("lifecycle").asText(),
+                "without pretending the run knows when the code was written");
+
+        assertEquals(0, app.run(new String[]{"detect", "-s", source.toString(),
+                "--policy", "maintainability", "--output", report.toString(),
+                "--json-output", findings.toString()},
+                new ByteArrayOutputStream(), new ByteArrayOutputStream()),
+                "advisory must still pass: eligibility says a rule may block, the enforcement level"
+                        + " says whether this run does");
+    }
+
+    /**
      * The policy can be chosen by the project config, as it is for the gate.
      *
      * <p>It could not be: {@code detect.policy} was accepted by the config loader and read by nobody,

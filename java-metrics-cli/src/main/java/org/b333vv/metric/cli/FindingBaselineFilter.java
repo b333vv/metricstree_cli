@@ -56,7 +56,7 @@ final class FindingBaselineFilter {
             return Verdict.ok();
         }
         String fingerprint = FindingFingerprint.of(rule.id(), rule.version(), finding.entityKey());
-        FindingBaseline.Entry entry = baseline.entries().get(fingerprint);
+        FindingBaseline.Entry entry = entryFor(finding, fingerprint);
         if (entry == null) {
             // A rule version the baseline never accepted is a different claim about the same entity:
             // the fingerprint folds the version in precisely so this cannot be read as accepted debt.
@@ -86,7 +86,7 @@ final class FindingBaselineFilter {
         if (baseline == null) {
             return false;
         }
-        FindingBaseline.Entry entry = baseline.entries().get(
+        FindingBaseline.Entry entry = entryFor(finding,
                 FindingFingerprint.of(rule.id(), rule.version(), finding.entityKey()));
         if (entry == null || entry.acceptedValues().isEmpty()) {
             return false;
@@ -123,8 +123,33 @@ final class FindingBaselineFilter {
         if (baseline == null) {
             return false;
         }
-        return baseline.entries().containsKey(
-                FindingFingerprint.of(rule.id(), rule.version(), finding.entityKey()));
+        return entryFor(finding,
+                FindingFingerprint.of(rule.id(), rule.version(), finding.entityKey())) != null;
+    }
+
+    /**
+     * The accepted-debt entry for a finding, following it back across an exact move.
+     *
+     * <p>This is the recheck's R04, and it is the same hole the move-pairing work left open in the
+     * comparison itself. The baseline was recorded against the entity's <em>old</em> identity; a method
+     * that is moved unchanged gets a new path and therefore a new fingerprint, so every lookup missed
+     * and the stored evidence was never consulted. The result was that a method accepted at CC 16 could
+     * be moved, grown to 22 and reported as clean \u2014 while {@code previousFingerprint} on the very same
+     * finding named the entity the baseline had accepted. The report identified the debt and the filter
+     * declined to look at it.
+     *
+     * <p>The fallback is the finding's own recorded base counterpart, not a scan for anything similar:
+     * only an exact relocation, which the correspondence has already confirmed, may stand in. A method
+     * whose signature changed is a different entity and inherits nothing, because accepting its debt would
+     * transfer one method's history onto its replacement.
+     */
+    private FindingBaseline.Entry entryFor(Finding finding, String fingerprint) {
+        FindingBaseline.Entry entry = baseline.entries().get(fingerprint);
+        if (entry != null) {
+            return entry;
+        }
+        String previous = finding.previousFingerprint();
+        return previous == null ? null : baseline.entries().get(previous);
     }
 
     /**

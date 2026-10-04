@@ -185,6 +185,22 @@ record Finding(
      * authority to fail a build it was not given.
      */
     Finding worsenedBeyond(String reason) {
+        // The disposition is preserved, not replaced. This is the recheck's R03.
+        //
+        // A finding that reached here under {@code SUPPRESSED} arrived there through a configuration
+        // decision that is still in force: the entity is named in an exception, with a reason and an
+        // expiry, and nothing about the growth has invalidated it. Overwriting the disposition with
+        // ACTIVE meant that accepting a baseline silently changed what suppressions mean — the same code,
+        // the same config and the same digest, and a finding that had been exempt for three commits was
+        // failing the build at the fourth. A baseline records debt; it is not authority to withdraw an
+        // exception.
+        //
+        // So only the lifecycle changes, and only when the finding was not already exempt. A suppressed
+        // finding keeps its lifecycle too: it was not worsened *as counted*, because it was not counted.
+        // What a reader needs to see is that the debt grew past what was accepted, and the reason says so.
+        if (disposition == FindingDisposition.SUPPRESSED) {
+            return this;
+        }
         return new Finding(ruleId, ruleVersion, entityKey, title, message, location, baseLocation,
                 severity, maturity, evaluationStatus, FindingLifecycle.WORSENED, evidence,
                 relatedLocations, remediationHint, documentationPath, role,

@@ -247,7 +247,15 @@ final class ComparisonPlanner {
         //
         // It is also the only thing that can see a rename *within* the working tree, which is the common
         // case: `git mv` stages both halves, so the pair only exists in the index diff.
-        local.addAll(GitOps.workingTreeChanges(repoRoot, headSha));
+        // The change source is the mode's, not one source for both. Staged mode is defined as never
+        // reading unstaged content as its after side, so including the working-copy diff made it
+        // analyse and report files the author had deliberately not staged: an index identical to HEAD
+        // with one file edited on disk reported "1 changed file" and carried a finding out of a
+        // comparison that should have been empty. That is the recheck's R06, and it survived the A02
+        // repair because the union was introduced there to give worktree mode its staged additions.
+        local.addAll(mode == ComparisonMode.STAGED
+                ? GitOps.indexChanges(repoRoot, headSha)
+                : GitOps.workingTreeChanges(repoRoot, headSha));
 
         // The per-path comparison below covers what git's diff cannot: it is how a path is checked
         // against the exact commit HEAD recorded, including entries git's own diff would consider

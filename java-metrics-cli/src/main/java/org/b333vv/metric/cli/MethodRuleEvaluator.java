@@ -54,10 +54,30 @@ final class MethodRuleEvaluator {
      */
     RuleEvaluation evaluate(MaintainabilityRule rule, EntityKey entityKey,
             Map<MetricCode, Value> metrics, MethodReport method) {
+        return evaluate(rule, entityKey, metrics, method,
+                MaintainabilityAnalysisService.Enforcement.ADVISORY);
+    }
+
+    /**
+     * Evaluates one rule against one method, in the enforcement level actually in force.
+     *
+     * <p>Whether a missing input is a required gap or a reported one is decided here, from the rule's
+     * effective mode and the run's enforcement level — the same two facts {@link ClassRuleEvaluator}
+     * uses. This is the recheck's R02: the issue was unconditionally optional, so a rule the project had
+     * opted into {@code error}, under {@code --enforcement enforce}, could not find its input and the run
+     * reported {@code PASSED} with {@code checksUnavailable: 0}. A check nobody required, that cannot
+     * run, is reported. A check somebody explicitly required, that cannot run, decides the verdict.
+     */
+    RuleEvaluation evaluate(MaintainabilityRule rule, EntityKey entityKey,
+            Map<MetricCode, Value> metrics, MethodReport method,
+            MaintainabilityAnalysisService.Enforcement enforcement) {
         List<FindingEvidence> evidence = new ArrayList<>(rule.conditions().size());
         List<EvaluationIssue> issues = new ArrayList<>();
         boolean allPresent = true;
         boolean allSatisfied = true;
+        boolean required = rule.maturity().allowsBlocking()
+                && rule.defaultMode() == RuleMode.ERROR
+                && enforcement == MaintainabilityAnalysisService.Enforcement.ENFORCE;
 
         // Sorted by metric name rather than iterated in map order: the evidence list is part of a
         // report, and a report whose condition order changed between two runs of the same code would
@@ -72,11 +92,12 @@ final class MethodRuleEvaluator {
                 allPresent = false;
                 evidence.add(new FindingEvidence(metric, null, null, bounds.min(), bounds.max(), null,
                         unitOf(metric), List.of("the metric was not measured for this method")));
-                issues.add(EvaluationIssue.optional(rule.id(), entityKey,
+                issues.add(new EvaluationIssue(rule.id(), entityKey, null,
                         CheckEvaluationIssue.METRIC_UNAVAILABLE_LOCAL,
                         rule.id() + " needs " + metric + ", which was not measured for "
                                 + entityKey.render()
-                                + ". The rule has not been shown to fail; it could not be run."));
+                                + ". The rule has not been shown to fail; it could not be run.",
+                        required));
                 continue;
             }
 

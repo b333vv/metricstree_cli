@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -323,8 +324,23 @@ final class SnapshotMaterializer {
     static List<String> verifyUnchanged(Path repoRoot, ComparisonPlan plan, SourceSnapshot snapshot)
             throws GitOps.GitException {
         List<String> differences = new ArrayList<>();
-        if (!plan.mode().readsWorkingTree()) {
+        if (plan.mode() == ComparisonMode.COMMITTED) {
+            // Committed compares two object trees. Neither can move while the analysis runs, so there is
+            // nothing here that could have changed and re-reading anything would be measuring the
+            // working copy rather than the comparison.
             return differences;
+        }
+        if (plan.mode() == ComparisonMode.STAGED) {
+            // Staged mode's after side is the index, and the index is mutable — a `git add` during the
+            // analysis replaces what the run claimed to review. The captured blobs are immutable, so
+            // re-reading them proves nothing about the index; what has to be re-read is the index itself.
+            //
+            // This is the recheck's R05: a hook that edited a file and staged it mid-run left the gate
+            // returning PASSED for the earlier index, which is a verdict about content the user has since
+            // replaced. Comparing object IDs rather than disk bytes is what makes this correct: the disk
+            // may legitimately differ from the index in staged mode, and re-reading the disk would then
+            // report a difference that is the whole point of the mode.
+            return indexDifferences(repoRoot, snapshot);
         }
         Set<String> captured = new LinkedHashSet<>(snapshot.paths());
         Set<String> current = workingTreeJavaInventory(repoRoot);
@@ -346,6 +362,44 @@ final class SnapshotMaterializer {
                 }
             } catch (IOException exception) {
                 differences.add(path + " could not be re-read: " + exception.getMessage());
+            }
+        }
+        return differences;
+    }
+
+    /**
+     * Where the index differs from the snapshot it was captured into.
+     *
+     * <p>By object ID and path, not by content. A staged mode run must not care that the working copy
+     * has moved on — that is the entire difference between the two modes — so a disk comparison would
+     * report a difference on every ordinary "staged, then edited again" workflow and train a reader to
+     * ignore the check. The index is the thing under review, and the index is what is compared.
+     */
+    private static List<String> indexDifferences(Path repoRoot, SourceSnapshot snapshot)
+            throws GitOps.GitException {
+        List<String> differences = new ArrayList<>();
+        Map<String, String> captured = new LinkedHashMap<>();
+        for (SnapshotEntry entry : snapshot.entries()) {
+            captured.put(entry.logicalPath(), entry.contentSha256());
+        }
+        Map<String, String> staged = GitOps.indexObjectIds(repoRoot);
+        for (Map.Entry<String, String> entry : staged.entrySet()) {
+            String path = entry.getKey();
+            if (!GitOps.isJavaPath(path)) {
+                continue;
+            }
+            String was = captured.get(path);
+            if (was == null) {
+                differences.add(path + " was staged after the snapshot was captured");
+            } else if (!was.equals(SourceSnapshot.sha256(
+                    GitOps.readBlob(repoRoot, entry.getValue())))) {
+                differences.add(path
+                        + " was staged with different content after the snapshot was captured");
+            }
+        }
+        for (String path : captured.keySet()) {
+            if (!staged.containsKey(path)) {
+                differences.add(path + " left the index after the snapshot was captured");
             }
         }
         return differences;

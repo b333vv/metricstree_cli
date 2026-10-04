@@ -230,6 +230,86 @@ class GateSnapshotModesTest {
                         + " code: " + err.toString(StandardCharsets.UTF_8));
     }
 
+    /**
+     * Staged mode must notice when the index moves under it.
+     *
+     * <p>The recheck's R05. The stability check ran only for worktree mode, on the reasoning that the
+     * other two compare immutable git objects. That is true of the captured blobs but not of the index:
+     * staged mode's after side <em>is</em> the index, and a {@code git add} during the analysis replaces
+     * what the run claims to be reviewing. A hook that edited the file and staged it mid-run left the
+     * gate returning PASSED for the earlier index \u2014 a verdict about content the author had already
+     * replaced.
+     *
+     * <p>The comparison is by content hash of the staged blob, not by disk bytes: in staged mode the
+     * working copy is expected to differ from the index, and re-reading the disk would report a
+     * difference on every ordinary "staged, then edited again" workflow.
+     */
+    @Test
+    void stagedModeRejectsAnIndexThatMovesMidRun() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 2));
+        fixture().commitAll("base");
+        // A change already staged, so the run gets past the empty-diff shortcut and actually analyses
+        // something -- the shortcut returns before any snapshot exists to compare.
+        fixture().write("app/Demo.java", classWithIfs("Demo", 20));
+        fixture().git("add", "app/Demo.java");
+
+        CountingAnalyzer analyzer = new CountingAnalyzer(new JavaParserJavaMetricsAnalyzer());
+        analyzer.onFirstAnalysis(() -> {
+            try {
+                // A different change lands in the index while the analysis is running.
+                Files.writeString(repo.resolve("app/Demo.java"), classWithIfs("Demo", 40));
+                new GitFixture(repo).git("add", "app/Demo.java");
+            } catch (Exception exception) {
+                throw new java.io.UncheckedIOException(new java.io.IOException(exception));
+            }
+        });
+
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                analyzer, new MetricReportJsonWriter(), () -> repo);
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = app.run(new String[]{"gate", "--base", "HEAD", "--mode", "staged"},
+                new ByteArrayOutputStream(), err);
+
+        assertEquals(2, exitCode,
+                "the verdict would describe an index that no longer exists: "
+                        + err.toString(StandardCharsets.UTF_8));
+        assertTrue(err.toString(StandardCharsets.UTF_8).contains("changed"),
+                "and the reason has to name the movement, so the reader knows to re-run rather than"
+                        + " to fix code: " + err.toString(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Staged mode reads the index, not the working copy.
+     *
+     * <p>The counterpart, and the recheck's R06. Including the working-copy diff in staged mode's change
+     * set made an index identical to HEAD report "1 changed file" and carry a finding out of a
+     * comparison that should have been empty. It produced no wrong value and no false failure, which is
+     * why it survived \u2014 it produced the wrong subjects and spent the analysis on them. A mode
+     * definition is not a preference.
+     */
+    @Test
+    void stagedModeIgnoresUnstagedEditsEntirely() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 2));
+        fixture().commitAll("base");
+        // Only on disk. The index still matches HEAD, so a staged comparison is empty.
+        fixture().write("app/Demo.java", classWithIfs("Demo", 30));
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD", "--mode", "staged");
+
+        assertEquals(0, exitCode, err.toString(StandardCharsets.UTF_8));
+        assertTrue(firstLine(err).startsWith("PASSED: no changed Java files"),
+                "nothing was staged, so there is nothing to compare: " + firstLine(err));
+
+        // And worktree mode, which is defined to see it, still does.
+        ByteArrayOutputStream worktreeErr = new ByteArrayOutputStream();
+        assertNotEquals(0, runGate(worktreeErr, "--base", "HEAD", "--mode", "worktree"),
+                worktreeErr.toString(StandardCharsets.UTF_8));
+        assertTrue(firstLine(worktreeErr).startsWith("FAILED:"), firstLine(worktreeErr));
+    }
+
     // ---------------------------------------------------------------- mode selection
 
     /**

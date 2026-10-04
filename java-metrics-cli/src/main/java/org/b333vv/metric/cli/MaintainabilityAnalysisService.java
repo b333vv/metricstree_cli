@@ -213,7 +213,7 @@ final class MaintainabilityAnalysisService {
                     EntityKey methodKey =
                             EntityKey.ofMethod(path, classReport.qualifiedName(), method.signature());
                     RuleEvaluation methodEvaluation = methodEvaluator.evaluate(rule, methodKey,
-                            method.metrics(), method);
+                            method.metrics(), method, enforcement);
                     collect(rule, methodEvaluation, base, methodKey, true, path, logicalPath, scope,
                             correspondence, findings, ineligible, issues, role, eligiblePaths,
                             comparing);

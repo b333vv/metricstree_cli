@@ -62,8 +62,17 @@ final class FindingSchema {
             JsonNode required = node.get("required");
             if (required != null) {
                 for (JsonNode name : required) {
-                    if (!value.has(name.asText())) {
-                        problems.add(where + ": missing required property '" + name.asText() + "'");
+                    String property = name.asText();
+                    if (!value.has(property)) {
+                        problems.add(where + ": missing required property '" + property + "'");
+                    } else if (value.get(property).isNull()) {
+                        // Present but null is not present. `has` is true for an explicit null, so a
+                        // required identity could be shipped as `"entityKey": null` and every check
+                        // below it was skipped -- including the type check, which returns early on a
+                        // null value. This is the recheck's R07: a schema test that accepts that is
+                        // not establishing the contract, it is declining to check it.
+                        problems.add(where + ": required property '" + property
+                                + "' is null, which is not a value");
                     }
                 }
             }

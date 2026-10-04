@@ -7,7 +7,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -247,11 +249,43 @@ final class GitOps {
      */
     static List<GitPathChange> workingTreeChanges(Path repoRoot, String baseCommit)
             throws GitException {
-        List<GitPathChange> changes = new ArrayList<>(pathChanges(runBytes(repoRoot,
-                "diff", "--name-status", "-z", "-M", "--find-renames", baseCommit)));
+        List<GitPathChange> changes = new ArrayList<>(indexChanges(repoRoot, baseCommit));
         changes.addAll(pathChanges(runBytes(repoRoot,
-                "diff", "--name-status", "-z", "-M", "--find-renames", "--cached", baseCommit)));
+                "diff", "--name-status", "-z", "-M", "--find-renames", baseCommit)));
         return changes;
+    }
+
+    /**
+     * The index's stage-0 entries, as path to blob object ID.
+     *
+     * <p>Rejects a nonzero stage rather than picking one: choosing among conflict stages would resolve
+     * the conflict by preference, and the gate's claim is that its verdict is a fact about the code
+     * rather than an artefact of which side git listed first.
+     */
+    static Map<String, String> indexObjectIds(Path repoRoot) throws GitException {
+        Map<String, String> staged = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : indexEntries(repoRoot).entrySet()) {
+            staged.put(entry.getKey(), entry.getValue().split(" ")[1]);
+        }
+        return staged;
+    }
+
+    /**
+     * The changes recorded in the index alone, with git's rename detection.
+     *
+     * <p>Staged mode's change source, and the recheck's R06. {@link #workingTreeChanges} unions the
+     * index and the working copy because worktree mode is meant to see both, but staged mode is defined
+     * as "never read unstaged content as after" — so including the working-copy diff made it analyse and
+     * report files a developer had deliberately not staged. An index identical to HEAD with one file
+     * edited on disk reported "1 changed file" and carried an EXISTING finding out of a comparison that
+     * should have been empty.
+     *
+     * <p>It did not produce a wrong value or a false failure, which is why it survived; it produced the
+     * wrong subjects and spent the analysis on them. Mode definitions are not a preference.
+     */
+    static List<GitPathChange> indexChanges(Path repoRoot, String baseCommit) throws GitException {
+        return pathChanges(runBytes(repoRoot,
+                "diff", "--name-status", "-z", "-M", "--find-renames", "--cached", baseCommit));
     }
 
     private static List<GitPathChange> pathChanges(byte[] output) throws GitException {

@@ -65,12 +65,28 @@ enum FindingLifecycle {
         return name().toLowerCase(java.util.Locale.ROOT);
     }
 
-    /** Whether a finding in this state may block a build. */
+    /**
+     * Whether a finding in this state may block a build.
+     *
+     * <p>{@link #CURRENT} is included, and that is the recheck's R01.
+     *
+     * <p>When {@code CURRENT} was introduced it had to be excluded here, because the only lifecycles that
+     * were eligible were the three that assert something about a comparison, and a current-only run
+     * asserts none. But the result was that {@code detect --enforcement enforce} over a method matching
+     * an error-mode rule reported a finding, marked it ACTIVE, and exited 0: the finding existed, said it
+     * matched, and did nothing. The reasoning was right about lifecycle and wrong about the consequence.
+     *
+     * <p>The two decisions are separate and the type already has one field for each. {@code blocking} is
+     * set only when the rule is in {@code error} mode under an enforcing policy, and advisory leaves it
+     * false -- so making {@code CURRENT} eligible here cannot make an advisory run fail, it only lets an
+     * enforcing one do what its author asked. A current-only run has no before/after comparison to
+     * offer, but it does have a match, and the contract asks for that match to be enforceable.
+     */
     boolean eligibleForBlocking() {
-        return this == NEW_ENTITY || this == INTRODUCED || this == WORSENED;
+        return this == NEW_ENTITY || this == INTRODUCED || this == WORSENED || this == CURRENT;
     }
 
-    /** Whether this state means "something is wrong that this change introduced". */
+    /** Whether this state means "something is wrong that this change introduced, or that is present now". */
     boolean isActive() {
         return eligibleForBlocking();
     }
