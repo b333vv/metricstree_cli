@@ -1,5 +1,26 @@
 # what has been done
 
+## Session: acceptance audit of ML-001–ML-032 (2026-10-04)
+
+Audited implementation revision `6e4c03e2d8b19511db513b6ae4d57e6c1d99ad1b` against all 32
+task packets and the comparison/findings/delivery contracts. Implementation exists for every task,
+but the DONE claims are not sufficient acceptance evidence. The
+[audit matrix and findings](plans/maintainability-linter/audits/2026-10-04/README.md) record 21
+defect groups, with packaged CLI replays, deterministic internal probes and captured results.
+
+The principal gaps are WARN enforcement, ignored limits/roles, missing staged additions in worktree
+mode, unused source-mutation verification, detect reporting failed analysis as PASSED, missing CLI
+SARIF, and nonblocking cumulative baseline regression. The performance harness measures HEAD against
+itself; the evaluation harness counts an invalid Java fixture as a rule miss. Their current results
+cannot substantiate analysis speed or the specified usefulness experiment. Smaller evidence, digest,
+suppression, release and Action gaps are detailed in the audit.
+
+Verification: `./gradlew check --rerun-tasks` passed (771 discovered tests, 770 executed, one existing
+library benchmark skipped), and all 47 Python tests passed. Real consumer fixtures were disposable;
+hosted GitHub/platform release runs and a real PMD comparison remain unverified. This session adds
+audit documentation/replay artifacts; runtime fixes remain follow-up work. Historical handoffs below
+are retained as implementation records and are superseded by this audit for acceptance/readiness.
+
 ## Session: ML-030 — documentation that a reader can act on (2026-09-29)
 
 The README led with "computes metrics and detects antipatterns" and a quick start that built the
@@ -2833,10 +2854,13 @@ All three proposals were accepted and implemented; backward compatibility was no
 
 # what is in progress
 
-- New active work: accepted maintainability linter strategy, planned in
-  `docs/plans/maintainability-linter/README.md`. ML-001–ML-022 are DONE.
-  Next ready task: **ML-033**. Implement one packet per
-  commit. The prior roadmap below is completed history.
+- Active work: accepted maintainability linter strategy, planned in
+  `docs/plans/maintainability-linter/README.md`. Implementation exists for ML-001–ML-032;
+  acceptance gaps are recorded in the
+  [2026-10-04 audit](plans/maintainability-linter/audits/2026-10-04/README.md).
+  Close its enforcement/completeness/baseline and evidence-harness gaps before using these
+  results for ML-033/034. Implement one repair task per commit. The prior roadmap below is
+  completed history.
 
 - Roadmap agreed with the user (2026-09-23), execution order:
   1. DEBT-07 — done this session.

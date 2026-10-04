@@ -1,0 +1,43 @@
+{
+  "revision": "6e4c03e2d8b19511db513b6ae4d57e6c1d99ad1b",
+  "sameProjectCases": [
+    {
+      "id": "a",
+      "split": "tuning",
+      "provenance": {
+        "origin": "same-project"
+      },
+      "changes": [
+        {
+          "path": "A.java",
+          "content": "class A {}"
+        }
+      ]
+    },
+    {
+      "id": "b",
+      "split": "holdout",
+      "provenance": {
+        "origin": "same-project"
+      },
+      "changes": [
+        {
+          "path": "B.java",
+          "content": "class B {}"
+        }
+      ]
+    }
+  ],
+  "splitValidation": "accepted",
+  "pmdFixtureReport": {
+    "formatVersion": 0,
+    "files": [],
+    "processingErrors": [],
+    "configurationErrors": []
+  },
+  "pmdAdapterResult": {
+    "exception": "AttributeError",
+    "message": "'str' object has no attribute 'get'"
+  },
+  "realPmdExecuted": false
+}

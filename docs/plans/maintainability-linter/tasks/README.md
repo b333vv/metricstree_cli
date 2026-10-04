@@ -4,6 +4,11 @@ Execute one task at a time. All tasks start TODO; update status only with eviden
 Dependencies are technical prerequisites. Milestone boundaries and external evidence follow
 [the master plan](../README.md). Numeric order is the recommended execution order.
 
+**Acceptance audit (2026-10-04):** implementation exists for ML-001–ML-032, but the historical
+status column below is inconsistent with task-packet handoffs and does not establish acceptance.
+Use the [audit's per-task assessment and reproducible evidence](../audits/2026-10-04/README.md)
+for current readiness. Reconcile DONE/TODO markers after the identified acceptance gaps are repaired.
+
 | Task | Description | Dependencies | Status |
 | --- | --- | --- | --- |
 | [ML-001](ML-001.md) | Repair and validate threshold bounds | — | DONE |

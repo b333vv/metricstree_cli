@@ -1,0 +1,5 @@
+{
+  "revision": "6e4c03e2d8b19511db513b6ae4d57e6c1d99ad1b",
+  "stdout": "source-mutation exit=0 stderr=PASSED: 1 changed file, no violations (1 warning)\nC001-WMC-plus20-TCC-decrease worsened=false\ntrace-cap CC=100 MND=0 MND-omitted=115\nrole-classification-digests-equal=true\nschema-null-entityKey-errors=[]\n",
+  "stderr": ""
+}

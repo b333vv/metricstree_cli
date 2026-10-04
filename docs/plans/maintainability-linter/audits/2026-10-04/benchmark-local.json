@@ -1,0 +1,150 @@
+{
+  "cli_path": "/Users/vadim/code/metricstree_cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli",
+  "cold_summary": {
+    "maxSeconds": 0.9628,
+    "medianSeconds": 0.9628,
+    "method": "median and nearest-rank p95 over 1 cold samples; every sample is retained",
+    "minSeconds": 0.9628,
+    "p95Seconds": 0.9628,
+    "samples": 1
+  },
+  "comparison_mode": "committed",
+  "corpus": {
+    "classesPerPackage": 8,
+    "digest": "da0aae25c8ce184bfae42bc379d85544ddfb4f849aa5242abe39a65f1281d5e8",
+    "fileCount": 96,
+    "kind": "synthetic",
+    "packages": 12,
+    "revision": "168f0f6d8abc99a29a48aec0786b79ac4a780667",
+    "root": "/private/tmp/metricstree-audit-bench-local/corpus",
+    "seed": 20260930
+  },
+  "environment": {
+    "cliPath": "/Users/vadim/code/metricstree_cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli",
+    "cpuCount": 8,
+    "javaVersion": "openjdk version \"21.0.3\" 2024-04-16",
+    "machine": "arm64",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "processor": "arm",
+    "python": "3.12.4"
+  },
+  "method": {
+    "changedFileCount": 12,
+    "measuredTrials": 5,
+    "memoryMethod": "the tool's own 'Heap after GC' reading, taken at its phase boundary",
+    "mode": "committed",
+    "percentile": "nearest-rank",
+    "warmupTrials": 1
+  },
+  "mode": "local",
+  "problems": [
+    "warm local median 0.997s against the 2.0s target: met"
+  ],
+  "samples": [
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 0,
+      "report_digest": "062422d7a0bb2b114b9119ce3aec66a669185912ec9ab1cbc75f12e450f84d88",
+      "seconds": 0.9628,
+      "warm": false
+    },
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 0,
+      "report_digest": "062422d7a0bb2b114b9119ce3aec66a669185912ec9ab1cbc75f12e450f84d88",
+      "seconds": 0.9657,
+      "warm": true
+    },
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 1,
+      "report_digest": "062422d7a0bb2b114b9119ce3aec66a669185912ec9ab1cbc75f12e450f84d88",
+      "seconds": 0.997,
+      "warm": true
+    },
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 2,
+      "report_digest": "062422d7a0bb2b114b9119ce3aec66a669185912ec9ab1cbc75f12e450f84d88",
+      "seconds": 1.0195,
+      "warm": true
+    },
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 3,
+      "report_digest": "062422d7a0bb2b114b9119ce3aec66a669185912ec9ab1cbc75f12e450f84d88",
+      "seconds": 1.0351,
+      "warm": true
+    },
+    {
+      "changed_files": 12,
+      "complete": true,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 4,
+      "report_digest": "062422d7a0bb2b114b9119ce3aec66a669185912ec9ab1cbc75f12e450f84d88",
+      "seconds": 0.9804,
+      "warm": true
+    }
+  ],
+  "schema_version": "v1",
+  "tool_version": "2026.0.0",
+  "warm_summary": {
+    "maxSeconds": 1.0351,
+    "medianSeconds": 0.997,
+    "method": "median and nearest-rank p95 over 5 warm samples; every sample is retained",
+    "minSeconds": 0.9657,
+    "p95Seconds": 1.0351,
+    "samples": 5
+  },
+  "auditGateReport": {
+    "schemaVersion": "v2",
+    "toolVersion": "2026.0.0",
+    "status": "PASSED",
+    "policyDigest": "95b7d9b6eef967e8bb1e5eb1a0930026d0ce7b1516942701d0f4c2e6b60eb4f0",
+    "enabledRules": [
+      "MT-M001",
+      "MT-M002",
+      "MT-M003",
+      "MT-C002"
+    ],
+    "enforcement": "ADVISORY",
+    "summary": {
+      "activeFindings": 0,
+      "blocking": 0,
+      "existing": 0,
+      "suppressed": 0,
+      "baselineAccepted": 0,
+      "resolved": 0,
+      "total": 0,
+      "entities": 0,
+      "issues": 0,
+      "requiredIssues": 0
+    },
+    "comparison": {
+      "base": "HEAD",
+      "mergeBase": "a0891c06bad95a4891df2a585746c769f085e4f9",
+      "head": "a0891c06bad95a4891df2a585746c769f085e4f9"
+    },
+    "findings": [],
+    "issues": [],
+    "suppressions": []
+  },
+  "auditRevision": "6e4c03e2d8b19511db513b6ae4d57e6c1d99ad1b",
+  "auditInterpretation": "Empty comparison; not a valid analysis performance baseline"
+}
