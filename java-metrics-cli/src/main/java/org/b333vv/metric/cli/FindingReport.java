@@ -23,10 +23,25 @@ record FindingReport(
         MaintainabilitySettings settings,
         List<Finding> findings,
         List<EvaluationIssue> issues,
-        List<FindingSuppressionFilter.SuppressionStatus> suppressions) {
+        List<FindingSuppressionFilter.SuppressionStatus> suppressions,
+        AnalysisCompleteness analysis) {
 
     /** The v2 schema marker. ML-020 freezes the shape; this is the version it will freeze. */
     static final String SCHEMA_VERSION = "v2";
+
+    /**
+     * A report with no analysis detail, for callers that have none to give.
+     *
+     * <p>The five-field shape, kept so a report built in a test or by a library consumer does not have
+     * to invent an analysis it never performed. It projects to no {@code analysis} block rather than to
+     * an empty one: "nothing was measured" and "measured nothing" are different, and a zero-filled
+     * block is a claim about a run that did not happen.
+     */
+    FindingReport(String schemaVersion, String status, MaintainabilitySettings settings,
+            List<Finding> findings, List<EvaluationIssue> issues,
+            List<FindingSuppressionFilter.SuppressionStatus> suppressions) {
+        this(schemaVersion, status, settings, findings, issues, suppressions, null);
+    }
 
     /** The pre-ML-024 shape: a report with no configured exceptions. */
     FindingReport(String schemaVersion, String status, MaintainabilitySettings settings,
@@ -58,6 +73,12 @@ record FindingReport(
     /** A copy with a different status, used when the verdict is decided outside this type. */
     FindingReport withStatus(String newStatus) {
         return new FindingReport(schemaVersion, newStatus, settings, findings, issues,
-                suppressions);
+                suppressions, analysis);
+    }
+
+    /** The same report carrying what the analysis established about its own coverage. */
+    FindingReport withAnalysis(AnalysisCompleteness completeness) {
+        return new FindingReport(schemaVersion, status, settings, findings, issues,
+                suppressions, completeness);
     }
 }

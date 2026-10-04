@@ -233,6 +233,41 @@ def run_case(case: dict, cli: Path, workdir: Path, pmd: Path | None,
     if completed.returncode not in (0, 1, 2):
         run.status = "failed"
         run.problems.append(f"gate exited {completed.returncode}")
+        return run
+
+    # The run produced a report, and that is not the same as the run having measured anything.
+    #
+    # This is the audit's A21, and it is the defect that makes every number downstream wrong rather
+    # than merely incomplete. The gate is asked about a case whose source does not parse; it correctly
+    # refuses to judge the code and exits 1 with no findings. The runner used to accept any of 0/1/2 as
+    # usable, record status=ok, and hand the summarizer an empty finding list -- which the summarizer
+    # then counted as the rule having missed the case. A fixture that does not compile was therefore
+    # scored as a rule failure, and the recorded rate was a measure of the corpus's syntax errors.
+    #
+    # Three signals, because they fail independently: the report's own status, the exit code's agreement
+    # with it, and required issues. Any one of them means the analysis did not complete, and a case whose
+    # analysis did not complete is missing evaluation data -- excluded from every rate, with the reason
+    # recorded -- and never agreement or a miss.
+    problems = []
+    status = document.get("status")
+    if status != "PASSED" and status != "FAILED":
+        problems.append(f"analysis status is {status}; the run did not reach a verdict")
+    required_issues = [
+        issue for issue in document.get("issues", [])
+        if issue.get("required")
+    ]
+    if required_issues:
+        problems.append(
+            f"{len(required_issues)} required check(s) could not be evaluated: "
+            + required_issues[0].get("message", ""))
+    if completed.returncode == 2 and status == "FAILED":
+        problems.append(
+            "exit code 2 (incomplete) disagrees with a FAILED report; the run's own verdict and its"
+            " exit code contradict each other")
+
+    if problems:
+        run.status = "incomplete"
+        run.problems.extend(problems)
 
     if pmd is not None:
         run.pmd_status, run.pmd_findings, run.pmd_exit_code, run.pmd_version = _run_pmd(

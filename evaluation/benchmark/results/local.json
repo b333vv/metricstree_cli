@@ -1,11 +1,11 @@
 {
   "cli_path": "/Users/vadim/code/metricstree_cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli",
   "cold_summary": {
-    "maxSeconds": 1.3017,
-    "medianSeconds": 1.3017,
+    "maxSeconds": 2.989,
+    "medianSeconds": 2.989,
     "method": "median and nearest-rank p95 over 1 cold samples; every sample is retained",
-    "minSeconds": 1.3017,
-    "p95Seconds": 1.3017,
+    "minSeconds": 2.989,
+    "p95Seconds": 2.989,
     "samples": 1
   },
   "comparison_mode": "committed",
@@ -15,8 +15,8 @@
     "fileCount": 96,
     "kind": "synthetic",
     "packages": 12,
-    "revision": "3f62e2f174559d65a30ae3a548aaf257a0054c3a",
-    "root": "/tmp/bm5/corpus",
+    "revision": "169bbb382a8c6cb396510bd0cb5c52e2f9009608",
+    "root": "/tmp/bench-rec-l/corpus",
     "seed": 20260930
   },
   "environment": {
@@ -24,92 +24,112 @@
     "cpuCount": 8,
     "javaVersion": "openjdk version \"21.0.3\" 2024-04-16",
     "machine": "arm64",
-    "platform": "macOS-27.0-arm64-arm-64bit",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
     "processor": "arm",
     "python": "3.12.4"
   },
   "method": {
+    "analysisScope": "local",
     "changedFileCount": 12,
+    "comparisonBase": "169bbb382a8c6cb396510bd0cb5c52e2f9009608",
     "measuredTrials": 5,
     "memoryMethod": "the tool's own 'Heap after GC' reading, taken at its phase boundary",
     "mode": "committed",
     "percentile": "nearest-rank",
-    "warmupTrials": 1
+    "warmupTrials": 1,
+    "whatWasMeasured": {
+      "analysedFiles": 12,
+      "changedFiles": 12,
+      "eligibleFiles": 12,
+      "note": "Recorded so a timing cannot be read as 'the analysis was fast' when it establishes only that a fast process exited. Zero analysed files means the comparison was empty and the timing measures nothing."
+    }
   },
   "mode": "local",
   "problems": [
-    "warm local median 1.261s against the 2.0s target: met"
+    "warm local median 2.979s against the 2.0s target: NOT met"
   ],
   "samples": [
     {
+      "analysed_files": 12,
       "changed_files": 12,
       "complete": true,
+      "eligible_files": 12,
       "exit_code": 0,
       "heap_after_kb": null,
       "index": 0,
-      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
-      "seconds": 1.3017,
+      "report_digest": "fecb1e01c52a54116dcdc3b6e4952e8013a455ea62a6f842023bffd68a774e50",
+      "seconds": 2.989,
       "warm": false
     },
     {
+      "analysed_files": 12,
       "changed_files": 12,
       "complete": true,
+      "eligible_files": 12,
       "exit_code": 0,
       "heap_after_kb": null,
       "index": 0,
-      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
-      "seconds": 1.2613,
+      "report_digest": "fecb1e01c52a54116dcdc3b6e4952e8013a455ea62a6f842023bffd68a774e50",
+      "seconds": 2.9554,
       "warm": true
     },
     {
+      "analysed_files": 12,
       "changed_files": 12,
       "complete": true,
+      "eligible_files": 12,
       "exit_code": 0,
       "heap_after_kb": null,
       "index": 1,
-      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
-      "seconds": 1.2596,
+      "report_digest": "fecb1e01c52a54116dcdc3b6e4952e8013a455ea62a6f842023bffd68a774e50",
+      "seconds": 3.0398,
       "warm": true
     },
     {
+      "analysed_files": 12,
       "changed_files": 12,
       "complete": true,
+      "eligible_files": 12,
       "exit_code": 0,
       "heap_after_kb": null,
       "index": 2,
-      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
-      "seconds": 1.2598,
+      "report_digest": "fecb1e01c52a54116dcdc3b6e4952e8013a455ea62a6f842023bffd68a774e50",
+      "seconds": 2.9791,
       "warm": true
     },
     {
+      "analysed_files": 12,
       "changed_files": 12,
       "complete": true,
+      "eligible_files": 12,
       "exit_code": 0,
       "heap_after_kb": null,
       "index": 3,
-      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
-      "seconds": 1.3254,
+      "report_digest": "fecb1e01c52a54116dcdc3b6e4952e8013a455ea62a6f842023bffd68a774e50",
+      "seconds": 2.9648,
       "warm": true
     },
     {
+      "analysed_files": 12,
       "changed_files": 12,
       "complete": true,
+      "eligible_files": 12,
       "exit_code": 0,
       "heap_after_kb": null,
       "index": 4,
-      "report_digest": "bcdaac5a3be4c0c2a61668df302248bcfa40376d6345a93335285c166c20c036",
-      "seconds": 1.3611,
+      "report_digest": "fecb1e01c52a54116dcdc3b6e4952e8013a455ea62a6f842023bffd68a774e50",
+      "seconds": 2.9983,
       "warm": true
     }
   ],
   "schema_version": "v1",
   "tool_version": "2026.0.0",
   "warm_summary": {
-    "maxSeconds": 1.3611,
-    "medianSeconds": 1.2613,
+    "maxSeconds": 3.0398,
+    "medianSeconds": 2.9791,
     "method": "median and nearest-rank p95 over 5 warm samples; every sample is retained",
-    "minSeconds": 1.2596,
-    "p95Seconds": 1.3611,
+    "minSeconds": 2.9554,
+    "p95Seconds": 3.0398,
     "samples": 5
   }
 }

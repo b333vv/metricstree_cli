@@ -8,6 +8,7 @@ result, because each of them is the shape a flattering number takes when somethi
 
 import importlib.util
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -225,6 +226,92 @@ class Replay(unittest.TestCase):
             self.assertTrue(repo.exists())
             self.assertTrue(str(repo).startswith(tmp),
                             "a case may not write outside its own disposable repository")
+
+
+class InvalidInputIsMissingData(unittest.TestCase):
+    """A case the tool could not analyse is not a case the tool got wrong.
+
+    The audit's A21. The runner accepted any of exit codes 0, 1 and 2 as a usable result, so a fixture
+    whose Java does not parse produced an empty finding list, was recorded as ``status=ok`` with no
+    problems, and was then counted by the summarizer as the rule having missed it. The bundled
+    ``deep-nesting-flags`` case had eight opening braces and seven closing ones; its recorded MT-M002
+    rate was a measurement of that typo.
+    """
+
+    def _report(self, status, issues, exit_code):
+        return {"cases": [{
+            "case_id": "broken",
+            "split": "tuning",
+            "status": "ok",
+            "findings": [],
+            "blocking": 0,
+            "exit_code": exit_code,
+            "tool_version": "t",
+            "pmd_status": "not-run",
+            "pmd_findings": [],
+            "pmd_exit_code": None,
+            "pmd_version": "",
+            "problems": [],
+            "_document": {"status": status, "issues": issues, "findings": []},
+        }]}
+
+    def _classify(self, status, issues, exit_code):
+        """The decision run_case makes after reading a report, in isolation."""
+        problems = []
+        if status not in ("PASSED", "FAILED"):
+            problems.append(f"analysis status is {status}")
+        if issues:
+            problems.append(f"{len(issues)} required check(s) could not be evaluated")
+        if exit_code == 2 and status == "FAILED":
+            problems.append("exit code and report disagree")
+        return problems
+
+    def test_an_unparseable_case_is_excluded_from_the_rates(self):
+        problems = self._classify(
+            "INCOMPLETE",
+            [{"required": True, "message": "Calculator.java does not parse"}],
+            1)
+        self.assertTrue(problems,
+                        "a required check that could not run means the analysis did not finish")
+
+    def test_an_incomplete_status_is_never_a_verdict(self):
+        self.assertTrue(self._classify("INCOMPLETE", [], 1))
+        self.assertTrue(self._classify("INCOMPLETE", [], 2))
+
+    def test_a_required_issue_alone_excludes_the_case(self):
+        # Even with a PASSED verdict: a report that says it passed while a check it was required to run
+        # could not run is not a measurement of the rule either way.
+        self.assertTrue(self._classify("PASSED",
+                                       [{"required": True, "message": "ATFD needs project scope"}],
+                                       0))
+
+    def test_a_complete_run_is_unaffected(self):
+        self.assertEqual(self._classify("PASSED", [], 0), [])
+        self.assertEqual(self._classify("FAILED", [], 1), [])
+
+    def test_the_bundled_corpus_is_all_valid_java(self):
+        """Every bundled case must be analysable, or the corpus measures its own typos.
+
+        Not a substitute for compiling: this checks the structural failures that produced A21 -- the
+        public class name matching its file, and braces balancing -- which are the two the bundled
+        corpus actually had, and it needs no JDK to check.
+        """
+        cases = sorted((_ROOT / "evaluation" / "cases").glob("*.json"))
+        self.assertTrue(cases)
+        for path in cases:
+            if path.name == "manifest.json":
+                continue
+            case = json.loads(path.read_text(encoding="utf-8"))
+            for change in case["changes"]:
+                content = change["content"]
+                if change["edit"] == "replace":
+                    stem = Path(change["path"]).stem
+                    self.assertIn(f"public class {stem}", content,
+                                  f"{path.name}: a public class must live in a file named for it,"
+                                  f" or the case is not valid Java")
+                without_strings = re.sub(r'"(?:[^"\\]|\\.)*"', '""', content)
+                self.assertEqual(without_strings.count("{"), without_strings.count("}"),
+                                 f"{path.name}: unbalanced braces")
 
 
 class ReviewForms(unittest.TestCase):

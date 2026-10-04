@@ -52,15 +52,39 @@ produced it:
 
 Measured on a developer laptop, against the packaged CLI:
 
-| Mode | Corpus | Changed files | Cold median | Warm median | Warm p95 |
-|---|---|---|---|---|---|
-| local | 96 synthetic files | 12 | 1.302 s | 1.261 s | 1.361 s |
-| project | 96 synthetic files | 12 | 1.299 s | 1.291 s | 1.303 s |
+| Mode | Corpus | Changed files | Files analysed | Cold median | Warm median | Warm p95 |
+|---|---|---|---|---|---|---|
+| local | 96 synthetic files | 12 | 12 | 2.989 s | 2.979 s | 3.040 s |
+| project | 96 synthetic files | 12 | 12 | 2.971 s | 2.975 s | 3.038 s |
 
-**The warm local target is 2 seconds, and it was met** — 1.261 s median. That sentence is a
-measurement of one machine, not a guarantee; the target lives in the driver as a constant and is
-reported against measured medians only. The result files carry the verdict in their `problems` array,
-including when it is `NOT met`.
+**The warm local target is 2 seconds, and it was not met** — 2.979 s median. The result files carry
+the verdict in their `problems` array, and it reads `warm local median 2.979s against the 2.0s target:
+NOT met`. That is a measurement of one machine, not a guarantee; the target lives in the driver as a
+constant and is reported against measured medians only.
+
+### The earlier numbers were not a measurement of anything
+
+This table previously read 1.261 s local and 1.291 s project, with **the target reported as met**.
+Both figures were wrong, and the reason is worth stating because it is the failure mode this harness
+exists to prevent.
+
+The driver introduced its change, committed it, and then ran the gate with `--base HEAD` — comparing
+HEAD against itself. That is an empty comparison: no merge-base difference, no changed files, no
+analysis. What was being timed was JVM startup and a fast path that returns before doing any work.
+Every check the harness performed was satisfied by it: the process exited 0, wrote a report, and
+reported a status, so `complete` was true for every trial.
+
+Two things changed, and both are assertions in `evaluation/tests/test_benchmark.py` now:
+
+- The comparison base is the **parent commit**, resolved to a full SHA before the trial runs, so the
+  gate has a real diff to analyse. `--base HEAD` is gone.
+- Every trial records **`eligibleFiles` and `analysedFiles`**, read from the report, and the result
+  files publish them under `method.whatWasMeasured`. A recorded timing now says how much it measured,
+  so a timing over an empty comparison is visible in the artefact rather than only in a review of the
+  source.
+
+The "Files analysed" column above is that field. It is the column that would have caught this, and
+its absence from the old results is why nothing objected to a suspiciously good number.
 
 Two things these numbers do **not** say:
 
@@ -78,6 +102,11 @@ what to change. On the corpus above, JVM startup and snapshot materialization do
 runs, which is exactly why the project mode is not much slower than the local one here — with a
 96-file synthetic corpus there is not enough work for the scope to matter. That is a statement about
 this corpus, not about the tool.
+
+The consequence for the two-second target is worth stating plainly rather than leaving to be
+discovered: roughly half the 2.98 s is fixed startup cost that no amount of analysis work will
+remove, so the analysis itself is well inside the budget on this corpus while the end-to-end number
+is not. Separating the two needs the phase timings above, not a faster number.
 
 ## Real corpora
 

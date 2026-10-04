@@ -64,10 +64,11 @@ class PercentileMath(unittest.TestCase):
 
 
 class Summary(unittest.TestCase):
-    def _trial(self, seconds, warm=True, index=0, exit_code=0, complete=True):
+    def _trial(self, seconds, warm=True, index=0, exit_code=0, complete=True,
+               analysed=3, eligible=3):
         return run.Trial(index=index, warm=warm, seconds=seconds, exit_code=exit_code,
-                         changed_files=3, heap_after_kb=None, complete=complete,
-                         report_digest="d")
+                         changed_files=3, analysed_files=analysed, eligible_files=eligible,
+                         heap_after_kb=None, complete=complete, report_digest="d")
 
     def test_summary_keeps_every_sample(self):
         trials = [self._trial(value) for value in (1.0, 2.0, 3.0, 4.0, 99.0)]
@@ -226,6 +227,34 @@ class RecordedResults(unittest.TestCase):
             self.assertTrue(document["corpus"]["digest"], "no corpus digest recorded")
             self.assertGreater(document["method"]["changedFileCount"], 0,
                                "a benchmark over zero changed files measures the no-change path")
+
+    def test_every_recorded_result_analysed_something(self):
+        """A recorded timing over an empty comparison measures startup, and says so.
+
+        This is the audit's A20, asserted against the committed artefacts rather than against the
+        harness's source. The old baselines satisfied every other check here -- they had samples, a
+        stated method, five repetitions -- while comparing HEAD against itself: zero files eligible,
+        zero analysed, about a second of JVM startup and an empty diff. Nothing in the record said so,
+        so the number looked like a measurement. `whatWasMeasured` exists so it cannot look like one
+        again, and this test is why it is populated.
+        """
+        for document in self._results():
+            measured = document["method"].get("whatWasMeasured")
+            self.assertIsNotNone(
+                measured,
+                "a recorded result must state what it measured; without it a timing cannot be"
+                " distinguished from a fast process that analysed nothing")
+            self.assertGreater(measured["eligibleFiles"], 0,
+                               f"{document['mode']}: a comparison over zero eligible files measures"
+                               f" the no-change path, not the analysis")
+            self.assertGreater(measured["analysedFiles"], 0,
+                               f"{document['mode']}: eligible files that were never analysed"
+                               f" measure nothing either")
+
+    def test_the_two_modes_request_different_scopes(self):
+        """Local and project must actually differ, or recording both measures one thing twice."""
+        for document in self._results():
+            self.assertIn(document["method"]["analysisScope"], ("local", "project"))
 
     def test_cold_and_warm_are_both_measured(self):
         for document in self._results():

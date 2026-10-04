@@ -186,6 +186,8 @@ class Trial:
     seconds: float
     exit_code: int
     changed_files: int
+    analysed_files: int
+    eligible_files: int
     heap_after_kb: int | None
     complete: bool
     report_digest: str
@@ -238,6 +240,8 @@ def run_trial(cli: Path, args: Sequence[str], warm: bool, index: int,
     report = cwd / "report.json"
     digest = ""
     complete = False
+    analysed = 0
+    eligible = 0
     if report.is_file():
         try:
             document = json.loads(report.read_text(encoding="utf-8"))
@@ -245,6 +249,13 @@ def run_trial(cli: Path, args: Sequence[str], warm: bool, index: int,
             # `status` is the field every report carries; a document without one is bytes that are
             # not a report, whatever else it contains.
             complete = isinstance(document.get("status"), str)
+            # And what it actually looked at. The audit's A20 was invisible because every field the
+            # harness checked was satisfied by a run that analysed nothing: it exited 0, wrote a report
+            # and reported a status. These are the fields that distinguish a measurement from a fast
+            # path, so they are read and published with the timings.
+            analysis = document.get("analysis") or {}
+            eligible = int(analysis.get("eligibleFiles") or 0)
+            analysed = int(analysis.get("analyzedFiles") or 0)
         except ValueError:
             # A malformed report is recorded, not hidden: the run happened and produced bytes that
             # are not a report. Reporting it as a fast successful run would be the worst outcome.
@@ -257,21 +268,29 @@ def run_trial(cli: Path, args: Sequence[str], warm: bool, index: int,
         seconds=round(seconds, 4),
         exit_code=completed.returncode,
         changed_files=changed_files,
+        analysed_files=analysed,
+        eligible_files=eligible,
         heap_after_kb=_parse_heap_after(completed.stderr),
         complete=complete,
         report_digest=digest,
     )
 
 
-def _introduce_change(root: Path) -> None:
-    """Make one generated method substantially more complex.
+def _introduce_change(root: Path) -> str:
+    """Make the change under measurement, commit it, and return the ref to compare against.
 
     Committed on purpose: the gate runs in committed mode, so an uncommitted edit would not be seen
-    and the trial would measure nothing at all.
+    and the trial would measure nothing at all. The parent is returned rather than the string
+    "HEAD~1" because the parent is a commit: it does not move, so a benchmark re-run later measures
+    the same comparison rather than a different one.
+
+    The corpus checkout is disposable and created by this harness, never a caller's own working copy;
+    committing into a supplied repository would be a way to destroy somebody's uncommitted work.
     """
     candidates = sorted(root.rglob("*.java"))
     if not candidates:
         raise BenchmarkError("the corpus has no Java sources to change")
+    before = _head_sha(root)
     # A handful of files rather than one: with a single changed file the local and project modes do
     # the same work, and the distinction between them -- the whole reason for recording both -- stops
     # being visible in the numbers.
@@ -284,6 +303,15 @@ def _introduce_change(root: Path) -> None:
     subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "benchmark change"],
                    check=True, capture_output=True)
+    return before
+
+
+def _head_sha(root: Path) -> str:
+    """HEAD as a full commit ID, resolved once so it can be pinned as the comparison base."""
+    completed = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--verify", "HEAD^{commit}"],
+        check=True, capture_output=True, text=True)
+    return completed.stdout.strip()
 
 
 def _changed_files(root: Path) -> int:
@@ -401,12 +429,25 @@ def benchmark(cli: Path, mode: str, repetitions: int, warmup: int, workdir: Path
     # A change to compare: without one the gate takes its "no changed files" path, which is fast for
     # reasons that have nothing to do with the analysis. The working tree is edited and the gate run
     # in committed mode, so every trial measures the same comparison.
-    _introduce_change(root)
-    base = ["gate", "--base", "HEAD", "--mode", "committed", "--policy", "maintainability",
+    # The change is committed and then compared against the commit *before* it.
+    #
+    # `--base HEAD` after committing compares HEAD with itself: no merge base difference, no changed
+    # files, no analysis. That is the audit's A20, and it is why every recorded figure -- the ~1s local
+    # median, the ~1s project median -- is a measurement of JVM startup and an empty comparison. The
+    # two modes agreed to within a millisecond, which is what two runs that analysed nothing look like.
+    # Every published baseline from that harness establishes nothing about analysis speed.
+    #
+    # HEAD~1 is pinned here rather than left implicit so the comparison is reproducible: the base is a
+    # commit, not a moving ref, and re-running the benchmark later compares against the same revision.
+    base_ref = _introduce_change(root)
+    base = ["gate", "--base", base_ref, "--mode", "committed", "--policy", "maintainability",
             "--enforcement", "advisory",
             "--output", "report.json", "--json-output", "findings.json"]
     if mode == "project":
-        base += ["--source-root", "src/main/java"]
+        # Project scope is what makes the two modes differ, so it must be requested. Without it this
+        # mode was local scope with an extra flag, and the recorded difference between them was a
+        # difference in nothing.
+        base += ["--source-root", "src/main/java", "--analysis-scope", "project"]
 
     changed = _changed_files(root)
     trials = []
@@ -428,6 +469,16 @@ def benchmark(cli: Path, mode: str, repetitions: int, warmup: int, workdir: Path
         "percentile": "nearest-rank",
         "memoryMethod": "the tool's own 'Heap after GC' reading, taken at its phase boundary",
         "mode": "committed",
+        "analysisScope": "project" if mode == "project" else "local",
+        "comparisonBase": base_ref,
+        "whatWasMeasured": {
+            "changedFiles": changed,
+            "eligibleFiles": trials[-1].eligible_files if trials else 0,
+            "analysedFiles": trials[-1].analysed_files if trials else 0,
+            "note": "Recorded so a timing cannot be read as 'the analysis was fast' when it"
+                    " establishes only that a fast process exited. Zero analysed files means the"
+                    " comparison was empty and the timing measures nothing.",
+        },
         "changedFileCount": changed,
     }
     result.samples = [asdict(trial) for trial in trials]

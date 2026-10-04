@@ -14,9 +14,9 @@
   },
   "changes": [
     {
-      "path": "src/main/java/app/Calculator.java",
+      "path": "src/main/java/app/Dispatcher.java",
       "edit": "replace",
-      "content": "package app;\npublic class Dispatcher {\n    public int route(int x) {\n    if (x > 0) {\n        if (x > 1) {\n            if (x > 2) {\n                if (x > 3) {\n                    if (x > 4) {\n                        if (x > 5) {\n                            if (x > 6) {\n                                if (x > 7) {\n        return 0;\n                                    }\n                            }\n                        }\n                    }\n                }\n            }\n        }\n    }\n}\n"
+      "content": "package app;\npublic class Dispatcher {\n    public int route(int x) {\n        if (x > 0) {\n            if (x > 1) {\n                if (x > 2) {\n                    if (x > 3) {\n                        if (x > 4) {\n                            if (x > 5) {\n                                if (x > 6) {\n                                    if (x > 7) {\n                                        return 0;\n                                    }\n                                }\n                            }\n                        }\n                    }\n                }\n            }\n        }\n        return 0;\n    }\n}\n"
     }
   ]
 }

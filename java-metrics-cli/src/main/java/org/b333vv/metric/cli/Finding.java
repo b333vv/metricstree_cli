@@ -138,6 +138,33 @@ record Finding(
                 remediationHint, documentationPath, role, newDisposition, reason, blocking);
     }
 
+    /**
+     * The same finding, reclassified as a significant worsening against stored evidence.
+     *
+     * <p>This is the case the per-commit comparison structurally cannot see. A method gains a branch,
+     * then another, then another: each change is below the rule's worsening budget, so each run's
+     * lifecycle is {@code existing} and each run passes. The baseline records where the debt was
+     * accepted, and against that record the growth is significant \u2014 which is the same claim the
+     * lifecycle makes about a base revision, measured over a longer interval.
+     *
+     * <p>So {@code WORSENED} is not an escalation applied here; it is the truthful classification once
+     * the longer comparison is available. The immediate base delta said "not significantly worse than
+     * the previous commit", which remains true and is preserved in the disposition reason, so a reader
+     * can see both. Relabelling it would lose the per-commit history; leaving it unlabelled would
+     * report a regression and then not act on it, which is the audit's A13 and the reason a baseline
+     * with numbers in it exists at all.
+     *
+     * <p>Blocking still comes from {@link #blocking}, which only a rule in {@code error} mode under an
+     * enforcing policy sets. This raises a finding's classification; it does not grant a rule the
+     * authority to fail a build it was not given.
+     */
+    Finding worsenedBeyond(String reason) {
+        return new Finding(ruleId, ruleVersion, entityKey, title, message, location, baseLocation,
+                severity, maturity, evaluationStatus, FindingLifecycle.WORSENED, evidence,
+                relatedLocations, remediationHint, documentationPath, role,
+                FindingDisposition.ACTIVE, reason, blocking);
+    }
+
     /** The same finding with a different blocking decision, as policy decides it. */
     Finding withBlocking(boolean mayBlock) {
         return mayBlock == blocking ? this : new Finding(ruleId, ruleVersion, entityKey, title,

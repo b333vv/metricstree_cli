@@ -287,6 +287,93 @@ class MaintainabilityWorkflowTest {
                             + " findings report: " + readErr.toString());
         }
 
+        /**
+         * Growth that no single commit can see is still growth.
+         *
+         * <p>The audit's A13, and the case a baseline exists for. A method goes from CC 16 to 21 one
+         * unit at a time across four commits. MT-M001's worsening budget is five, so every one of those
+         * commits is individually unremarkable and every one of them passes. Against the base revision
+         * each diff is +1 and nothing is ever called worsened, however long the sequence runs.
+         *
+         * <p>The baseline is what breaks that: it records the values the debt was accepted at, and +5
+         * against those is a significant worsening. The defect was that this was detected and then
+         * merely reported -- the finding kept the lifecycle the base comparison gave it, so it never
+         * entered the blocking count and the build passed. A stored baseline that can detect a
+         * regression but not act on one is a note, not a control.
+         *
+         * <p>Each step is committed separately, because the whole point is that no step is significant
+         * on its own. A single +5 commit would pass for a different reason and prove nothing.
+         */
+        @Test
+        @DisplayName("cumulative growth below every per-commit budget still fails against the baseline")
+        void cumulativeGrowthIsCaughtByTheBaseline() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(16));
+
+            // Exported while uncommitted: the export evaluates everything currently applicable rather
+            // than only what the diff touched, which is what makes "record the debt as it stands" a
+            // one-off operation instead of something that only captures a subset.
+            Path baseline = repo.resolve("findings-baseline.json");
+            ByteArrayOutputStream exportErr = new ByteArrayOutputStream();
+            assertEquals(0, gate(exportErr, "--base", "HEAD", "--policy", "maintainability",
+                    "--write-findings-baseline", baseline.toString()),
+                    "the debt at CC 16 has to be recordable, or there is nothing to compare against: "
+                            + exportErr);
+            assertTrue(Files.exists(baseline), exportErr.toString());
+            commitLocally(git, "cross the bound");
+
+            // Four further units of complexity, one per commit. No single step reaches the budget,
+            // and neither does the four-unit total: withBranches(n) yields CC = n + 1, so the accepted
+            // CC 17 becomes CC 21, a rise of 4 against a budget of 5. Every commit below, and the
+            // aggregate, must pass.
+            for (int branches = 17; branches <= 20; branches++) {
+                git.write(SOURCE, withBranches(branches));
+                commitLocally(git, "cc " + branches);
+
+                Path report = repo.resolve("step-" + branches + ".json");
+                ByteArrayOutputStream err = new ByteArrayOutputStream();
+                int exit = gateWithReport(report, err, "--base", "HEAD~1",
+                        "--policy", "maintainability", "--enforcement", "enforce",
+                        "--findings-baseline", baseline.toString());
+
+                assertEquals(0, exit,
+                        "cc " + branches + " is +1 from the previous commit, which is below MT-M001's"
+                                + " budget of 5, so this step must pass on its own: "
+                                + err.toString(StandardCharsets.UTF_8));
+                assertEquals("PASSED",
+                        mapper.readTree(Files.readString(report)).get("status").asText());
+            }
+
+            // Now one step further. Still +1 per commit -- and now CC 22, a rise of exactly 5 against
+            // the accepted CC 17. The bound is inclusive, so 5 is significant: this is the first
+            // commit the baseline can call a regression, and it is a commit whose own diff looks
+            // identical to the four before it.
+            git.write(SOURCE, withBranches(21));
+            commitLocally(git, "cc 22");
+
+            Path report = repo.resolve("cumulative.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gateWithReport(report, err, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--enforcement", "enforce", "--findings-baseline", baseline.toString());
+
+            assertEquals(1, exit,
+                    "CC 22 is +5 above the accepted CC 17, and the bound is inclusive. Every"
+                            + " individual commit was unremarkable and the aggregate is not; a"
+                            + " baseline that detects this and lets the build pass is the audit's"
+                            + " A13: " + err.toString(StandardCharsets.UTF_8));
+
+            JsonNode written = mapper.readTree(Files.readString(report));
+            assertEquals("FAILED", written.get("status").asText());
+            assertEquals(1, written.get("summary").get("blocking").asInt(),
+                    "and it has to be in the blocking count, not merely reported");
+            assertEquals("WORSENED",
+                    written.get("findings").get(0).get("lifecycle").asText(),
+                    "classified as a worsening against stored evidence, which is what it is");
+        }
+
         @Test
         @DisplayName("a regression with no baseline still fails the build")
         void regressionWithoutBaselineStillFails() throws Exception {

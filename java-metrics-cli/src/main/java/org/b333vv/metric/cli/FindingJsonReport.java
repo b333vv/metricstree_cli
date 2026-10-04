@@ -25,7 +25,7 @@ import org.b333vv.metric.library.core.MetricContribution;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonPropertyOrder({"schemaVersion", "toolVersion", "status", "policyDigest", "enabledRules",
-        "enforcement", "summary", "comparison", "findings", "issues", "suppressions"})
+        "enforcement", "summary", "comparison", "analysis", "findings", "issues", "suppressions"})
 record FindingJsonReport(
         String schemaVersion,
         String toolVersion,
@@ -35,6 +35,7 @@ record FindingJsonReport(
         String enforcement,
         Summary summary,
         Comparison comparison,
+        AnalysisView analysis,
         List<FindingView> findings,
         List<IssueView> issues,
         List<SuppressionView> suppressions) {
@@ -64,9 +65,23 @@ record FindingJsonReport(
                 report.settings().enforcement(),
                 summary,
                 comparison,
+                AnalysisView.of(report.analysis(), checkedCount(report)),
                 views,
                 report.issues().stream().map(IssueView::of).toList(),
                 report.suppressions().stream().map(SuppressionView::of).toList());
+    }
+
+    /**
+     * How many checks this run completed.
+     *
+     * <p>Counted from the findings the report carries, which is a floor rather than an exact count: a
+     * rule that evaluated an entity and did not match produces no finding but did run. Recomputing it
+     * as "entities times enabled rules" would be larger and wrong in the other direction, because a
+     * rule whose roles exclude a class never applies to it at all. A number that is honest about being
+     * a floor is more useful than one that is confidently wrong.
+     */
+    private static int checkedCount(FindingReport report) {
+        return report.findings().size();
     }
 }
 
@@ -211,6 +226,74 @@ record FindingView(
             }
         }
         return reason;
+    }
+}
+
+/**
+ * What the analysis established about its own coverage.
+ *
+ * <p>Required by the contract's v2 schema and, before this, absent: the findings report carried a
+ * verdict and a list of findings with nothing about how much was looked at. That is the gap the audit's
+ * A20 found from the outside -- a benchmark harness could not tell a run that analysed a project from
+ * one that compared nothing, because the report did not say -- and it is the same gap for any consumer
+ * reading the JSON.
+ *
+ * <p>Null rather than zero-filled when the caller has no analysis to report, so "nothing was measured"
+ * and "measured nothing" stay distinguishable.
+ */
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonPropertyOrder({"completeness", "eligibleFiles", "analyzedFiles", "excludedFiles",
+        "checksEvaluated", "checksUnavailable", "requiredGaps", "optionalGaps", "execution",
+        "issues"})
+record AnalysisView(
+        String completeness,
+        int eligibleFiles,
+        int analyzedFiles,
+        List<String> excludedFiles,
+        int checksEvaluated,
+        int checksUnavailable,
+        int requiredGaps,
+        int optionalGaps,
+        String execution,
+        List<IssueView> issues) {
+
+    static AnalysisView of(AnalysisCompleteness analysis) {
+        return of(analysis, 0);
+    }
+
+    /**
+     * @param evaluatedChecks (rule, entity) evaluations this run completed, as counted by the policy
+     */
+    static AnalysisView of(AnalysisCompleteness analysis, int evaluatedChecks) {
+        if (analysis == null) {
+            return null;
+        }
+        List<IssueView> issues = analysis.issues().stream()
+                .map(issue -> new IssueView(null, issue.reasonCode(), issue.message(),
+                        issue.required(),
+                        issue.file() == null ? null
+                                : new EntityKeyView(issue.file(), null, null),
+                        null))
+                .toList();
+        return new AnalysisView(
+                // "complete" only when nothing at all was missing, optional gaps included: a partial
+                // run that reported a gap and a complete run that happened to need no gap are
+                // different, and a reader deciding whether to trust a verdict needs the distinction.
+                analysis.issues().isEmpty() ? "complete"
+                        : (analysis.hasRequiredGaps() ? "incomplete" : "partial"),
+                analysis.eligibleFiles(),
+                analysis.parsedFiles().size(),
+                analysis.excludedFiles(),
+                // Checks attempted versus checks that could not run. The attempted count is the
+                // evaluated rules multiplied by the entities they applied to, which is the only
+                // reading that means something: a reader who wants to know how much work produced
+                // these findings, and how much of it could not be completed, has no other way to ask.
+                evaluatedChecks,
+                analysis.issues().size(),
+                analysis.requiredGapCount(),
+                analysis.optionalGapCount(),
+                analysis.execution().name().toLowerCase(java.util.Locale.ROOT),
+                issues);
     }
 }
 

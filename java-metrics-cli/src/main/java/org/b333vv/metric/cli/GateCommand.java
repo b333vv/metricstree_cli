@@ -598,8 +598,13 @@ final class GateCommand implements Callable<Integer> {
         // how the audit's A06 produced a run that exited 1 beside a report saying PASSED.
         String status = !blocking(findings).isEmpty() ? "FAILED"
                 : issues.stream().anyMatch(EvaluationIssue::required) ? "INCOMPLETE" : "PASSED";
+        // The completeness travels with the report so the JSON carries the contract's `analysis` block:
+        // a consumer reading only the findings document can see how many files were eligible, how many
+        // were parsed, how many checks could not run, and in which schedule. Without it a verdict and a
+        // finding list are published with no statement of what was looked at -- which is how the audit's
+        // A20 could not be seen from the harness's own output.
         return new FindingReport(FindingReport.SCHEMA_VERSION, status, activePolicy.settings(),
-                findings, issues, result.suppressions());
+                findings, issues, result.suppressions(), completeness);
     }
 
     /** The findings eligible to block, computed from the baseline-adjusted list. */
@@ -697,10 +702,27 @@ final class GateCommand implements Callable<Integer> {
             // Worse than the values this debt was accepted at, even if the base revision says it is
             // unchanged: growth too slow to trip the per-commit budget is exactly what the stored
             // evidence exists to catch.
-            adjusted.add(filter.worsensAcceptedValues(finding, rule)
-                    ? finding.withDisposition(finding.disposition(), "worsened beyond accepted debt")
-                    : finding.withDisposition(FindingDisposition.BASELINE_ACCEPTED,
-                            "accepted baseline debt at " + acceptedValuesOf(finding, baseline, rule)));
+            if (filter.worsensAcceptedValues(finding, rule)) {
+                // Worse than the values this debt was accepted at. This has to be an eligible blocking
+                // finding, not a reported one, and keeping the disposition it already had was the
+                // audit's A13.
+                //
+                // The finding's disposition comes from the base comparison, which is per-commit: a
+                // method that gains a branch, then another, then another, each below the rule's
+                // worsening budget, reads as EXISTING every single time. The baseline is the only thing
+                // that compares against where the debt was actually accepted, so it is the only thing
+                // that can catch cumulative growth -- and if its verdict is merely recorded, the stored
+                // evidence detects the regression and then does nothing about it. The whole reason to
+                // keep a baseline with numbers in it is that it can fail a build.
+                adjusted.add(finding.worsenedBeyond(
+                        "worsened beyond the values accepted in the findings baseline (" 
+                                + acceptedValuesOf(finding, baseline, rule)
+                                + "); the immediate diff from the base revision was below the"
+                                + " rule's own worsening budget"));
+            } else {
+                adjusted.add(finding.withDisposition(FindingDisposition.BASELINE_ACCEPTED,
+                        "accepted baseline debt at " + acceptedValuesOf(finding, baseline, rule)));
+            }
         }
         return adjusted;
     }
