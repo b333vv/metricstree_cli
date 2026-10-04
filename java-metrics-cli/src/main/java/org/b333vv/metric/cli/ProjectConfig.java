@@ -52,13 +52,15 @@ record ProjectConfig(
         Boolean validateFailedOnly,
         String validateFormat,
         String detectFormat,
+        String detectPolicy,
+        String detectEnforcement,
         String analyzeFormat,
         GateSettings gate,
         List<String> unknownKeys) {
 
     static final ProjectConfig EMPTY = new ProjectConfig(
             null, null, null, null, null, null, null, null, null, null,
-            null, null, null, null, null, null, List.of());
+            null, null, null, null, null, null, null, null, List.of());
 
     boolean isEmpty() {
         return file == null;

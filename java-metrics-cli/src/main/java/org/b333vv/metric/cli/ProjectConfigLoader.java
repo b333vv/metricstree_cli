@@ -99,6 +99,8 @@ final class ProjectConfigLoader {
         JsonNode analyze = root.get("analyze");
         JsonNode gate = root.get("gate");
 
+        validateDetect(detect, file);
+
         return new ProjectConfig(
                 file,
                 textOrNull(root.get("profile")),
@@ -114,12 +116,17 @@ final class ProjectConfigLoader {
                 validate != null ? boolOrNull(validate.get("failedOnly")) : null,
                 validate != null ? textOrNull(validate.get("format")) : null,
                 detect != null ? textOrNull(detect.get("format")) : null,
+                detect != null ? textOrNull(detect.get("policy")) : null,
+                detect != null ? textOrNull(detect.get("enforcement")) : null,
                 analyze != null ? textOrNull(analyze.get("format")) : null,
                 gate != null ? gateSettings(gate, file, baseDir) : null,
                 List.copyOf(unknownKeys));
     }
 
-    /** The keys the {@code gate:} section accepts. Anything else is a typo the user has to see. */
+    /** The keys the {@code detect:} section accepts. Anything else is a typo the user has to see. */
+    private static final Set<String> DETECT_KEYS = Set.of("format", "policy", "enforcement");
+
+
     private static final Set<String> GATE_KEYS = Set.of(
             "growth", "failOn", "mode", "policy", "enforcement", "analysis",
             "sourceRoots", "classpath");
@@ -138,6 +145,34 @@ final class ProjectConfigLoader {
      * <p>The three later keys ({@code mode}, {@code policy}, {@code enforcement}, {@code analysis})
      * are carried but not yet acted on — see {@link GateSettings}.
      */
+    /**
+     * The {@code detect:} section, validated the same way as {@code gate:}.
+     *
+     * <p>Validated rather than read leniently because the audit's A09 was a key that existed and did
+     * nothing: {@code detect.policy: maintainability} was accepted silently and the run went on under
+     * the legacy policy. An accepted-but-ignored setting is worse than a rejected one, because the
+     * author has written what they meant and nothing tells them it did not apply.
+     */
+    private static void validateDetect(JsonNode detect, Path file) {
+        if (detect == null || detect.isNull()) {
+            return;
+        }
+        if (!detect.isObject()) {
+            throw gateError(file, "detect",
+                    "must be a mapping of detect settings, not a " + kindOf(detect));
+        }
+        List<String> unknown = new ArrayList<>();
+        detect.fieldNames().forEachRemaining(key -> {
+            if (!DETECT_KEYS.contains(key)) {
+                unknown.add(key);
+            }
+        });
+        if (!unknown.isEmpty()) {
+            throw gateError(file, "detect." + unknown.get(0),
+                    "is not a detect setting. Accepted keys: " + String.join(", ", DETECT_KEYS));
+        }
+    }
+
     private static GateSettings gateSettings(JsonNode gate, Path file, Path baseDir) {
         if (gate.isNull()) {
             return null;

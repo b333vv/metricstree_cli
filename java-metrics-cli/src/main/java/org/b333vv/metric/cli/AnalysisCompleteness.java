@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Whether the gate's answer is an answer, and what it could not reach.
@@ -260,6 +261,93 @@ record AnalysisCompleteness(
         }
 
         return new AnalysisCompleteness(issues, subjectPaths.size(), excluded, parsed, execution);
+    }
+
+    /**
+     * The completeness picture of a current-only run.
+     *
+     * <p>For {@code detect}, which compares nothing: there is no base revision, no changed set and no
+     * merge base, so the gate's factory is the wrong shape for it. The question it answers is the same
+     * one though — what did this run actually look at, and what could it not look at — and it is asked
+     * here rather than answered by the caller.
+     *
+     * <p>This is the audit's A09. {@code detect} had no completeness at all: the analyzer's parse
+     * failures and unsupported declarations were discarded, so a directory of files that do not compile
+     * produced {@code PASSED}, zero findings and zero issues. A tool that reports "nothing found" about
+     * code it could not read is not being cautious, it is being wrong, and the report said so.
+     *
+     * <p>Every selected file is accounted for: parsed and supported, parsed with unsupported
+     * declarations, unparseable, or not in the analysis at all. The last two are required, because a
+     * file nobody could read is a gap in the answer rather than an absence of one.
+     *
+     * @param report    the analysis of the source as it is now
+     * @param sourcePaths the physical files the caller asked about, in request order
+     * @param logicalPath how a physical path becomes the report's own path
+     */
+    static AnalysisCompleteness forCurrentRun(
+            MetricReport report,
+            List<Path> sourcePaths,
+            Function<Path, String> logicalPath,
+            List<String> excluded,
+            org.b333vv.metric.library.core.AnalysisExecution execution) {
+
+        List<CheckEvaluationIssue> issues = new ArrayList<>();
+        List<String> parsed = new ArrayList<>();
+
+        for (String path : excluded) {
+            issues.add(CheckEvaluationIssue.optional(path, "excluded",
+                    path + " was excluded by configuration and was not checked"));
+        }
+
+        // Parser diagnostics first, because they are the authoritative record of what could not be read.
+        //
+        // The per-file inventory below is the fallback, not the primary source: a parser with error
+        // recovery will hand back a partial AST for a badly broken file, and the inventory can report
+        // that file as parsed with declarations in it. Diagnostics are the parser saying "I could not
+        // do this", which is the only statement here that comes from the component that tried.
+        for (AnalysisDiagnostic diagnostic : report.diagnostics()) {
+            if (!diagnostic.code().startsWith("PARSE") || diagnostic.location() == null) {
+                continue;
+            }
+            String path = logicalPath.apply(diagnostic.location().path());
+            if (!issues.stream().anyMatch(issue -> path.equals(issue.file()))) {
+                issues.add(CheckEvaluationIssue.currentParseError(path,
+                        path + " does not parse: " + diagnostic.message()));
+            }
+        }
+
+        for (Path physical : sourcePaths) {
+            String path = logicalPath.apply(physical);
+            if (issues.stream().anyMatch(issue -> CheckEvaluationIssue.CURRENT_PARSE_ERROR
+                    .equals(issue.reasonCode()) && path.equals(issue.file()))) {
+                continue;
+            }
+            SyntaxSupport.FileSupport support = report.syntaxSupport().forPath(physical);
+            if (support == null) {
+                // The file was asked for and the analyzer has no record of it. Silence here would be
+                // the worst of the four outcomes: it is the one case that says nothing about the file
+                // and nothing about the run.
+                issues.add(CheckEvaluationIssue.unsupportedSource(path,
+                        path + " was not present in the analysis, so no check was run against it"));
+                continue;
+            }
+            if (!support.parsed()) {
+                issues.add(CheckEvaluationIssue.currentParseError(path,
+                        path + " does not parse, so no check was run against it"));
+                continue;
+            }
+            if (support.hasUnsupportedDeclarations()) {
+                issues.add(CheckEvaluationIssue.unsupportedDeclaration(path,
+                        path + " declares " + support.unsupportedReason()
+                                + ", so it was not fully analyzed"));
+                continue;
+            }
+            if (support.classCount() > 0) {
+                parsed.add(path);
+            }
+        }
+
+        return new AnalysisCompleteness(issues, sourcePaths.size(), excluded, parsed, execution);
     }
 
     /**

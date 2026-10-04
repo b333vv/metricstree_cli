@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.b333vv.metric.library.core.*;
 import org.b333vv.metric.library.javaparser.JavaMetricsAnalyzer;
+import org.b333vv.metric.library.javaparser.JavaParserJavaMetricsAnalyzer;
 import org.b333vv.metric.model.metric.value.Value;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -398,7 +399,7 @@ class DetectCommandTest {
         Path output = tempDir.resolve("out.json");
 
         JavaMetricsCliApplication app = new JavaMetricsCliApplication(
-                request -> complexMethodReport(), new MetricReportJsonWriter(), tempDir::toAbsolutePath);
+                answering(), new MetricReportJsonWriter(), tempDir::toAbsolutePath);
         int exitCode = app.run(new String[]{
                 "detect", "-s", source.toString(), "--policy", "maintainability",
                 "-o", output.toString()},
@@ -430,7 +431,7 @@ class DetectCommandTest {
         Path output = tempDir.resolve("out.json");
 
         JavaMetricsCliApplication app = new JavaMetricsCliApplication(
-                request -> complexMethodReport(), new MetricReportJsonWriter(), tempDir::toAbsolutePath);
+                answering(), new MetricReportJsonWriter(), tempDir::toAbsolutePath);
         int exitCode = app.run(new String[]{
                 "detect", "-s", source.toString(), "--policy", "maintainability",
                 "--enforcement", "enforce", "-o", output.toString()},
@@ -442,6 +443,100 @@ class DetectCommandTest {
         assertFalse(json.get("findings").isEmpty(),
                 "the findings are still there: warn mode is not a quieter absence");
         assertEquals(0, json.get("summary").get("blocking").asInt());
+    }
+
+    /**
+     * A file that does not parse fails the run, whatever the policy says.
+     *
+     * <p>The audit's A09, and the worst of its findings: {@code detect} on malformed Java returned exit
+     * 0, {@code PASSED}, zero findings and zero issues. A tool that says "nothing found" about code it
+     * could not read is not being cautious -- it is publishing a clean verdict over input it never
+     * looked at, and a caller has no way to tell that from a real pass.
+     *
+     * <p>Parsed from the analyzer's own diagnostics rather than inferred from a missing finding, because
+     * a parser with error recovery will hand back a partial AST for a badly broken file: the inventory
+     * can report such a file as parsed, with declarations in it, and the absence of a finding is not
+     * evidence that the file was read.
+     */
+    @Test
+    void anUnparseableFileIsAFailureNotACleanPass(@TempDir Path tempDir) throws Exception {
+        Path source = Files.createDirectories(tempDir.resolve("src"))
+                .resolve("Broken.java");
+        Files.writeString(source, "class Broken { void f( { }\n");
+        Path output = tempDir.resolve("out.json");
+
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                new JavaParserJavaMetricsAnalyzer(), new MetricReportJsonWriter(),
+                tempDir::toAbsolutePath);
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = app.run(new String[]{
+                "detect", "-s", source.getParent().toString(), "--policy", "maintainability",
+                "-o", output.toString()}, new ByteArrayOutputStream(), err);
+
+        assertEquals(1, exitCode,
+                "uncompilable code must not pass under any mode: "
+                        + err.toString(StandardCharsets.UTF_8));
+        JsonNode json = mapper.readTree(Files.readString(output));
+        assertEquals("FAILED", json.get("status").asText());
+        assertEquals(1, json.get("issues").size(),
+                "and the gap is named, so a reader knows what was not read: " + json.get("issues"));
+        assertEquals("current-parse-error", json.get("issues").get(0).get("reasonCode").asText());
+        assertEquals(0, json.get("analysis").get("analyzedFiles").asInt(),
+                "nothing was analysed from that file");
+    }
+
+    /**
+     * The policy can be chosen by the project config, as it is for the gate.
+     *
+     * <p>It could not be: {@code detect.policy} was accepted by the config loader and read by nobody,
+     * so the run silently used the legacy policy. The failure had no visible symptom -- the command
+     * started, found the config, and reported a verdict -- which is why a key that exists and does
+     * nothing is worse than a key that is rejected.
+     */
+    @Test
+    void policyComesFromTheProjectConfig(@TempDir Path tempDir) throws Exception {
+        Path source = tempDir.resolve("Demo.java");
+        Files.writeString(source, "class Demo {}");
+        Files.writeString(tempDir.resolve(".metrics-gate.yml"), """
+                detect:
+                  policy: maintainability
+                """);
+        Path output = tempDir.resolve("out.json");
+
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                answering(), new MetricReportJsonWriter(), tempDir::toAbsolutePath);
+        int exitCode = app.run(new String[]{
+                "detect", "-s", source.toString(), "-o", output.toString()},
+                new ByteArrayOutputStream(), new ByteArrayOutputStream());
+
+        JsonNode json = mapper.readTree(Files.readString(output));
+        assertEquals("v2", json.get("schemaVersion").asText(),
+                "the config alone must select the maintainability policy, so the run produces a"
+                        + " findings report rather than requiring the legacy rule files");
+        assertEquals(0, exitCode);
+    }
+
+    /** A key under {@code detect:} that does nothing is refused rather than silently accepted. */
+    @Test
+    void anUnknownDetectSettingIsRejected(@TempDir Path tempDir) throws Exception {
+        Path source = tempDir.resolve("Demo.java");
+        Files.writeString(source, "class Demo {}");
+        Files.writeString(tempDir.resolve(".metrics-gate.yml"), """
+                detect:
+                  policy: maintainability
+                  stictness: high
+                """);
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                answering(), new MetricReportJsonWriter(), tempDir::toAbsolutePath);
+        app.run(new String[]{"detect", "-s", source.toString(), "-o",
+                tempDir.resolve("out.json").toString()},
+                new ByteArrayOutputStream(), err);
+
+        assertTrue(err.toString(StandardCharsets.UTF_8).contains("detect.stictness"),
+                "a typo in a detect setting has to be visible, or it is a setting that does nothing: "
+                        + err.toString(StandardCharsets.UTF_8));
     }
 
     /** Legacy rule files alongside the new policy are a migration error naming the conflict. */
@@ -492,13 +587,45 @@ class DetectCommandTest {
     }
 
     /** A report whose method is complex enough for MT-M001. */
+    /**
+     * A complex method in the file the run was actually asked about.
+     *
+     * <p>Taken from the request rather than from a hardcoded name, because detect now asks the analyzer's
+     * own record of what it parsed and reports a file it cannot find there as a required gap. That is the
+     * correct behaviour -- the audit's A09 is precisely that unparseable files were being reported as
+     * clean -- and it means a stub which answers about a different file than it was asked about is no
+     * longer a stub but a lie. The real analyzer reports what it read; this one now does too.
+     */
     private static MetricReport complexMethodReport() {
-        Path file = Path.of("Demo.java");
+        return complexMethodReportIn(Path.of("Demo.java"));
+    }
+
+    private static MetricReport complexMethodReportIn(Path file) {
         ClassReport cls = new ClassReport("Demo", "Demo", file,
                 new SourceLocation(file, 1, 1), Map.of(MetricCode.WMC, Value.of(10)),
                 List.of(method("compute(int)", 18, file)));
         PackageReport pkg = new PackageReport("", Map.of(), List.of(cls));
-        return new MetricReport(new ProjectReport("t", Map.of(), List.of(pkg)), List.of());
+        return new MetricReport(new ProjectReport("t", Map.of(), List.of(pkg)),
+                List.of(),
+                new org.b333vv.metric.library.core.SyntaxSupport(List.of(
+                        new org.b333vv.metric.library.core.SyntaxSupport.FileSupport(
+                                file.toAbsolutePath().normalize(), 1, 0, 0, 0, false, false,
+                                true))));
+    }
+
+    /**
+     * A stub that answers about the file it was given.
+     *
+     * <p>Used where the run passes an explicit file rather than a root, so the report has to name that
+     * same path for the completeness record to find it.
+     */
+    private static JavaMetricsAnalyzer answering() {
+        return request -> {
+            Path file = request.sourceUnits().isEmpty()
+                    ? Path.of("Demo.java")
+                    : request.sourceUnits().get(0).path();
+            return complexMethodReportIn(file);
+        };
     }
 
     /** A class with two overloads of the same name, so signature identity is observable. */

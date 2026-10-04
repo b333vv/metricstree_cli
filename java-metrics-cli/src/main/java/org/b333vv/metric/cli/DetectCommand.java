@@ -30,6 +30,9 @@ final class DetectCommand implements Callable<Integer> {
     /** The findings report this run produced, kept so the verdict and the sidecar agree. */
     private FindingReport maintainabilityReport;
 
+    /** The one-line verdict, decided before anything is written so the two cannot disagree. */
+    private String verdict = "PASSED";
+
     DetectCommand(
             JavaMetricsAnalyzer analyzer,
             Supplier<Path> currentWorkingDirectorySupplier,
@@ -174,9 +177,18 @@ final class DetectCommand implements Callable<Integer> {
         // Resolved before anything is read: a migration error costs no analysis time.
         MaintainabilityPolicy activePolicy;
         try {
+            // The policy and enforcement level come from the config as well as the command line, with
+            // the same flag-beats-config precedence every other gate setting uses.
+            //
+            // They were passed as null, so `detect.policy: maintainability` in a project config was
+            // read by nobody and the run silently used the legacy policy. That is the audit's A09, and
+            // the shape of the failure is worse than an error: the command started, found the config,
+            // and reported a verdict under a policy the user had explicitly not chosen.
+            //
             // detect has no --profile and no thresholds, so the legacy inputs it can carry are the rule
             // files; profileGiven is false by construction rather than passed as an absent value.
-            activePolicy = MaintainabilityPolicy.resolve(policy, null, enforcement, null, config,
+            activePolicy = MaintainabilityPolicy.resolve(policy, config.detectPolicy(), enforcement,
+                    config.detectEnforcement(), config,
                     classRulesFile != null || packageRulesFile != null || methodRulesFile != null,
                     false);
         } catch (IllegalArgumentException exception) {
@@ -282,12 +294,67 @@ final class DetectCommand implements Callable<Integer> {
                 stderr.flush();
                 return 2;
             }
+            // What this run looked at, and what it could not look at.
+            //
+            // This is the rest of the audit's A09. The analyzer's own record of what parsed and what did
+            // not was discarded, so a directory of files that do not compile produced PASSED, zero
+            // findings and zero issues -- a clean report about code nobody read. The questions are the
+            // gate's, asked here because detect never asked them.
+            AnalysisCompleteness completeness = AnalysisCompleteness.forCurrentRun(
+                    report, requestedFiles(), this::logicalPathOf, List.of(),
+                    org.b333vv.metric.library.core.AnalysisExecution.ORDERED);
+            List<EvaluationIssue> issues = new java.util.ArrayList<>(result.issues());
+            issues.addAll(policyIssues(completeness));
+
+            // The same verdict precedence the gate uses, from the same inputs.
+            //
+            // A parse failure is a hard failure whatever the policy says, exactly as it is for the
+            // gate: uncompilable code must not pass under any mode, and a run that reports PASSED over
+            // a file it could not read is not being cautious. Otherwise blocking findings fail, and
+            // only when nothing failed does a required gap matter -- at which point INCOMPLETE is the
+            // honest answer, because "nothing was found" and "nothing could be looked for" are
+            // different sentences and detect used to say the first when it meant the second.
+            int blocking = result.blocking().size();
+            int required = (int) issues.stream().filter(EvaluationIssue::required).count();
+            int unparseable = (int) completeness.issues().stream()
+                    .filter(issue -> CheckEvaluationIssue.CURRENT_PARSE_ERROR
+                            .equals(issue.reasonCode()))
+                    .count();
+
+            String status;
+            int exitCode;
+            if (unparseable > 0) {
+                status = "FAILED";
+                exitCode = 1;
+            } else if (blocking > 0) {
+                status = "FAILED";
+                exitCode = 1;
+            } else if (required > 0) {
+                status = "INCOMPLETE";
+                exitCode = 2;
+            } else {
+                status = "PASSED";
+                exitCode = 0;
+            }
             maintainabilityReport = new FindingReport(FindingReport.SCHEMA_VERSION,
-                    result.blocking().isEmpty() ? "PASSED" : "FAILED", activePolicy.settings(),
-                    result.findings(), result.issues(), result.suppressions());
+                    status, activePolicy.settings(),
+                    result.findings(), issues, result.suppressions(), completeness);
             // Rendered through the registry, not from the JSON adapter directly, so --format sarif,
             // html and agent-md produce the findings report rather than silently writing JSON into a
             // file the caller believes is SARIF. A format that has no findings adapter says so.
+            verdict = status.equals("FAILED")
+                    ? "FAILED: " + (unparseable > 0
+                            ? unparseable + " file" + (unparseable == 1 ? "" : "s")
+                                    + " could not be parsed; " + blocking + " blocking finding"
+                                    + (blocking == 1 ? "" : "s")
+                            : blocking + " finding" + (blocking == 1 ? "" : "s") + " blocked")
+                    : status.equals("INCOMPLETE")
+                            ? "INCOMPLETE: " + required + " required check"
+                                    + (required == 1 ? "" : "s")
+                                    + " could not be evaluated — see the report for what is missing"
+                            : "PASSED: " + reported(result) + " finding"
+                                    + (reported(result) == 1 ? "" : "s") + " reported, none blocking";
+
             String rendered = reportAdapters.render(ReportType.FINDINGS, effectiveFormat,
                     new FindingReportContext(maintainabilityReport, null));
             if (jsonOutputFile != null) {
@@ -303,13 +370,9 @@ final class DetectCommand implements Callable<Integer> {
             } else {
                 writeAtomically(outputFile, rendered);
             }
-            stderr.println(result.blocking().isEmpty()
-                    ? "PASSED: " + reported(result) + " finding"
-                            + (reported(result) == 1 ? "" : "s") + " reported, none blocking"
-                    : "FAILED: " + result.blocking().size() + " finding"
-                            + (result.blocking().size() == 1 ? "" : "s") + " blocked");
+            stderr.println(verdict);
             stderr.flush();
-            return result.blocking().isEmpty() ? 0 : 1;
+            return exitCode;
         }
 
         String serializedReport = toReport(classMatches, classRulesSummary, packageMatches,
@@ -321,6 +384,41 @@ final class DetectCommand implements Callable<Integer> {
         }
         Files.writeString(normalizedOutputFile, serializedReport);
         return 0;
+    }
+
+    /**
+     * The files the caller asked about, as the analyzer was given them.
+     *
+     * <p>From the request rather than from the report, because the report only knows about the files it
+     * managed to parse. A file that failed to parse is precisely the one that needs to appear in the
+     * completeness record, and deriving the list from the report would omit it — which is how a
+     * directory of broken files came to be reported as clean.
+     */
+    private List<Path> requestedFiles() {
+        if (Files.isDirectory(source)) {
+            try (java.util.stream.Stream<Path> files = Files.walk(source)) {
+                return files.filter(Files::isRegularFile)
+                        .filter(path -> path.toString().endsWith(".java"))
+                        .sorted()
+                        .toList();
+            } catch (IOException exception) {
+                // The analyzer has already read this tree and reports what it could not; a walk that
+                // fails here would be a second, worse source of truth.
+                return List.of();
+            }
+        }
+        return List.of(source);
+    }
+
+    /** The analysis-level gaps, restated as evaluation issues the findings report can carry. */
+    private static List<EvaluationIssue> policyIssues(AnalysisCompleteness completeness) {
+        List<EvaluationIssue> issues = new java.util.ArrayList<>();
+        for (CheckEvaluationIssue issue : completeness.issues()) {
+            issues.add(new EvaluationIssue(null, null,
+                    issue.file() == null ? null : FindingLocation.of(issue.file(), 1),
+                    issue.reasonCode(), issue.message(), issue.required()));
+        }
+        return issues;
     }
 
     /**
