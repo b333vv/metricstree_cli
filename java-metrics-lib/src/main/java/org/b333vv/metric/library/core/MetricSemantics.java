@@ -237,4 +237,22 @@ public final class MetricSemantics {
         Semantics semantics = BY_CODE.get(code);
         return semantics != null && semantics.experimental();
     }
+
+    /**
+     * The metrics whose value is a maximum over the contributions recorded for them.
+     *
+     * <p>The distinction matters because it changes what a trace has to keep. For an additive metric
+     * like CC, any hundred of several hundred decision points describe the method equally well, and
+     * {@code omitted} says the count is partial. For a maximum metric the trace exists to point at the
+     * one contribution that made the number what it is: a sample that happened to miss it describes
+     * nothing, and a reader comparing the trace's maximum against the metric's value sees a
+     * contradiction with no way to tell which of the two is wrong.
+     *
+     * <p>So a capped trace of one of these retains its extreme contribution even when that
+     * contribution arrives after the cap. It is the record of the measurement, not an illustration
+     * of it.
+     */
+    public static boolean isMaximum(MetricCode code) {
+        return code == MetricCode.MND;
+    }
 }

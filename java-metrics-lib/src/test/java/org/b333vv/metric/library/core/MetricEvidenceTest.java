@@ -146,5 +146,79 @@ class MetricEvidenceTest {
             assertEquals(1, evidence.forMetric(MetricCode.CC).size());
             assertEquals(2, evidence.omitted(MetricCode.CC));
         }
+
+        /**
+         * A capped trace of a maximum metric still shows the maximum.
+         *
+         * <p>This is the recheck's replay: a method whose nesting reaches five, recorded past the
+         * cap, retained a trace whose largest depth was one. The metric and the evidence for it
+         * disagreed and nothing in the report said which to believe, because a visitor walks a
+         * method top down -- the shallow blocks arrive first and fill the cap before the deep ones
+         * are seen.
+         *
+         * <p>A limit of three makes the shape obvious without building a method with a hundred
+         * blocks: three contributions at depth one, then the one at depth five.
+         */
+        @Test
+        void aCappedMaximumMetricTraceStillCarriesItsDeepestContribution() {
+            MetricEvidence.Collector collector = new MetricEvidence.Collector(3, true);
+            collector.record(MetricContribution.of(MetricCode.MND, "if", 1, 10));
+            collector.record(MetricContribution.of(MetricCode.MND, "if", 1, 11));
+            collector.record(MetricContribution.of(MetricCode.MND, "if", 1, 12));
+            collector.record(MetricContribution.of(MetricCode.MND, "if", 5, 40));
+
+            MetricEvidence evidence = collector.freeze();
+
+            assertEquals(4, evidence.forMetric(MetricCode.MND).size(),
+                    "the deepest block is added past the cap: it is the record of the measurement,"
+                            + " not an illustration of it");
+            assertEquals(5, evidence.forMetric(MetricCode.MND).stream()
+                            .mapToInt(MetricContribution::amount).max().orElseThrow(),
+                    "the trace has to show the depth the metric reports, or a reader cannot find the"
+                            + " nesting this finding asks them to flatten");
+            assertEquals(1, evidence.omitted(MetricCode.MND),
+                    "the drop is still counted: the witness is complete, the method's trace is not");
+        }
+
+        /**
+         * A maximum metric's own contribution is not duplicated by the fold-in.
+         *
+         * <p>When the extreme arrived inside the cap it is already there, and appending it again
+         * would make the trace claim a nesting point the method contains once.
+         */
+        @Test
+        void theExtremeContributionIsNotRecordedTwice() {
+            MetricEvidence.Collector collector = new MetricEvidence.Collector(3, true);
+            collector.record(MetricContribution.of(MetricCode.MND, "if", 5, 40));
+            collector.record(MetricContribution.of(MetricCode.MND, "if", 1, 11));
+
+            MetricEvidence evidence = collector.freeze();
+
+            assertEquals(2, evidence.forMetric(MetricCode.MND).size());
+            assertEquals(0, evidence.omitted(MetricCode.MND));
+        }
+
+        /**
+         * An additive metric keeps its cap and counts the rest.
+         *
+         * <p>The extreme rule is for metrics whose value is a maximum. CC's value is a sum, where
+         * any hundred of several hundred decision points describe the method the same way, so the
+         * witness logic must not start displacing records for it.
+         */
+        @Test
+        void anAdditiveMetricKeepsItsCapAndCountsTheRest() {
+            MetricEvidence.Collector collector = new MetricEvidence.Collector(2, true);
+            collector.record(MetricContribution.of(MetricCode.CC, "if", 1, 1));
+            collector.record(MetricContribution.of(MetricCode.CC, "if", 1, 2));
+            collector.record(MetricContribution.of(MetricCode.CC, "if", 1, 3));
+            collector.record(MetricContribution.of(MetricCode.CC, "if", 1, 4));
+
+            MetricEvidence evidence = collector.freeze();
+
+            assertEquals(2, evidence.forMetric(MetricCode.CC).size(),
+                    "CC is a count, so a full cap is a complete description of a sample and the"
+                            + " omitted count is what makes it partial");
+            assertEquals(2, evidence.omitted(MetricCode.CC));
+        }
     }
 }

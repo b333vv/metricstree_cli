@@ -59,6 +59,14 @@ public final class MetricEvidence {
         private final boolean enabled;
         private final Map<MetricCode, List<MetricContribution>> byMetric = new LinkedHashMap<>();
         private final Map<MetricCode, Integer> omitted = new LinkedHashMap<>();
+        /**
+         * The largest contribution seen per maximum metric, kept whatever the cap does.
+         *
+         * <p>A JavaParser walk descends as it goes, so the contributions of a maximum metric arrive
+         * shallowest-first: the cap fills with the least interesting records and the one that
+         * produced the metric's value is among the dropped.
+         */
+        private final Map<MetricCode, MetricContribution> extreme = new LinkedHashMap<>();
 
         public Collector() {
             this(DEFAULT_LIMIT, true);
@@ -76,10 +84,23 @@ public final class MetricEvidence {
             this.enabled = enabled;
         }
 
-        /** Records one contribution, unless collection is off or the cap has been reached. */
+        /**
+         * Records one contribution, unless collection is off or the cap has been reached.
+         *
+         * <p>Past the cap a maximum metric still keeps its extreme contribution. The trace is the
+         * evidence for the metric, and a trace that records a hundred blocks at depth 1 while the
+         * metric reads 5 is not a shorter explanation of the same thing -- it is a different claim,
+         * and the only reader of it is a person trying to find the nesting that should be flattened.
+         */
         public void record(MetricContribution contribution) {
             if (!enabled) {
                 return;
+            }
+            if (MetricSemantics.isMaximum(contribution.metric())) {
+                MetricContribution best = extreme.get(contribution.metric());
+                if (best == null || contribution.amount() > best.amount()) {
+                    extreme.put(contribution.metric(), contribution);
+                }
             }
             List<MetricContribution> existing = byMetric.computeIfAbsent(
                     contribution.metric(), ignored -> new ArrayList<>());
@@ -90,13 +111,27 @@ public final class MetricEvidence {
             }
         }
 
-        /** Freezes what was collected. */
+        /**
+         * Freezes what was collected.
+         *
+         * <p>A maximum metric's extreme contribution is folded in last, so it survives a cap that
+         * dropped it and the trace is never longer than the cap by more than one record per maximum
+         * metric.
+         */
         public MetricEvidence freeze() {
             if (!enabled) {
                 return NONE;
             }
             Map<MetricCode, List<MetricContribution>> frozen = new LinkedHashMap<>();
-            byMetric.forEach((metric, list) -> frozen.put(metric, List.copyOf(list)));
+            byMetric.forEach((metric, list) -> frozen.put(metric, new ArrayList<>(list)));
+            for (Map.Entry<MetricCode, MetricContribution> entry : extreme.entrySet()) {
+                List<MetricContribution> list = frozen.computeIfAbsent(
+                        entry.getKey(), ignored -> new ArrayList<>());
+                if (!list.contains(entry.getValue())) {
+                    list.add(entry.getValue());
+                }
+            }
+            frozen.replaceAll((metric, list) -> List.copyOf(list));
             return new MetricEvidence(Map.copyOf(frozen), Map.copyOf(omitted));
         }
     }
