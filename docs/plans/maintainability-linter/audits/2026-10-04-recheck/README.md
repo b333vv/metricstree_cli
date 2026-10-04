@@ -82,14 +82,14 @@ the navigation map for shared defects.
 | A15 | Closed | Legacy method finding/rule reaches JSON, agent-md, HTML and SARIF | All four `legacy-method-*` captures contain method and rule; this closure does not fix maintainability entity ranges |
 | A16 | Partial | Advisory retains ACTIVE instead of relabelling new findings as debt | Default compact list still includes unchanged EXISTING debt; `compact-unchanged-debt` prints Demo though only Other changed |
 | A17 | Closed | Class suppression config accepted without signature; detect retains explicit unused suppression status | Original loader/status defects resolved; new suppression/baseline interaction belongs to A13 |
-| A18 | Open | No release/version repair in the nine commits | Tag version still not passed, development identity unchanged, publisher pin still marked UNVERIFIED; hosted evidence pending |
-| A19 | Partial | Legacy sidecar reports FAILED/nonzero blocking count; sidecar written without primary output | HTML Action still invokes gate twice; checksum requirement, contracted outputs and shallow/multiple-base behavior unchanged |
+| A18 | Partial | Tag version passed to the build via `-PmetricsVersion`; publisher pin verified against upstream as `refs/tags/v2.2.1`; one archive and one checksum published | A hosted release run on a real `v*` tag is still the only way to confirm the stamp reaches a downloadable artifact; upstream v3.0.3 not adopted (major bump, inputs/outputs unread) |
+| A19 | Partial | One analysis per run for every format; `MG_REPO` defined; `latest` resolves a tag and addresses the versioned asset; downloads verified against the published `.sha256`; `completeness`, `findings-count`, `violations-count` published | Hosted consumer run still pending. Beyond the audit: the download path had never executed (`MG_REPO` unbound under `set -u`), `latest` addressed an asset no release publishes, and all six matrix builds wrote one filename into `merge-multiple`, so a release shipped a single platform's archive |
 | A20 | Partial | Real pinned-base workload; project scope selected; 12 eligible parsed paths recorded; previous false target claim withdrawn | Local target unmet; null memory; INCOMPLETE is still counted complete; supplied corpus still modified/committed; no measured phase split or peak memory |
 | A21 | Partial | Valid bundled Java; required/parser gaps excluded from usable evaluation data | PMD object adapter still crashes; same-project tuning/holdout accepted; project/config identity, raw evidence retention, actionable review labels and contracted deduplicated rates remain incomplete |
 
 ## Highest-priority remaining cases and regressions
 
-### R01 — P1: detect ERROR/ENFORCE silently passes a current match (new)
+### R01 — P1: detect ERROR/ENFORCE silently passes a current match (fixed)
 
 Additional replay `detect-error-current` sets MT-M001 `mode: error`, analyzes a complete CC=18
 method and invokes `detect --enforcement enforce`. Result: exit 0, PASSED, one CURRENT/ACTIVE
@@ -99,7 +99,7 @@ finding, `blocking: false`. This directly contradicts [current-only enforcement]
 Adding CURRENT fixed the evidence classification but removed the old blocking path. Add a packaged
 detect ERROR/ENFORCE test, separately from the repaired WARN test. Affects ML-013/019/027.
 
-### R02 — P1: a required missing method input is reported as a complete pass (new)
+### R02 — P1: a required missing method input is reported as a complete pass (fixed)
 
 Internal probe `required-method-metric-missing` supplies a real syntax inventory and a method report
 with no CC, under MT-M001 ERROR/ENFORCE. Exit 0/PASSED; optional issue; requiredIssues=0;
@@ -110,7 +110,7 @@ step promotes it according to effective mode, maturity and enforcement. Rule-lev
 absent from the analysis counts. Preserve the optional advisory case and fail closed for required
 unavailable checks. Affects ML-008/015/019/020/027.
 
-### R03 — P1: cumulative baseline growth removes an explicit suppression (new)
+### R03 — P1: cumulative baseline growth removes an explicit suppression (fixed)
 
 Additional replay first exports accepted CC=16 while an exact MT-M001 exception is effective,
 then commits 18 and 20 and checks 22 with the same config/digest and enforcement. The result changes
@@ -120,7 +120,7 @@ replaces disposition with ACTIVE. Baseline rejection may change lifecycle but mu
 independent valid suppressions; otherwise an accepted baseline changes exception semantics.
 Test suppressed, expired and unsuppressed regressions separately. Affects ML-024/025/027.
 
-### R04 — P1: moving accepted debt still bypasses the cumulative budget (remaining)
+### R04 — P1: moving accepted debt still bypasses the cumulative budget (fixed)
 
 Original replay `exact-move-baseline` and its staged variant accept CC=16, advance to 22 and move
 the unchanged method. Both return PASSED/EXISTING, blocking=0 and baselineAccepted=0, even though
@@ -129,7 +129,7 @@ lines 58, 89 and 126 consult only the current fingerprint. The move pairing repa
 remaining baseline identity hole: cumulative CC growth no longer blocks after this move. Use the
 confirmed correspondence for lookup and test the stored budget across both modes. Affects ML-025/027.
 
-### R05 — P1: staged input can change mid-run without invalidating the verdict (remaining)
+### R05 — P1: staged input can change mid-run without invalidating the verdict (fixed)
 
 The internal analyzer hook changes Demo.java and runs `git add` after the staged current analysis.
 The gate still returns PASSED with one warning for the earlier index. Worktree mutation is correctly
@@ -138,7 +138,7 @@ returns for every non-worktree mode; immutable captured blobs do not establish t
 index still matches the reviewed snapshot. Compare index inventory/blob IDs, rather than disk bytes,
 for staged mode. Affects ML-005/006/008/027.
 
-### R06 — P2: staged path planning includes unstaged changes (new)
+### R06 — P2: staged path planning includes unstaged changes (fixed)
 
 In `staged-unchanged-index`, index and HEAD are identical and only disk content changes. A staged
 comparison should be empty. Actual stderr says “1 changed file”; report includes an EXISTING
@@ -148,7 +148,7 @@ and index diffs. This probe does not show wrong staged metric values or a false 
 it demonstrates incorrect subjects and needless analysis. Select the matching change source for
 each mode. Affects ML-004/006/027.
 
-### R07 — P2: newly emitted analysis makes real reports invalid against their own schema (new)
+### R07 — P2: newly emitted analysis makes real reports invalid against their own schema (fixed)
 
 Internal `schema-valid-report-errors` returns `$.analysis: not a property the schema declares` for
 an actual CLI report. The schema fixture was not updated when [FindingJsonReport.java][json]
@@ -207,7 +207,8 @@ read aborts. The packaged acceptance and evaluation adapter capture scripts are 
 Fixture SHAs, temporary paths and timing bytes vary between runs. Code line references above
 describe the reviewed runtime revision, not a subsequent repair.
 
-Repair R01–R05 first, then complete the remaining input, schema, evidence and harness contracts.
+R01–R07 are fixed and committed. The remaining cases below still need repair; then the
+input, schema, evidence and harness contracts are still open.
 Retest complete finding groups rather than closing them from one passing example. Keep ML-033/034
 dependent on the remaining acceptance evidence instead of treating implementation DONE markers as
 proof of completion.

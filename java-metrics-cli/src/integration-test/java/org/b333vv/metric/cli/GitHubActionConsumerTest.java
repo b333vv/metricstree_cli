@@ -149,8 +149,21 @@ class GitHubActionConsumerTest {
      * the tool returned: preserving it is the script's job and the tests have to check it.
      */
     private Result runAction(Path repo, Map<String, String> environment) throws Exception {
+        return runAction(repo, environment, cli());
+    }
+
+    /**
+     * Runs the script with a CLI of the caller's choosing.
+     *
+     * <p>Used to count how many times the gate is actually analysed. A wrapper that logs its
+     * arguments and then execs the real launcher is the only way to see that from outside, because
+     * the two runs this replaces were indistinguishable from the published outputs: same counts,
+     * same report, one extra scan of the working tree.
+     */
+    private Result runAction(Path repo, Map<String, String> environment, Path cliOverride)
+            throws Exception {
         Map<String, String> env = new LinkedHashMap<>(environment);
-        env.put("MG_CLI", cli().toString());
+        env.put("MG_CLI", cliOverride.toString());
         env.put("MG_FINDINGS", repo.resolve("metrics-findings.json").toString());
         env.put("MG_REPORT", repo.resolve("metrics-gate-report.json").toString());
         env.put("GITHUB_OUTPUT", repo.resolve("github-output.txt").toString());
@@ -509,6 +522,152 @@ class GitHubActionConsumerTest {
             assertTrue(process.waitFor(180, TimeUnit.SECONDS), "timed out");
             assertEquals(1, process.exitValue(),
                     "the offline run should reach the same verdict: " + output);
+        }
+    }
+
+    @Nested
+    @DisplayName("One analysis per run")
+    class SingleAnalysis {
+
+        /**
+         * The report and the counts must come from the same pass over the tree.
+         *
+         * <p>The script used to run the gate twice for any non-JSON format: once for the findings
+         * JSON the counts are read from, and once more for the page a person reads. Both runs were
+         * of the same command against the same base, so nothing in either document recorded that it
+         * happened -- but the second run re-read the working tree, and a file edited between the two
+         * would put the counts and the report on opposite sides of the edit. A wrapper that logs
+         * its arguments and execs the real launcher is the only place the extra scan is visible.
+         */
+        @Test
+        @DisplayName("an HTML report does not trigger a second analysis")
+        void htmlReportCostsOneAnalysis() throws Exception {
+            Path repo = consumerRepository(2);
+            Files.writeString(repo.resolve("src/main/java/app/Order.java"),
+                    complexClass("Order", 25));
+            commitLocally(repo, "complex");
+
+            Path log = repo.resolve("invocations.log");
+            Path wrapper = repo.resolve("counting-cli.sh");
+            Files.writeString(wrapper, """
+                    #!/usr/bin/env bash
+                    echo "$@" >> %s
+                    exec %s "$@"
+                    """.formatted(log.toString(), cli().toString()));
+            wrapper.toFile().setExecutable(true);
+
+            Map<String, String> environment = new LinkedHashMap<>(maintainability());
+            environment.put("MG_FORMAT", "html");
+            Result result = runAction(repo, environment, wrapper);
+
+            List<String> invocations = Files.exists(log)
+                    ? Files.readAllLines(log)
+                    : List.of();
+            List<String> analyses = invocations.stream()
+                    .filter(line -> line.startsWith("gate "))
+                    .toList();
+            assertEquals(1, analyses.size(),
+                    "the gate was run " + analyses.size() + " times for one report, which means the"
+                            + " report and the counts describe two different reads of the tree: "
+                            + analyses + "\n" + result.output());
+            assertTrue(analyses.get(0).contains("--json-output="),
+                    "the one run has to produce both documents, or the second is coming back: "
+                            + analyses.get(0));
+        }
+
+        /**
+         * The report lands where the caller asked for it whatever format it turned out to be.
+         *
+         * <p>Choosing {@code report-format: html} is a statement about the contents of the report,
+         * not about its filename. A consumer whose workflow names one path and then reads it should
+         * not have to know which extension the format implies.
+         */
+        @Test
+        @DisplayName("the HTML report is published at the path the caller named")
+        void htmlReportLandsAtTheNamedPath() throws Exception {
+            Path repo = consumerRepository(2);
+            Files.writeString(repo.resolve("src/main/java/app/Order.java"),
+                    complexClass("Order", 25));
+            commitLocally(repo, "complex");
+
+            Map<String, String> environment = new LinkedHashMap<>(maintainability());
+            environment.put("MG_FORMAT", "html");
+            Result result = runAction(repo, environment);
+
+            Path named = repo.resolve("metrics-gate-report.json");
+            assertTrue(Files.exists(named), "nothing was written to the path report-path named: "
+                    + result.output());
+            assertTrue(Files.readString(named).toLowerCase().contains("<html"),
+                    "the report at the named path is not the HTML that was asked for: "
+                    + result.output("report-path"));
+        }
+    }
+
+    @Nested
+    @DisplayName("The outputs a consumer reads")
+    class Outputs {
+
+        /**
+         * Every declared output has to be published.
+         *
+         * <p>A consumer wires a step to {@code needs.run-gate.outputs.completeness} and, on an
+         * empty value, concludes the gate proved nothing -- which is the reading that matters most
+         * when the gate in fact read everything. The count of what was analysed is the one number
+         * that turns "PASSED" into "PASSED, and here is what that covers".
+         */
+        @Test
+        @DisplayName("completeness is published alongside the counts")
+        void completenessIsPublished() throws Exception {
+            Path repo = consumerRepository(2);
+            Files.writeString(repo.resolve("src/main/java/app/Order.java"),
+                    complexClass("Order", 25));
+            commitLocally(repo, "complex");
+
+            Result result = runAction(repo, maintainability());
+
+            assertEquals("complete", result.output("completeness"),
+                    "the run read the whole fixture, so completeness is complete: " + result.output());
+        }
+
+        /**
+         * The two spellings of the same count, because both are reachable and neither is wrong.
+         *
+         * <p>Adding an alias is not free: a consumer reading {@code total-count} and another reading
+         * {@code findings-count} must not be able to disagree about the run that produced them.
+         */
+        @Test
+        @DisplayName("the alias outputs agree with the counts they alias")
+        void aliasesAgree() throws Exception {
+            Path repo = consumerRepository(2);
+            Files.writeString(repo.resolve("src/main/java/app/Order.java"),
+                    complexClass("Order", 25));
+            commitLocally(repo, "complex");
+
+            Result result = runAction(repo, maintainability());
+
+            assertEquals(result.output("total-count"), result.output("findings-count"));
+            assertEquals(result.output("blocking-count"), result.output("violations-count"));
+        }
+
+        /**
+         * The version published is the one that produced the report.
+         *
+         * <p>Read from the report rather than from {@code --version}, so a runner holding a
+         * different binary than the one that wrote the document cannot describe it.
+         */
+        @Test
+        @DisplayName("the tool version names the tool that wrote the report")
+        void toolVersionMatchesTheReport() throws Exception {
+            Path repo = consumerRepository(2);
+            Files.writeString(repo.resolve("src/main/java/app/Order.java"),
+                    complexClass("Order", 25));
+            commitLocally(repo, "complex");
+
+            Result result = runAction(repo, maintainability());
+
+            String reported = result.findings().get("toolVersion").asText();
+            assertEquals(reported, result.output("tool-version"),
+                    "the published version is the one inside the report it describes");
         }
     }
 }

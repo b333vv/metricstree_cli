@@ -16,7 +16,7 @@ inputs:
     required: false
     default: ''
   checksum:
-    description: 'SHA-256 of the distribution archive. When set, the download is verified against it and the action stops before analysing anything if it does not match.'
+    description: 'Expected SHA-256 of the distribution archive. When set, the download is verified against it. When not set, the checksum published beside the archive in the release is used instead, so the download is still verified; pass this input to pin an archive the workflow already trusts.'
     required: false
     default: ''
   config:
@@ -65,12 +65,21 @@ outputs:
   total-count:
     description: 'Total findings, whatever their disposition'
     value: ${{ steps.run-gate.outputs.total-count }}
+  findings-count:
+    description: 'Total findings, whatever their disposition. Alias of total-count.'
+    value: ${{ steps.run-gate.outputs.findings-count }}
+  violations-count:
+    description: 'Findings eligible to block the build. Alias of blocking-count.'
+    value: ${{ steps.run-gate.outputs.violations-count }}
   entities:
     description: 'Entities carrying at least one finding'
     value: ${{ steps.run-gate.outputs.entities }}
   issues:
     description: 'Evaluation issues: checks that could not be run'
     value: ${{ steps.run-gate.outputs.issues }}
+  completeness:
+    description: 'How much of the tree the analysis actually read: complete, partial, none, or unknown. Not complete means a low count describes only the part that was read.'
+    value: ${{ steps.run-gate.outputs.completeness }}
   tool-version:
     description: 'The CLI version that produced the report'
     value: ${{ steps.run-gate.outputs.tool-version }}
@@ -98,6 +107,10 @@ runs:
         INPUT_CLI_PATH: ${{ inputs.cli-path }}
         INPUT_TOOL_VERSION: ${{ inputs.tool-version }}
         INPUT_CHECKSUM: ${{ inputs.checksum }}
+        # The repository releases are read from. It was referenced by the download step and never
+        # defined, so with `set -u` that step failed on an unbound variable for every consumer
+        # that did not already have a CLI on the runner.
+        MG_REPO: ${{ github.repository }}
         GITHUB_OUTPUT: ${{ github.output }}
       run: |
         set -euo pipefail
@@ -114,42 +127,85 @@ runs:
           exit 0
         fi
 
-        version="$INPUT_TOOL_VERSION"
-        if [ "$version" = "latest" ]; then
-          echo "Resolving the latest release"
-          version=$(curl -fsSL --retry 3 \
-            "https://api.github.com/repos/b333vv/metricstree_cli/releases/latest" \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].lstrip("v"))')
-        fi
-        echo "cli-version=$version" >> "$GITHUB_OUTPUT"
-
-        url="https://github.com/b333vv/metricstree_cli/releases/download/v${version}/metricstree-cli-${version}.zip"
-        archive="$RUNNER_TEMP/metricstree-cli-${version}.zip"
-        echo "Downloading $url"
-        curl -fsSL --retry 3 -o "$archive" "$url"
-
-        # Verified before the tool is ever executed. A checksum that does not match means we stop
-        # here, having analysed nothing: running an unverified binary and reporting its verdict would
-        # publish a quality claim from an artifact nobody can account for.
-        if [ -n "$INPUT_CHECKSUM" ]; then
-          expected=$(printf '%s' "$INPUT_CHECKSUM" | tr '[:upper:]' '[:lower:]')
-          if command -v sha256sum >/dev/null 2>&1; then
-            actual=$(sha256sum "$archive" | cut -d' ' -f1)
-          else
-            actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
-          fi
-          if [ "$actual" != "$expected" ]; then
-            echo "Error: the downloaded archive does not match the expected checksum." >&2
-            echo "  expected $expected" >&2
-            echo "  actual   $actual" >&2
-            echo "Nothing was analysed." >&2
+        # The tag and the version are two different strings, and the asset is named after the
+        # second: the tag is `v2026.1.0`, the archive is `metricstree-cli-2026.1.0.zip`.
+        #
+        # `latest` is a request rather than a version -- no release is named `latest`. This step
+        # used to fall through to an asset called `metricstree-cli.zip`, which no release has
+        # ever published, so the default value of tool-version could not work. The tag is now
+        # resolved and then used whole, so the archive named after it is the one actually there.
+        tag="$INPUT_TOOL_VERSION"
+        if [ "$tag" = "latest" ]; then
+          tag=$(curl -fsSL -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$MG_REPO/releases/latest" \
+                | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+          if [ -z "$tag" ]; then
+            echo "Error: could not determine the latest release of $MG_REPO." >&2
+            echo "Either no release is published, or the API did not answer." >&2
+            echo "Pin one explicitly with the tool-version input." >&2
             exit 2
           fi
-          echo "Checksum verified"
-        else
-          echo "::warning::No checksum was supplied, so the download was not verified. Set the"
-          echo "::warning::'checksum' input to pin the artifact you expect."
+          echo "Latest release: $tag"
         fi
+        case "$tag" in
+          v*) version="${tag#v}" ;;
+          *)  version="$tag"; tag="v$tag" ;;
+        esac
+
+        asset="metricstree-cli-$version.zip"
+        base="https://github.com/$MG_REPO/releases/download/$tag"
+        archive="$work/$asset"
+
+        echo "Downloading $base/$asset"
+        curl -fsSL "$base/$asset" -o "$archive" \
+          || { echo "Error: could not download $base/$asset" >&2; exit 2; }
+
+        # The archive is verified before it is unpacked and long before anything is analysed.
+        #
+        # An explicit checksum input is the strongest statement available: it pins an archive the
+        # workflow already trusts, and it is the only option for a release with no published
+        # checksum. When none is given, the checksum published beside the archive is used instead,
+        # which is what a package registry does and what makes `latest` safe to resolve: it
+        # detects a corrupted or substituted download, which is the threat a checksum covers. It
+        # does not defend against an attacker who can rewrite the release itself -- that needs
+        # the explicit input, and the comment says so rather than implying more.
+        expected="$INPUT_CHECKSUM"
+        if [ -n "$expected" ]; then
+          echo "Verifying against the checksum supplied to the action"
+        else
+          checksum_file="$work/$asset.sha256"
+          if ! curl -fsSL "$base/$asset.sha256" -o "$checksum_file"; then
+            echo "Error: the release $tag has no $asset.sha256 beside the archive." >&2
+            echo "Nothing was analysed. Pass the expected SHA-256 as the checksum input." >&2
+            exit 2
+          fi
+          expected=$(awk '{print $1; exit}' "$checksum_file")
+          echo "Verifying against the checksum published with the release"
+        fi
+        if [ -z "$expected" ]; then
+          echo "Error: no expected checksum could be determined, so the download is unverified." >&2
+          echo "Nothing was analysed." >&2
+          exit 2
+        fi
+        actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
+        if [ "$actual" != "$expected" ]; then
+          echo "Error: the downloaded archive does not match the expected checksum." >&2
+          echo "  expected $expected" >&2
+          echo "  actual   $actual" >&2
+          echo "Nothing was analysed." >&2
+          exit 2
+        fi
+        echo "Checksum verified"
+
+        rm -rf "$work"
+        mkdir -p "$work"
+        unzip -q "$archive" -d "$work"
+        launcher="$work/metricstree-cli/bin/java-metrics-cli"
+        if [ ! -x "$launcher" ]; then
+          echo "Error: the archive did not contain the expected launcher." >&2
+          exit 2
+        fi
+        echo "cli-path=$launcher" >> "$GITHUB_OUTPUT"
 
         rm -rf "$work"
         mkdir -p "$work"

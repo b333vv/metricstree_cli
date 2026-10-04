@@ -418,23 +418,36 @@ build toolchain in your repository.
 | `base` | Base ref. Defaults to `origin/${{ github.base_ref }}`, or `origin/main` on a push. |
 | `tool-version` | Release to download. Defaults to `latest`. |
 | `cli-path` | An existing launcher to use instead. Nothing is downloaded when set. |
-| `checksum` | SHA-256 of the archive. Verified before anything is analysed. |
+| `checksum` | Expected SHA-256 of the archive. When unset, the `.sha256` published beside the archive in the release is used. |
 | `policy`, `enforcement` | `maintainability` plus `advisory` (default) or `enforce`. |
 | `profile`, `thresholds`, `exclude-file`, `config` | The legacy policy's settings, still supported. |
 | `report-format` | `json`, `html` or `agent-md`. The findings JSON is produced either way. |
 | `report-path` | Where the report is written. |
 
-**Outputs:** `status` (`PASSED`, `FAILED`, `INCOMPLETE` or `ERROR`), `exit-code`, `blocking-count`,
-`total-count`, `entities`, `issues`, `tool-version`, `report-path`, `findings-path`.
+**Outputs:** `status` (`PASSED`, `FAILED`, `INCOMPLETE` or `ERROR`), `exit-code`,
+`blocking-count`, `total-count`, `findings-count` (alias of `total-count`),
+`violations-count` (alias of `blocking-count`), `entities`, `issues`, `completeness`,
+`tool-version`, `report-path`, `findings-path`.
 
 **What the exit codes mean.** The tool's own codes are passed through unchanged: `0` passed, `1`
 failed, `2` incomplete or a usage error. The action never collapses `2` into `1`, because "this
 change is bad" and "this analysis could not run" are different answers and a CI job that cannot tell
 them apart is worse than one that finds nothing.
 
-**Verify the download.** Set `checksum` and the action stops before running anything if the archive
-does not match. Without it the action warns: an unverified binary reporting a quality verdict is
-still a quality verdict.
+**Verify the download.** Every download is verified, and the action stops before running
+anything if the archive does not match. Set `checksum` to pin an archive the workflow already
+trusts; without it the action fetches the `.sha256` published beside the archive in the
+same release, which is what a package registry does. That detects a corrupted or
+substituted download. It does not defend against an attacker who can rewrite the release
+itself, and pinning `checksum` is what covers that.
+
+**`completeness` says how much of the tree was read** (`complete`, `partial`, `none`). It is
+the number that separates "the gate proved this change is fine" from "the gate read part of
+the tree and found nothing in it", so wire it rather than reading `status` alone.
+
+**One analysis per run.** The human report and the findings JSON are two renderings of a
+single pass over the tree, produced by one invocation. A file edited during a run cannot
+put the counts and the report on opposite sides of the edit.
 
 **Reports are uploaded on every outcome**, not only on failure, and the step summary says
 `INCOMPLETE` rather than "clean" whenever the analysis could not be completed.

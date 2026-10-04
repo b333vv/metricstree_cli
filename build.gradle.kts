@@ -142,6 +142,11 @@ tasks {
         testClassesDirs = project.sourceSets["integrationTest"].output.classesDirs
         classpath = project.sourceSets["integrationTest"].runtimeClasspath
         mustRunAfter(named("test"))
+        // The action's script is an input to these tests, and Gradle cannot see it on its own: the
+        // test classes did not change, so editing the script left the task UP-TO-DATE and the edit
+        // reached no test at all. A gate change that no test ran is exactly the kind of change this
+        // file is supposed to prevent.
+        inputs.file(rootProject.file("scripts/run-metrics-gate-action.sh"))
         // Исключаем тесты из пакета org.b333vv.metric.research
         exclude("org/b333vv/metric/research/**")
     }

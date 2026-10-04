@@ -297,11 +297,19 @@ val archiveChecksum = tasks.register("archiveChecksum") {
     group = "distribution"
     description = "Writes the SHA-256 of the distribution archive."
     val archive = tasks.named<Zip>("distributionZip").flatMap { it.archiveFile }
-    val output = layout.buildDirectory.file("dist-checksums/metricstree-cli.sha256")
+    // Named after the archive, never a fixed name. A fixed name cannot say which archive it
+    // describes, so a release holding two of them has two checksums and no way to pair them, and
+    // a downloader cannot ask for "the checksum" without also guessing the version.
+    //
+    // flatMap, not map: the transform returns a provider, and map would nest it into
+    // Provider<Provider<RegularFile>> rather than flattening it.
+    val checksumFile = archive.flatMap {
+        layout.buildDirectory.file("dist-checksums/${it.asFile.name}.sha256")
+    }
     inputs.file(archive)
-    outputs.file(output)
+    outputs.file(checksumFile)
     doLast {
-        val file = output.get().asFile
+        val file = checksumFile.get().asFile
         file.parentFile.mkdirs()
         file.writeText(sha256Hex(archive.get().asFile.readBytes()) + "  "
                 + archive.get().asFile.name + "\n")

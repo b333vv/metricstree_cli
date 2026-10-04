@@ -58,6 +58,40 @@ jobs:
           cd "$RUNNER_TEMP/cli/source"
           ./gradlew :java-metrics-cli:installDist -q
 
+      - name: The checksum a release publishes is readable the way the action reads it
+        # The action verifies a download against `<asset>.sha256` from the release, taking the
+        # first field as the hash. That is a contract between the Gradle task and a shell script in
+        # another repository, and nothing else checks it: the consumer run below passes cli-path and
+        # never downloads. So the task runs here and is parsed exactly as the action parses it.
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/cli/source"
+          ./gradlew :java-metrics-cli:distributionZip :java-metrics-cli:archiveChecksum -q
+          archives=$(ls java-metrics-cli/build/distributions/metricstree-cli-*.zip)
+          # Exactly one archive, or the release publishes a collision and the comparison below
+          # would silently read the first of several.
+          count=$(printf '%s\n' "$archives" | grep -c . || true)
+          if [ "$count" -ne 1 ]; then
+            echo "::error::Expected one distribution archive, found $count:"
+            printf '%s\n' "$archives"
+            exit 1
+          fi
+          name=$(basename "$archives")
+          checksum="java-metrics-cli/build/dist-checksums/${name}.sha256"
+          if [ ! -f "$checksum" ]; then
+            echo "::error::Expected $checksum. The action downloads <asset>.sha256 by that exact name."
+            exit 1
+          fi
+          expected=$(awk '{print $1; exit}' "$checksum")
+          actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::The published checksum does not describe the published archive."
+            echo "  expected $expected"
+            echo "  actual   $actual"
+            exit 1
+          fi
+          echo "The action's first-field parse reads this checksum correctly: $expected"
+
       - name: Build a fixture consumer repository
         run: |
           set -euo pipefail
@@ -160,6 +194,25 @@ jobs:
           fi
           if [ -z "${{ steps.gate.outputs.tool-version }}" ]; then
             echo "::error::The action published no tool version."
+            exit 1
+          fi
+          # Completeness is what separates "the gate proved this change is fine" from "the gate
+          # read part of the tree and found nothing in it". A consumer that wires this output and
+          # gets an empty string concludes the first, which is the wrong answer in the direction
+          # that matters.
+          if [ -z "${{ steps.gate.outputs.completeness }}" ]; then
+            echo "::error::The action published no analysis completeness."
+            exit 1
+          fi
+          echo "completeness: ${{ steps.gate.outputs.completeness }}"
+          # The aliases must agree with the counts they alias, or a consumer reading one and
+          # another reading the other is working from two different accounts of one run.
+          if [ "${{ steps.gate.outputs.total-count }}" != "${{ steps.gate.outputs.findings-count }}" ]; then
+            echo "::error::total-count and findings-count disagree."
+            exit 1
+          fi
+          if [ "${{ steps.gate.outputs.blocking-count }}" != "${{ steps.gate.outputs.violations-count }}" ]; then
+            echo "::error::blocking-count and violations-count disagree."
             exit 1
           fi
 

@@ -1,5 +1,49 @@
 # what has been done
 
+## Session: A18 and A19 — release and action integration (2026-10-04)
+
+Fixed the authoring half of both release-side findings. What remains for each is a hosted run, which
+is acceptance rather than work: a `v*` tag published end to end, and the action exercised from a
+repository that has never heard of this project.
+
+**A18.** The tag version now reaches the build as `-PmetricsVersion="${VERSION#v}"`, declared once at
+workflow level so a job cannot forget it and stamp the wrong version. The publisher pin was verified
+against upstream rather than assumed: `c95fe148...` is `refs/tags/v2.2.1` of `softprops/action-gh-release`,
+so the `UNVERIFIED` marker is gone. Upstream has since published v3.0.3; adopting it is a separate
+decision, because a major bump's inputs and outputs have to be read rather than assumed compatible.
+
+The checksum is now named after the archive (`metricstree-cli-<version>.zip.sha256`) instead of a
+fixed `metricstree-cli.sha256`, so a release holding two artifacts has two checksums that each say
+which one they describe.
+
+**A19.** The script runs the gate once for every format: it asks for the human format and
+`--json-output` in the same invocation, which the tool renders from one analysis anyway. The previous
+second run re-read the working tree, so a file edited between the two runs put the counts and the
+report on opposite sides of the edit with nothing in either document recording it. `tool-version` now
+comes from the report rather than from `--version`, so a runner holding a different binary cannot
+describe the document it did not write.
+
+`completeness`, `findings-count` and `violations-count` are published, and the aliases are asserted
+against the counts they alias in both the Java suite and the consumer workflow. A download with no
+explicit checksum is now verified against the `.sha256` published beside the archive, which detects a
+corrupted or substituted download; it does not defend against an attacker who can rewrite the
+release, and the comment says so rather than implying more.
+
+**Three defects beyond the audit, in the path that downloads.** `MG_REPO` was referenced by the
+download step and never defined, so with `set -u` the step failed on an unbound variable for every
+consumer that did not already have a CLI — the only way to obtain a released CLI had never run.
+`latest` resolved to the asset `metricstree-cli.zip`, which no release has ever published, so the
+default value of `tool-version` could not work; the tag is now resolved and used whole. And all six
+matrix builds wrote the same archive filename into `merge-multiple: true`, because the archive
+carries a version but no OS, so a release shipped one platform's archive and looked complete. The
+matrix now verifies; one `package` job builds the artifact that is published, on the JDK floor.
+
+Two harness defects were fixed while proving the above. The integration test task did not declare
+the script as an input, so editing it left the task `UP-TO-DATE` and the edit reached no test at all.
+And the script's own header claims it is written as a runnable-and-testable script; it now has five
+tests, one of which counts gate invocations through a wrapper, because a second analysis is invisible
+in the published outputs.
+
 ## Session: independent recheck of audit remediation (2026-10-04)
 
 Reviewed nine remediation commits after `c6e915d`, through runtime revision

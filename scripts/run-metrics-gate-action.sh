@@ -63,8 +63,11 @@ publish_unresolved() {
     echo "exit-code=2"
     echo "blocking-count=0"
     echo "total-count=0"
+    echo "findings-count=0"
+    echo "violations-count=0"
     echo "entities=0"
     echo "issues=1"
+    echo "completeness=none"
     echo "report-path=$MG_REPORT"
     echo "findings-path=$MG_FINDINGS"
   } >> "${GITHUB_OUTPUT:-/dev/null}"
@@ -115,36 +118,8 @@ else
 fi
 endgroup
 
-# ---------------------------------------------------------------------------- the run
+# ---------------------------------------------------------------------------- reading the counts
 
-log "Running the gate"
-args=(gate "--base=$effective_base" "--mode=$MG_MODE" "-o" "$MG_REPORT" "--json-output" "$MG_FINDINGS")
-
-[ -n "${MG_CONFIG:-}" ] && args+=("--config=$MG_CONFIG")
-[ -n "${MG_PROFILE:-}" ] && args+=("-p" "$MG_PROFILE")
-[ -n "${MG_THRESHOLDS:-}" ] && args+=("-t" "$MG_THRESHOLDS")
-[ -n "${MG_EXCLUDE_FILE:-}" ] && args+=("-e" "$MG_EXCLUDE_FILE")
-[ -n "${MG_POLICY:-}" ] && args+=("--policy=$MG_POLICY")
-[ -n "${MG_ENFORCEMENT:-}" ] && args+=("--enforcement=$MG_ENFORCEMENT")
-
-set +e
-"$MG_CLI" "${args[@]}"
-gate_exit=$?
-set -e
-endgroup
-
-# ---------------------------------------------------------------------------- the counts
-
-
-# The JSON is always requested, whatever the human-facing format is, because the counts come from it.
-# Rendering HTML and then counting by scraping it would give two numbers from one run and a chance
-# for them to disagree; the tool already renders every format from the same analysis.
-# Reads one integer out of the findings JSON.
-#
-# Takes a key name, not a path: the caller states which counter it wants and this decides how to get
-# it. Passing a path as well meant the jq and the python branches disagreed about what they were
-# being asked for, and the jq branch quietly reported zero — a failing gate publishing a count of
-# nothing, which is worse than publishing no count at all.
 read_count() {
   key=$1
   if command -v jq >/dev/null 2>&1; then
@@ -169,6 +144,101 @@ print(value if isinstance(value, int) else 0)
   fi
 }
 
+# The version of the tool that produced this report, read out of the report itself.
+#
+# Not from `--version`: that answers for the binary on the runner, which is the tool only when the
+# download and the gate agreed. The document names the tool that wrote it, so a report claiming one
+# version while the runner holds another cannot publish that claim under the other's name.
+read_tool_version() {
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.toolVersion // "unknown"' "$MG_FINDINGS" 2>/dev/null || echo unknown
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("toolVersion","unknown"))
+except Exception:
+    print("unknown")' "$MG_FINDINGS" 2>/dev/null || echo unknown
+  else
+    echo "warning::no jq or python3 available; the tool version could not be read" >&2
+    echo unknown
+  fi
+}
+
+# The completeness of the analysis, not of the verdict. A gate that could read only part of the
+# tree has a count that is exactly as true and exactly as useless as a count taken from nothing.
+read_completeness() {
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.analysis.completeness // "unknown"' "$MG_FINDINGS" 2>/dev/null || echo unknown
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("analysis",{}).get("completeness","unknown"))
+except Exception:
+    print("unknown")' "$MG_FINDINGS" 2>/dev/null || echo unknown
+  else
+    echo "warning::no jq or python3 available; the analysis completeness could not be read" >&2
+    echo unknown
+  fi
+}
+
+# ---------------------------------------------------------------------------- the run
+
+log "Running the gate"
+effective_base="$base_ref"
+if ! git merge-base --is-ancestor "$base_ref" HEAD 2>/dev/null; then
+  MERGE_BASE=$(git merge-base "$base_ref" HEAD 2>/dev/null || true)
+  if [ -n "$MERGE_BASE" ]; then
+    echo "Base ref $base_ref is not an ancestor of HEAD; comparing from the merge base $MERGE_BASE"
+    effective_base="$MERGE_BASE"
+  else
+    echo "Error: '$base_ref' and HEAD share no common ancestor, so there is nothing to compare" >&2
+    echo "against. This usually means the base and the head are unrelated histories." >&2
+    publish_unresolved
+    exit 2
+  fi
+fi
+
+# One run produces both documents. The human report and the findings JSON are two renderings of
+# a single analysis, and the tool already renders every format from the same result -- so asking
+# for them together costs nothing and cannot disagree. Running the gate a second time to obtain
+# the second format would re-read the working tree: a file edited between the two runs would put
+# the counts and the report a person reads on opposite sides of the edit, and nothing in either
+# document would say so.
+#
+# The JSON is requested whatever the human format is, because the counts, the completeness and
+# every output below are read from it rather than parsed out of a rendered page.
+human_report="$MG_REPORT"
+case "$MG_FORMAT" in
+  html) human_report="${MG_REPORT%.json}.html" ;;
+  agent-md|markdown) human_report="${MG_REPORT%.json}.md" ;;
+esac
+
+gate_args=(gate "--base=$effective_base" "--mode=$MG_MODE" "--format=$MG_FORMAT"
+           -o "$human_report" "--json-output=$MG_FINDINGS")
+[ -n "${MG_CONFIG:-}" ] && gate_args+=("--config=$MG_CONFIG")
+[ -n "${MG_PROFILE:-}" ] && gate_args+=("-p" "$MG_PROFILE")
+[ -n "${MG_THRESHOLDS:-}" ] && gate_args+=("-t" "$MG_THRESHOLDS")
+[ -n "${MG_EXCLUDE_FILE:-}" ] && gate_args+=("-e" "$MG_EXCLUDE_FILE")
+[ -n "${MG_POLICY:-}" ] && gate_args+=("--policy=$MG_POLICY")
+[ -n "${MG_ENFORCEMENT:-}" ] && gate_args+=("--enforcement=$MG_ENFORCEMENT")
+
+set +e
+# Not redirected. The tool's own diagnostics -- which rule it rejected, which line it could not
+# read -- are the evidence a person needs when the verdict is an error, and this is the only
+# place they appear. Discarding them leaves a failing job that says only that it failed.
+"$MG_CLI" "${gate_args[@]}"
+gate_exit=$?
+set -e
+
+# The caller named one path, so the report lands there whatever format it turned out to be. A
+# report-format of html should not change where the file is, only what is in it.
+if [ "$human_report" != "$MG_REPORT" ] && [ -f "$human_report" ]; then
+  cp "$human_report" "$MG_REPORT"
+fi
+
+# The exit code is preserved exactly: 0 passed, 1 failed, 2 incomplete or a usage error. Collapsing
+# 2 into 1 would report "this change is bad" for "this analysis could not run", which is the one
+# confusion this action must never create.
 status=FAILED
 case $gate_exit in
   0) status=PASSED ;;
@@ -181,34 +251,8 @@ blocking=$(read_count blocking)
 total=$(read_count total)
 entities=$(read_count entities)
 issues=$(read_count issues)
-tool_version=$("$MG_CLI" --version 2>/dev/null | head -1 | sed 's/^java-metrics-cli //' || echo unknown)
-
-# The human-readable format is rendered from the analysis this run already performed, by running the
-# same command once more against the same snapshot. A second scan would be a second chance for the
-# world to change between the document the counts came from and the document a person reads — and a
-# report and its sidecar that disagree are worse than no report.
-if [ "$MG_FORMAT" != "json" ]; then
-  human_report="$MG_REPORT"
-  case "$MG_FORMAT" in
-    html) human_report="${MG_REPORT%.json}.html" ;;
-    agent-md|markdown) human_report="${MG_REPORT%.json}.md" ;;
-  esac
-  human_args=(gate "--base=$effective_base" "--mode=$MG_MODE" "--format=$MG_FORMAT" -o "$human_report")
-  [ -n "${MG_CONFIG:-}" ] && human_args+=("--config=$MG_CONFIG")
-  [ -n "${MG_PROFILE:-}" ] && human_args+=("-p" "$MG_PROFILE")
-  [ -n "${MG_THRESHOLDS:-}" ] && human_args+=("-t" "$MG_THRESHOLDS")
-  [ -n "${MG_EXCLUDE_FILE:-}" ] && human_args+=("-e" "$MG_EXCLUDE_FILE")
-  [ -n "${MG_POLICY:-}" ] && human_args+=("--policy=$MG_POLICY")
-  [ -n "${MG_ENFORCEMENT:-}" ] && human_args+=("--enforcement=$MG_ENFORCEMENT")
-  set +e
-  "$MG_CLI" "${human_args[@]}" >/dev/null 2>&1
-  set -e
-  if [ -f "$human_report" ]; then
-    cp "$human_report" "$MG_REPORT"
-  else
-    echo "Warning: the $MG_FORMAT report was not produced; the JSON report is at $MG_REPORT" >&2
-  fi
-fi
+completeness=$(read_completeness)
+tool_version=$(read_tool_version)
 
 # ---------------------------------------------------------------------------- the outputs
 
@@ -217,8 +261,14 @@ fi
   echo "exit-code=$gate_exit"
   echo "blocking-count=$blocking"
   echo "total-count=$total"
+  # The two spellings a consumer is most likely to reach for, both meaning the same thing, so a
+  # workflow written against either name works. Findings, not violations: a violation is a value,
+  # and what a gate counts is the place a value was found.
+  echo "findings-count=$total"
+  echo "violations-count=$blocking"
   echo "entities=$entities"
   echo "issues=$issues"
+  echo "completeness=$completeness"
   echo "tool-version=$tool_version"
   echo "report-path=$MG_REPORT"
   echo "findings-path=$MG_FINDINGS"
@@ -235,12 +285,19 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     echo "| Total findings | $total |"
     echo "| Entities with findings | $entities |"
     echo "| Evaluation issues | $issues |"
+    echo "| Analysis completeness | \`$completeness\` |"
     echo "| Tool version | \`$tool_version\` |"
     echo "| Report | \`$MG_REPORT\` |"
     echo ""
     if [ "$status" = "INCOMPLETE" ]; then
       echo "> This analysis could not be completed. The counts above are what was established, not a"
       echo "> statement that the code is clean."
+    fi
+    if [ "$completeness" != "complete" ]; then
+      echo ">"
+      echo "> Completeness \`$completeness\`: the analysis did not cover the whole tree, so the counts"
+      echo "> above describe the part it did read. Blocking is not withheld for this, but a low count"
+      echo "> here does not mean the rest of the repository is clean."
     fi
   } >> "$GITHUB_STEP_SUMMARY"
 fi
