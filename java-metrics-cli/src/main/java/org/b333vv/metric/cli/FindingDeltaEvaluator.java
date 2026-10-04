@@ -54,11 +54,14 @@ final class FindingDeltaEvaluator {
      *
      * @param base          the evaluation at the base revision, or {@code null} when the entity is new
      * @param correspondence how entities correspond between the revisions
-     * @param path          the current logical path, for the finding's location
+     * @param location      where the entity is in the current revision, for the finding's location
+     * @param baseLocation  where it was at the base, or {@code null} when there is no base
      */
     Delta compare(MaintainabilityRule rule, RuleEvaluation base, RuleEvaluation current,
-            EntityCorrespondence correspondence, String path) {
-        return compare(rule, base, current, correspondence, path, EntityRole.PRODUCTION, true);
+            EntityCorrespondence correspondence, FindingLocation location,
+            FindingLocation baseLocation) {
+        return compare(rule, base, current, correspondence, location, baseLocation,
+                EntityRole.PRODUCTION, true);
     }
 
     /**
@@ -66,11 +69,13 @@ final class FindingDeltaEvaluator {
      *
      * @param base          the evaluation at the base revision, or {@code null} when the entity is new
      * @param correspondence how entities correspond between the revisions
-     * @param path          the current logical path, for the finding's location
+     * @param location      where the entity is in the current revision
+     * @param baseLocation  where it was at the base, or {@code null} when there is no base
      * @param role          the classified role, recorded on the finding
      */
     Delta compare(MaintainabilityRule rule, RuleEvaluation base, RuleEvaluation current,
-            EntityCorrespondence correspondence, String path, EntityRole role, boolean comparing) {
+            EntityCorrespondence correspondence, FindingLocation location,
+            FindingLocation baseLocation, EntityRole role, boolean comparing) {
         List<Finding> findings = new ArrayList<>();
         List<EvaluationIssue> issues = new ArrayList<>();
 
@@ -86,7 +91,7 @@ final class FindingDeltaEvaluator {
                 // who has no way to tell which one they are looking at.
                 findings.add(finding(rule, current, base,
                         comparing ? FindingLifecycle.NEW_ENTITY : FindingLifecycle.CURRENT,
-                        FindingDisposition.ACTIVE, null, path, null, role));
+                        FindingDisposition.ACTIVE, null, location, null, null, role));
             } else if (current.status().isUnavailable()) {
                 issues.addAll(current.issues());
             }
@@ -99,8 +104,8 @@ final class FindingDeltaEvaluator {
         }
         if (current.status().isUnavailable() || base.status().isUnavailable()) {
             findings.add(finding(rule, current, base, FindingLifecycle.COMPARISON_UNAVAILABLE,
-                    FindingDisposition.NOT_MATCHED, "comparison-unavailable", path,
-                    base.entityKey(), role));
+                    FindingDisposition.NOT_MATCHED, "comparison-unavailable",
+                    location, baseLocation, base.entityKey(), role));
             issues.addAll(base.issues());
             issues.addAll(current.issues());
             return new Delta(findings, issues);
@@ -111,17 +116,17 @@ final class FindingDeltaEvaluator {
 
         if (!baseMatched && currentMatched) {
             findings.add(finding(rule, current, base, FindingLifecycle.INTRODUCED,
-                    FindingDisposition.ACTIVE, null, path, base.entityKey(), role));
+                    FindingDisposition.ACTIVE, null, location, baseLocation, base.entityKey(), role));
         } else if (baseMatched && !currentMatched) {
             findings.add(finding(rule, base, base, FindingLifecycle.RESOLVED,
-                    FindingDisposition.RESOLVED, "no-longer-matches", path, base.entityKey(), role));
+                    FindingDisposition.RESOLVED, "no-longer-matches", location, baseLocation, base.entityKey(), role));
         } else if (baseMatched) {
             if (isSignificantlyWorse(rule, base, current)) {
                 findings.add(finding(rule, current, base, FindingLifecycle.WORSENED,
-                        FindingDisposition.ACTIVE, null, path, base.entityKey(), role));
+                        FindingDisposition.ACTIVE, null, location, baseLocation, base.entityKey(), role));
             } else {
                 findings.add(finding(rule, current, base, FindingLifecycle.EXISTING,
-                        FindingDisposition.EXISTING, "not-worsened", path, base.entityKey(), role));
+                        FindingDisposition.EXISTING, "not-worsened", location, baseLocation, base.entityKey(), role));
             }
         }
         return new Delta(findings, issues);
@@ -320,7 +325,8 @@ final class FindingDeltaEvaluator {
      */
     private Finding finding(MaintainabilityRule rule, RuleEvaluation evaluation,
             RuleEvaluation base, FindingLifecycle lifecycle, FindingDisposition disposition,
-            String dispositionReason, String path, EntityKey baseKey, EntityRole role) {
+            String dispositionReason, FindingLocation location, FindingLocation baseLocation,
+            EntityKey baseKey, EntityRole role) {
         // The base counterpart's identity, kept as a field so a consumer can correlate this finding
         // with the debt it replaces. It is also still written into the reason when there is no other
         // explanation, because a reader of the human reports wants to see it there too.
@@ -331,8 +337,8 @@ final class FindingDeltaEvaluator {
         return new Finding(
                 rule.id(), rule.version(), evaluation.entityKey(), rule.title(),
                 message(rule, lifecycle),
-                FindingLocation.of(path, 1),
-                baseKey == null ? null : FindingLocation.of(baseKey.path(), 1),
+                location,
+                baseLocation,
                 rule.severity(), rule.maturity(), evaluation.status(), lifecycle,
                 pairedEvidence(evaluation, base), List.of(),
                 rule.description(), rule.documentationPath(),
@@ -362,8 +368,8 @@ final class FindingDeltaEvaluator {
      * the code that improved. Reporting it as an improvement would be a claim nobody can support: the
      * method may have been deleted, moved somewhere unanalysed, or renamed.
      */
-    Delta reportRemovedEntity(MaintainabilityRule rule, RuleEvaluation base, String path) {
-        return reportRemovedEntity(rule, base, path, EntityRole.PRODUCTION);
+    Delta reportRemovedEntity(MaintainabilityRule rule, RuleEvaluation base, FindingLocation baseLocation) {
+        return reportRemovedEntity(rule, base, baseLocation, EntityRole.PRODUCTION);
     }
 
     /**
@@ -373,12 +379,12 @@ final class FindingDeltaEvaluator {
      * the code that improved. Reporting it as an improvement would be a claim nobody can support: the
      * method may have been deleted, moved somewhere unanalysed, or renamed.
      */
-    Delta reportRemovedEntity(MaintainabilityRule rule, RuleEvaluation base, String path,
-            EntityRole role) {
+    Delta reportRemovedEntity(MaintainabilityRule rule, RuleEvaluation base,
+            FindingLocation baseLocation, EntityRole role) {
         return new Delta(
                 List.of(finding(rule, base, base, FindingLifecycle.RESOLVED,
-                        FindingDisposition.RESOLVED, REASON_ENTITY_REMOVED, path, base.entityKey(),
-                        role)),
+                        FindingDisposition.RESOLVED, REASON_ENTITY_REMOVED, baseLocation, null,
+                        base.entityKey(), role)),
                 List.of());
     }
 }

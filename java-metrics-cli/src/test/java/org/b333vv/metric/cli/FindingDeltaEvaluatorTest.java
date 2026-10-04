@@ -78,15 +78,26 @@ class FindingDeltaEvaluatorTest {
                 catalogue.worsening(), catalogue.worseningBudgets());
     }
 
+    /**
+     * A location at the fixture's path with no range.
+     *
+     * <p>For the cases that are not about ranges: the evaluator takes the entity's extent, and these
+     * say what the extent used to be rather than what it is. The test that cares asserts a real
+     * range.
+     */
+    private static FindingLocation at(String path) {
+        return FindingLocation.of(path, 1);
+    }
+
     private FindingDeltaEvaluator.Delta compare(RuleEvaluation base, RuleEvaluation current) {
-        return evaluator.compare(cc(), base, current, none(), PATH);
+        return evaluator.compare(cc(), base, current, none(), at(PATH), null);
     }
 
     /** The same comparison, with the rule opted into failing builds. */
     private FindingDeltaEvaluator.Delta compareEnforcing(RuleEvaluation base,
             RuleEvaluation current) {
         MaintainabilityRule rule = ccAsError();
-        return evaluator.compare(rule, base, current, none(), PATH);
+        return evaluator.compare(rule, base, current, none(), at(PATH), null);
     }
 
     /**
@@ -186,12 +197,12 @@ class FindingDeltaEvaluatorTest {
         RuleEvaluation base = methods.evaluate(rule, key, values(MetricCode.MND, 5));
 
         Finding existing = evaluator.compare(rule, base,
-                methods.evaluate(rule, key, values(MetricCode.MND, 6)), none(), PATH)
+                methods.evaluate(rule, key, values(MetricCode.MND, 6)), none(), at(PATH), null)
                 .findings().get(0);
         assertEquals(FindingLifecycle.EXISTING, existing.lifecycle());
 
         Finding worsened = evaluator.compare(rule, base,
-                methods.evaluate(rule, key, values(MetricCode.MND, 7)), none(), PATH)
+                methods.evaluate(rule, key, values(MetricCode.MND, 7)), none(), at(PATH), null)
                 .findings().get(0);
         assertEquals(FindingLifecycle.WORSENED, worsened.lifecycle());
     }
@@ -214,7 +225,7 @@ class FindingDeltaEvaluatorTest {
         RuleEvaluation grownAndSplit = classEvaluator.evaluate(rule, classKey,
                 values(MetricCode.WMC, 110, MetricCode.NOM, 16), MetricRequirements.Scope.SYNTAX_LOCAL);
 
-        Finding finding = evaluator.compare(rule, base, grownAndSplit, none(), PATH)
+        Finding finding = evaluator.compare(rule, base, grownAndSplit, none(), at(PATH), null)
                 .findings().get(0);
 
         assertEquals(FindingLifecycle.EXISTING, finding.lifecycle(),
@@ -246,7 +257,7 @@ class FindingDeltaEvaluatorTest {
                 values(MetricCode.WMC, 67, MetricCode.ATFD, 6, MetricCode.TCC, 0.2),
                 MetricRequirements.Scope.PROJECT_GLOBAL);
 
-        Finding finding = evaluator.compare(rule, base, grownAndLessCohesive, none(), PATH)
+        Finding finding = evaluator.compare(rule, base, grownAndLessCohesive, none(), at(PATH), null)
                 .findings().get(0);
 
         assertEquals(FindingLifecycle.WORSENED, finding.lifecycle(),
@@ -275,7 +286,7 @@ class FindingDeltaEvaluatorTest {
                 values(MetricCode.WMC, 67, MetricCode.ATFD, 6, MetricCode.TCC, 0.3),
                 MetricRequirements.Scope.PROJECT_GLOBAL);
 
-        Finding finding = evaluator.compare(rule, base, grownButSimplerDataAccess, none(), PATH)
+        Finding finding = evaluator.compare(rule, base, grownButSimplerDataAccess, none(), at(PATH), null)
                 .findings().get(0);
 
         assertEquals(FindingLifecycle.EXISTING, finding.lifecycle(),
@@ -353,7 +364,7 @@ class FindingDeltaEvaluatorTest {
     void removedEntityReasonExplicit() {
         RuleEvaluation base = evaluate(cc(), keyAt("src/Gone.java"), values(MetricCode.CC, 20));
 
-        Finding finding = evaluator.reportRemovedEntity(cc(), base, "src/Gone.java")
+        Finding finding = evaluator.reportRemovedEntity(cc(), base, at("src/Gone.java"))
                 .findings().get(0);
 
         assertEquals(FindingLifecycle.RESOLVED, finding.lifecycle());

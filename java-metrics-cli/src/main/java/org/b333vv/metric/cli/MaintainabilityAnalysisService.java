@@ -201,7 +201,8 @@ final class MaintainabilityAnalysisService {
                     RuleEvaluation classEvaluation =
                             classEvaluator.evaluate(rule, classKey, classReport.metrics(), scope,
                                     role, enforcement);
-                    collect(rule, classEvaluation, base, classKey, false, path, logicalPath, scope,
+                    collect(rule, classEvaluation, base, classKey, false, path,
+                            location(classReport.sourceLocation(), path), null, logicalPath, scope,
                             correspondence, findings, ineligible, issues, role, eligiblePaths,
                             comparing);
                 }
@@ -214,7 +215,8 @@ final class MaintainabilityAnalysisService {
                             EntityKey.ofMethod(path, classReport.qualifiedName(), method.signature());
                     RuleEvaluation methodEvaluation = methodEvaluator.evaluate(rule, methodKey,
                             method.metrics(), method, enforcement);
-                    collect(rule, methodEvaluation, base, methodKey, true, path, logicalPath, scope,
+                    collect(rule, methodEvaluation, base, methodKey, true, path,
+                            location(method.sourceLocation(), path), null, logicalPath, scope,
                             correspondence, findings, ineligible, issues, role, eligiblePaths,
                             comparing);
                 }
@@ -249,6 +251,7 @@ final class MaintainabilityAnalysisService {
      */
     private void collect(MaintainabilityRule rule, RuleEvaluation currentEvaluation,
             MetricReport base, EntityKey currentKey, boolean isMethod, String path,
+            FindingLocation location, FindingLocation baseLocation,
             Function<Path, String> logicalPath, MetricRequirements.Scope scope,
             EntityCorrespondence correspondence, List<Finding> findings,
             List<Finding> ineligible, List<EvaluationIssue> issues, EntityRole role,
@@ -257,8 +260,6 @@ final class MaintainabilityAnalysisService {
         if (currentEvaluation.status() == EvaluationStatus.NOT_APPLICABLE) {
             return;
         }
-        RuleEvaluation baseEvaluation = baseEvaluationFor(rule, base, currentKey, isMethod,
-                logicalPath, scope, correspondence);
 
         // Eligibility is decided by the changed path, and it is decided *here*, at the one point where
         // a logical path exists. Checking it against the base counterpart instead would be wrong in
@@ -275,7 +276,7 @@ final class MaintainabilityAnalysisService {
                 ineligible.add(new Finding(
                         rule.id(), rule.version(), currentKey, rule.title(),
                         "Matches " + rule.id() + " in code this change did not modify.",
-                        FindingLocation.of(path, 1), null, rule.severity(), rule.maturity(),
+                        location, baseLocation, rule.severity(), rule.maturity(),
                         currentEvaluation.status(), FindingLifecycle.EXISTING,
                         currentEvaluation.evidence(), List.of(),
                         rule.description(), rule.documentationPath(), role,
@@ -284,8 +285,11 @@ final class MaintainabilityAnalysisService {
             return;
         }
 
-        FindingDeltaEvaluator.Delta delta = deltaEvaluator.compare(rule, baseEvaluation,
-                currentEvaluation, correspondence, path, role, comparing);
+        BaseSide baseSide = baseSideOf(rule, base, currentKey, isMethod, logicalPath, scope,
+                correspondence);
+        FindingDeltaEvaluator.Delta delta = deltaEvaluator.compare(rule,
+                baseSide == null ? null : baseSide.evaluation(), currentEvaluation, correspondence,
+                location, baseSide == null ? null : baseSide.location(), role, comparing);
         findings.addAll(delta.findings());
         issues.addAll(delta.issues());
     }
@@ -300,8 +304,51 @@ final class MaintainabilityAnalysisService {
         return eligiblePaths == null || eligiblePaths.contains(path);
     }
 
-    /** Re-evaluates the same rule against the base report's version of this entity. */
-    private RuleEvaluation baseEvaluationFor(MaintainabilityRule rule, MetricReport base,
+    /**
+     * A finding's line range, taken from the entity the analysis measured.
+     *
+     * <p>The range was already in hand: {@link ClassReport} and {@link MethodReport} both carry a
+     * {@link org.b333vv.metric.library.core.SourceLocation} taken from the node's own source range.
+     * Every finding discarded it and pointed at line 1 instead, so a report said "Demo.java:1" for a
+     * method four lines long and a reader had to find it by hand -- on the one screen a CI job
+     * gives them to decide whether to act.
+     *
+     * <p>The logical path wins over the analysed one, because it is what a finding is keyed by and
+     * what a baseline will match it on. The line range comes from the same node either way, so the
+     * two never disagree about which entity this is.
+     *
+     * <p>A report with no range falls back to line 1, which is what the range was before: a wrong
+     * range would point a reader at the wrong code, and that is worse than pointing at the file.
+     */
+    private static FindingLocation location(
+            org.b333vv.metric.library.core.SourceLocation source, String logicalPath) {
+        if (source == null) {
+            return FindingLocation.of(logicalPath, 1);
+        }
+        return FindingLocation.of(logicalPath, source.startLine(), source.endLine());
+    }
+
+    /**
+     * One entity's evaluation at the base revision, together with where it was there.
+     *
+     * <p>The two travel together because they are found together and are useless apart: an
+     * evaluation without its range can be compared but not pointed at, and a range without the
+     * evaluation it belongs to would be reported for a revision whose numbers are unknown.
+     */
+    private record BaseSide(
+            RuleEvaluation evaluation,
+            FindingLocation location) {
+    }
+
+    /**
+     * Re-evaluates the same rule against the base report's version of this entity.
+     *
+     * <p>The base's own line range travels with its evaluation. A finding that says what changed
+     * has to be able to say where it was before as well as where it is now, and the two are
+     * different lines: an entity that grew reports its new extent, not the extent it had when the
+     * baseline accepted it.
+     */
+    private BaseSide baseSideOf(MaintainabilityRule rule, MetricReport base,
             EntityKey currentKey, boolean isMethod, Function<Path, String> logicalPath,
             MetricRequirements.Scope scope, EntityCorrespondence correspondence) {
         if (base == null || correspondence == null) {
@@ -315,14 +362,22 @@ final class MaintainabilityAnalysisService {
             if (!classReport.qualifiedName().equals(baseKey.qualifiedName())) {
                 continue;
             }
+            // The path comes from the correspondence, not from the base report: the base is analysed
+            // from a materialised snapshot under the runner's temp directory, so deriving a logical
+            // path from its own source path yields an absolute temporary one. Two modes would then
+            // disagree about a base location that names a directory neither of them has.
+            String basePath = baseKey.path();
             if (!isMethod) {
-                return classEvaluator.evaluate(rule, baseKey, classReport.metrics(), scope,
-                        EntityRole.PRODUCTION,
-                        MaintainabilityAnalysisService.Enforcement.ENFORCE);
+                return new BaseSide(
+                        classEvaluator.evaluate(rule, baseKey, classReport.metrics(), scope,
+                                EntityRole.PRODUCTION,
+                                MaintainabilityAnalysisService.Enforcement.ENFORCE),
+                        location(classReport.sourceLocation(), basePath));
             }
             for (MethodReport method : classReport.methods()) {
                 if (method.signature().equals(baseKey.signature())) {
-                    return methodEvaluator.evaluate(rule, baseKey, method.metrics());
+                    return new BaseSide(methodEvaluator.evaluate(rule, baseKey, method.metrics()),
+                            location(method.sourceLocation(), basePath));
                 }
             }
         }

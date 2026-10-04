@@ -433,6 +433,68 @@ class MaintainabilityWorkflowTest {
     }
 
     @Nested
+    @DisplayName("A finding says where it is")
+    class Locations {
+
+        /**
+         * A finding carries the method's own line range, on both sides of the comparison.
+         *
+         * <p>The range was in hand the whole time: the class and method reports both carry the source
+         * range of the node they were built from, and every finding discarded it for line 1. A CI
+         * job gives a reader the report and the diff, and "Demo.java:1" for a four-line method sends
+         * them hunting for something they already have.
+         *
+         * <p>Both sides are asserted, because they are different claims. {@code location} says where
+         * the code is now, which for a method that just grew is not where it was. {@code baseLocation}
+         * says where the accepted baseline version sat.
+         */
+        @Test
+        @DisplayName("the finding names the method's extent, now and at the base")
+        void findingCarriesTheMethodsLineRange() throws Exception {
+            GitFixture git = fixture().init();
+            git.write("src/main/java/app/Order.java", withBranches(3));
+            commitLocally(git, "small");
+            git.write("src/main/java/app/Order.java", withBranches(30));
+            commitLocally(git, "complex");
+
+            // Advisory enforcement: this test is about where the finding points, not about
+            // whether it blocks. Whether MT-M001 stops a build is asserted by the mode tests.
+            Path report = repo.resolve("findings.json");
+            gateWithReport(report, new ByteArrayOutputStream(),
+                    "--base", "HEAD~1", "--mode", "committed",
+                    "--policy", "maintainability", "--enforcement", "enforce");
+
+            JsonNode match = firstMatching(report, "MT-M001");
+            JsonNode location = match.get("location");
+            JsonNode baseLocation = match.get("baseLocation");
+
+            assertTrue(location.get("startLine").asInt() > 1,
+                    "a finding pointing at line 1 is pointing at the file, not at the method:"
+                            + " " + location);
+            assertTrue(location.get("endLine").asInt() > location.get("startLine").asInt(),
+                    "the method is twenty-odd lines long, so the range covers more than one line: "
+                            + location);
+            assertTrue(baseLocation.get("endLine").asInt() > 1,
+                    "the base side is a claim about a different revision and needs its own extent: "
+                            + baseLocation);
+            assertEquals("src/main/java/app/Order.java", baseLocation.get("path").asText(),
+                    "the base is analysed from a materialised snapshot, so a path derived from the"
+                            + " snapshot's own source path would name a temporary directory that no"
+                            + " reader has and no other mode agrees on");
+        }
+
+        /** The first finding for {@code ruleId}, failing the test when the rule found nothing. */
+        private JsonNode firstMatching(Path report, String ruleId) throws Exception {
+            for (JsonNode finding : findings(report)) {
+                if (ruleId.equals(finding.get("ruleId").asText())) {
+                    return finding;
+                }
+            }
+            throw new AssertionError("no " + ruleId + " finding in " + report);
+        }
+    }
+
+    @Nested
     @DisplayName("Which revision is being checked")
     class RevisionModes {
 
