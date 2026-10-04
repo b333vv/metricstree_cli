@@ -16,8 +16,14 @@ several task criteria; the task rows below are not separate independent defect c
 
 ## Remediation status
 
+**Independent follow-up at `70e475b`:** the closure claims in this remediation section are
+superseded by the [progress recheck](../2026-10-04-recheck/README.md): five groups closed within
+reviewed scope, 15 partial and one open. The recheck preserves passing repairs and documents
+remaining counterexamples and new integration regressions. This section records the remediation
+agent's claims; it is not the current acceptance assessment.
+
 This report describes the audited revision and is left as written, because an audit that is edited to
-match its own fixes is no longer an audit. Fixes are tracked in [`docs/PROGRESS.md`](../../../PROGRESS.md).
+match its own fixes is no longer an audit. Fixes are tracked in [`docs/PROGRESS.md`](../../../../PROGRESS.md).
 
 **Closed (2026-10-04):** A01 (effective policy, limits, roles, blocking mode), A02 (staged additions
 and local renames in worktree mode), A03 (the mid-run stability check was implemented and never

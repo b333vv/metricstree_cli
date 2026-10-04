@@ -1,0 +1,26 @@
+{
+  "revision": "70e475bf3cd1aaf86cbfaa61b26d5e1a984d36e3",
+  "expected": "complete is false for a report with one required gap and exit 2",
+  "suppliedReport": {
+    "status": "INCOMPLETE",
+    "analysis": {
+      "completeness": "incomplete",
+      "eligibleFiles": 1,
+      "analyzedFiles": 1,
+      "requiredGaps": 1
+    }
+  },
+  "observedTrial": {
+    "index": 0,
+    "warm": true,
+    "seconds": 0.0,
+    "exit_code": 2,
+    "changed_files": 1,
+    "analysed_files": 1,
+    "eligible_files": 1,
+    "heap_after_kb": null,
+    "complete": true,
+    "report_digest": "c10e260ee3ff3bdf41828a41415a1bac662bb1b42d7a009ba165f18a241cd1da"
+  },
+  "method": "deterministic report/process fixture; no real benchmark timing"
+}

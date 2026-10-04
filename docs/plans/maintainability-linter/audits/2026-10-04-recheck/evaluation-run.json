@@ -1,0 +1,100 @@
+{
+  "cases": [
+    {
+      "blocking": 0,
+      "case_id": "branchy-method-flags",
+      "exit_code": 0,
+      "findings": [
+        {
+          "disposition": "ACTIVE",
+          "ruleId": "MT-M001",
+          "signature": "route(int)"
+        }
+      ],
+      "pmd_exit_code": null,
+      "pmd_findings": [],
+      "pmd_status": "not-run",
+      "pmd_version": "",
+      "problems": [],
+      "split": "tuning",
+      "status": "ok",
+      "tool_version": "2026.0.0"
+    },
+    {
+      "blocking": 0,
+      "case_id": "clean-method-stays-quiet",
+      "exit_code": 0,
+      "findings": [],
+      "pmd_exit_code": null,
+      "pmd_findings": [],
+      "pmd_status": "not-run",
+      "pmd_version": "",
+      "problems": [],
+      "split": "tuning",
+      "status": "ok",
+      "tool_version": "2026.0.0"
+    },
+    {
+      "blocking": 0,
+      "case_id": "deep-nesting-flags",
+      "exit_code": 0,
+      "findings": [
+        {
+          "disposition": "ACTIVE",
+          "ruleId": "MT-M002",
+          "signature": "route(int)"
+        }
+      ],
+      "pmd_exit_code": null,
+      "pmd_findings": [],
+      "pmd_status": "not-run",
+      "pmd_version": "",
+      "problems": [],
+      "split": "tuning",
+      "status": "ok",
+      "tool_version": "2026.0.0"
+    },
+    {
+      "blocking": 0,
+      "case_id": "generated-dispatch-table",
+      "exit_code": 0,
+      "findings": [
+        {
+          "disposition": "ACTIVE",
+          "ruleId": "MT-M001",
+          "signature": "run(int)"
+        }
+      ],
+      "pmd_exit_code": null,
+      "pmd_findings": [],
+      "pmd_status": "not-run",
+      "pmd_version": "",
+      "problems": [],
+      "split": "tuning",
+      "status": "ok",
+      "tool_version": "2026.0.0"
+    },
+    {
+      "blocking": 0,
+      "case_id": "small-branchy-method-stays-quiet",
+      "exit_code": 0,
+      "findings": [],
+      "pmd_exit_code": null,
+      "pmd_findings": [],
+      "pmd_status": "not-run",
+      "pmd_version": "",
+      "problems": [],
+      "split": "tuning",
+      "status": "ok",
+      "tool_version": "2026.0.0"
+    }
+  ],
+  "pmd": {
+    "note": "No PMD was supplied, so no comparison is reported. An absent comparator is recorded as absent; it is never an empty list of findings.",
+    "path": null,
+    "status": "unavailable"
+  },
+  "schemaVersion": "v1",
+  "toolVersion": "2026.0.0",
+  "auditRevision": "70e475bf3cd1aaf86cbfaa61b26d5e1a984d36e3"
+}

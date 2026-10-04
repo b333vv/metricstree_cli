@@ -1,5 +1,40 @@
 # what has been done
 
+## Session: independent recheck of audit remediation (2026-10-04)
+
+Reviewed nine remediation commits after `c6e915d`, through runtime revision
+`70e475bf3cd1aaf86cbfaa61b26d5e1a984d36e3`. The
+[follow-up audit](plans/maintainability-linter/audits/2026-10-04-recheck/README.md) supersedes the
+closure claims in the remediation entry below: **five original groups closed within reviewed scope,
+15 partially addressed, one open**. This is group-level progress, not acceptance of all 32 ML tasks.
+
+Verified repairs: effective limits/roles/WARN policy, worktree staged additions and exact moves,
+working-copy stability checks, detect config/formats/diagnostics, SARIF advisory results, before/delta
+evidence and gate contributions, ordinary cumulative baseline blocking, class suppression loading
+and unused statuses, legacy method format parity, sidecar verdict/counts and standalone output,
+real benchmark comparisons and valid evaluation fixtures.
+
+New or exposed integration failures are retained with replay evidence: detect ERROR/ENFORCE passes
+CURRENT matches; missing required method CC is optional and yields PASSED; baseline regression
+reactivates a valid suppression; a move loses stored baseline identity; staged mode includes unstaged
+subjects and misses index mutation; real reports' analysis property violates the bundled schema.
+Failed base source can still be classified as NEW_ENTITY and block; optional local semantic checks
+still create required gaps; empty-diff baseline export/validation, entity ranges, TCC worsening,
+deepest MND witness, compact-debt filtering, scope/semantics digest and delivery/harness contracts
+remain incomplete. Production code and suite assertions were not changed during this audit.
+
+Validation: `./gradlew check --rerun-tasks` passed all 26 tasks; 463 CLI unit + 22 integration +
+315 library tests discovered, 799 executed with zero failures/errors and one existing benchmark skip.
+All 54 Python tests passed. Retained 35 original CLI observations, additional packaged cases,
+deterministic Java/benchmark probes, evaluation run/split/PMD-shape probes and two benchmark records.
+Local warm median/p95 **2.4331/2.4538 s**, project **2.7540/3.1972 s**, five measured trials after one
+warmup per mode, 12 changed eligible parsed paths. The local 2-second target remains unmet; no peak
+memory or isolated comparative speedup is established. Hosted delivery and real PMD were not run.
+
+Next: repair the follow-up's R01–R05 first, then complete whole original finding groups and their
+integration checks before using ML-031/032 evidence for ML-033/034. Historical entries below record
+implementation claims; use the follow-up for current acceptance readiness.
+
 ## Session: fixing the ML-001–ML-032 audit findings (2026-10-04)
 
 Working through the [audit matrix](plans/maintainability-linter/audits/2026-10-04/README.md)
@@ -3020,7 +3055,7 @@ All three proposals were accepted and implemented; backward compatibility was no
 - Active work: accepted maintainability linter strategy, planned in
   `docs/plans/maintainability-linter/README.md`. Implementation exists for ML-001–ML-032;
   acceptance gaps are recorded in the
-  [2026-10-04 audit](plans/maintainability-linter/audits/2026-10-04/README.md).
+  [2026-10-04 follow-up audit](plans/maintainability-linter/audits/2026-10-04-recheck/README.md).
   Close its enforcement/completeness/baseline and evidence-harness gaps before using these
   results for ML-033/034. Implement one repair task per commit. The prior roadmap below is
   completed history.

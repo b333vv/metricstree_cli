@@ -1,0 +1,134 @@
+{
+  "cli_path": "/Users/vadim/code/metricstree_cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli",
+  "cold_summary": {
+    "maxSeconds": 2.738,
+    "medianSeconds": 2.738,
+    "method": "median and nearest-rank p95 over 1 cold samples; every sample is retained",
+    "minSeconds": 2.738,
+    "p95Seconds": 2.738,
+    "samples": 1
+  },
+  "comparison_mode": "committed",
+  "corpus": {
+    "classesPerPackage": 8,
+    "digest": "da0aae25c8ce184bfae42bc379d85544ddfb4f849aa5242abe39a65f1281d5e8",
+    "fileCount": 96,
+    "kind": "synthetic",
+    "packages": 12,
+    "revision": "761a66df94e0db63ad663edcdf8333e163f91663",
+    "root": "/private/tmp/metricstree-recheck-bench-project/corpus",
+    "seed": 20260930
+  },
+  "environment": {
+    "cliPath": "/Users/vadim/code/metricstree_cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli",
+    "cpuCount": 8,
+    "javaVersion": "openjdk version \"21.0.3\" 2024-04-16",
+    "machine": "arm64",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "processor": "arm",
+    "python": "3.12.4"
+  },
+  "method": {
+    "analysisScope": "project",
+    "changedFileCount": 12,
+    "comparisonBase": "761a66df94e0db63ad663edcdf8333e163f91663",
+    "measuredTrials": 5,
+    "memoryMethod": "the tool's own 'Heap after GC' reading, taken at its phase boundary",
+    "mode": "committed",
+    "percentile": "nearest-rank",
+    "warmupTrials": 1,
+    "whatWasMeasured": {
+      "analysedFiles": 12,
+      "changedFiles": 12,
+      "eligibleFiles": 12,
+      "note": "Recorded so a timing cannot be read as 'the analysis was fast' when it establishes only that a fast process exited. Zero analysed files means the comparison was empty and the timing measures nothing."
+    }
+  },
+  "mode": "project",
+  "problems": [],
+  "samples": [
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 0,
+      "report_digest": "8d9e755885565dcd3b4b2f09c0b7a59997e07f481becea4817074c6b1dd49584",
+      "seconds": 2.738,
+      "warm": false
+    },
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 0,
+      "report_digest": "8d9e755885565dcd3b4b2f09c0b7a59997e07f481becea4817074c6b1dd49584",
+      "seconds": 2.6549,
+      "warm": true
+    },
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 1,
+      "report_digest": "8d9e755885565dcd3b4b2f09c0b7a59997e07f481becea4817074c6b1dd49584",
+      "seconds": 2.3305,
+      "warm": true
+    },
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 2,
+      "report_digest": "8d9e755885565dcd3b4b2f09c0b7a59997e07f481becea4817074c6b1dd49584",
+      "seconds": 3.1972,
+      "warm": true
+    },
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 3,
+      "report_digest": "8d9e755885565dcd3b4b2f09c0b7a59997e07f481becea4817074c6b1dd49584",
+      "seconds": 2.754,
+      "warm": true
+    },
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 4,
+      "report_digest": "8d9e755885565dcd3b4b2f09c0b7a59997e07f481becea4817074c6b1dd49584",
+      "seconds": 2.7591,
+      "warm": true
+    }
+  ],
+  "schema_version": "v1",
+  "tool_version": "2026.0.0",
+  "warm_summary": {
+    "maxSeconds": 3.1972,
+    "medianSeconds": 2.754,
+    "method": "median and nearest-rank p95 over 5 warm samples; every sample is retained",
+    "minSeconds": 2.3305,
+    "p95Seconds": 3.1972,
+    "samples": 5
+  },
+  "auditRevision": "70e475bf3cd1aaf86cbfaa61b26d5e1a984d36e3"
+}

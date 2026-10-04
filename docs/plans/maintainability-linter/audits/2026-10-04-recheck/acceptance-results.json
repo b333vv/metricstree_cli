@@ -1,0 +1,2459 @@
+{
+  "revision": "70e475bf3cd1aaf86cbfaa61b26d5e1a984d36e3",
+  "observations": [
+    {
+      "id": "explicit-profile-conflict",
+      "expected": "exit 2, explicit legacy profile conflicts with maintainability",
+      "exit": 2,
+      "stderr": "Error: --policy maintainability cannot be combined with -p / --profile. Those settings configure the legacy policy, and honouring them while the new rules decide would make the gate weaker than this configuration says. Remove them, or keep the legacy policy.\n",
+      "reportPresent": false,
+      "reportKind": "",
+      "status": null,
+      "summary": null,
+      "comparison": null,
+      "preview": "",
+      "findings": null,
+      "issues": null
+    },
+    {
+      "id": "invalid-baseline-empty-diff",
+      "expected": "exit 2, baseline validated before empty-diff fast path",
+      "exit": 0,
+      "stderr": "PASSED: no changed Java files\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": null,
+      "comparison": {
+        "mode": "worktree",
+        "requestedBase": "HEAD",
+        "baseSha": "fa5d9408a96959b2d3a3e78beaccfb5aa68eabd9",
+        "headSha": "fa5d9408a96959b2d3a3e78beaccfb5aa68eabd9",
+        "mergeBaseSha": "fa5d9408a96959b2d3a3e78beaccfb5aa68eabd9",
+        "subjectFiles": [],
+        "unsupported": []
+      },
+      "preview": "{\n  \"status\" : \"PASSED\",\n  \"base\" : \"HEAD\",\n  \"changedFiles\" : 0,\n  \"violations\" : [ ],\n  \"warnings\" : [ ],\n  \"byFile\" : [ ],\n  \"comparison\" : {\n    \"mode\" : \"worktree\",\n    \"requestedBase\" : \"HEAD\",\n    \"baseSha\" : \"fa5d9408a96959b2d3a3e78beaccfb5aa68eabd9\",\n    \"headSha\" : \"fa5d9408a96959b2d3a3e78beaccfb5aa68eabd9\",\n    \"mergeBaseSha\" : \"fa5d9408a96959b2d3a3e78beaccfb5aa68eabd9\",\n    \"subjectFiles\" : [ ],\n    \"unsupported\" : [ ]\n  },\n  \"analysis\" : {\n    \"issues\" : [ ],\n    \"eligibleFiles\" : 0,\n    \"excludedFiles\" : [ ],\n    \"parsedFiles\" : [ ],\n    \"execution\" : \"PARALLEL\"\n  }\n}",
+      "findings": null,
+      "issues": null
+    },
+    {
+      "id": "legacy-method-json",
+      "expected": "matching run(int) and ComplexMethod rendered",
+      "exit": 0,
+      "hasMethod": true,
+      "hasRule": true,
+      "stderr": ""
+    },
+    {
+      "id": "legacy-method-agent-md",
+      "expected": "matching run(int) and ComplexMethod rendered",
+      "exit": 0,
+      "hasMethod": true,
+      "hasRule": true,
+      "stderr": ""
+    },
+    {
+      "id": "legacy-method-html",
+      "expected": "matching run(int) and ComplexMethod rendered",
+      "exit": 0,
+      "hasMethod": true,
+      "hasRule": true,
+      "stderr": ""
+    },
+    {
+      "id": "legacy-method-sarif",
+      "expected": "matching run(int) and ComplexMethod rendered",
+      "exit": 0,
+      "hasMethod": true,
+      "hasRule": true,
+      "stderr": ""
+    },
+    {
+      "id": "warn-under-enforce",
+      "expected": "exit 0, warn never blocks",
+      "exit": 0,
+      "stderr": "PASSED: 1 changed file, no violations (1 warning)\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 1,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 1,
+        "entities": 1,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "126e8590bb65c1a788f24b196c4df4a6342d45d5",
+        "head": "126e8590bb65c1a788f24b196c4df4a6342d45d5"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"e79c120b09ce56026d2a2689b4ce15de6abfe9e30ba1cb6d02e8408bf27300d0\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ENFORCE\",\n  \"summary\" : {\n    \"activeFindings\" : 1,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 1,\n    \"entities\" : 1,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"126e8590bb65c1a788f24b196c4df4a6342d45d5\",\n    \"head\" : \"126e8590bb65c1a788f24b196c4df4a6342d45d5\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 1,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ {\n    \"ruleId\" : \"MT-M001\",\n    \"ruleVersion\" : 1,\n    \"fingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"previousFingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"ruleTitle\" : \"High method complexity\",\n    \"message\" : \"This code now matches MT-M001: High method complexity\",\n    \"severity\" : \"WARNING\",\n    \"maturity\" : \"CANDIDATE\",\n    \"evaluationStatus\" : \"COMPLETE_MATCH\",\n    \"lifecycle\" : \"INTRODUCED\",\n    \"disposition\" : \"ACTIVE\",\n    \"dispositionReason\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"role\" : \"PRODUCTION\",\n    \"entityKey\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"qualifiedName\" : \"Demo\",\n      \"signature\" : \"run(int)\"\n    },\n    \"location\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"baseLocation\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"evidence\" : [ {\n      \"metric\" : \"CC\",\n      \"before\" : 1.0,\n      \"after\" : 18.0,\n      \"delta\" : 17.0,\n      \"min\" : 16.0,\n      \"max\" : null,\n      \"unit\" : \"complexity\",\n      \"completenessReasons\" : [ ],\n      \"contributions\" : [ {\n        \"kind\" : \"entry\",\n        \"amount\" : 1,\n        \"line\" : 4,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 5,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 6,\n    ",
+      "findings": [
+        {
+          "ruleId": "MT-M001",
+          "ruleVersion": 1,
+          "fingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "previousFingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "ruleTitle": "High method complexity",
+          "message": "This code now matches MT-M001: High method complexity",
+          "severity": "WARNING",
+          "maturity": "CANDIDATE",
+          "evaluationStatus": "COMPLETE_MATCH",
+          "lifecycle": "INTRODUCED",
+          "disposition": "ACTIVE",
+          "dispositionReason": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "role": "PRODUCTION",
+          "entityKey": {
+            "path": "src/main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": "run(int)"
+          },
+          "location": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "baseLocation": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "evidence": [
+            {
+              "metric": "CC",
+              "before": 1.0,
+              "after": 18.0,
+              "delta": 17.0,
+              "min": 16.0,
+              "max": null,
+              "unit": "complexity",
+              "completenessReasons": [],
+              "contributions": [
+                {
+                  "kind": "entry",
+                  "amount": 1,
+                  "line": 4,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 5,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 6,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 7,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 8,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 9,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 10,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 11,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 12,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 13,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 14,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 15,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 16,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 17,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 18,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 19,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 20,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 21,
+                  "detail": null
+                }
+              ]
+            }
+          ],
+          "relatedLocations": [],
+          "remediationHint": "A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.",
+          "documentationPath": "docs/rules/mt-m001-high-method-complexity.md",
+          "blocking": false
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "limits-override",
+      "expected": "no match, CC=18 < 100",
+      "exit": 0,
+      "stderr": "PASSED: 1 changed file, no violations (1 warning)\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 0,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 0,
+        "entities": 0,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "126e8590bb65c1a788f24b196c4df4a6342d45d5",
+        "head": "126e8590bb65c1a788f24b196c4df4a6342d45d5"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"30f59dd965445915df5e8ec895860e96ca5036137635e1a4b915e21f0d656fa4\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ENFORCE\",\n  \"summary\" : {\n    \"activeFindings\" : 0,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 0,\n    \"entities\" : 0,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"126e8590bb65c1a788f24b196c4df4a6342d45d5\",\n    \"head\" : \"126e8590bb65c1a788f24b196c4df4a6342d45d5\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 0,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ ],\n  \"issues\" : [ ],\n  \"suppressions\" : [ ]\n}",
+      "findings": [],
+      "issues": []
+    },
+    {
+      "id": "dto-role",
+      "expected": "no match, dto not applicable",
+      "exit": 0,
+      "stderr": "PASSED: 1 changed file, no violations (1 warning)\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 0,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 0,
+        "entities": 0,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "126e8590bb65c1a788f24b196c4df4a6342d45d5",
+        "head": "126e8590bb65c1a788f24b196c4df4a6342d45d5"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"2668ff00df49a3bddf9c1c4a31f10abf2899b33195609197bdf1025b84edeb08\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ENFORCE\",\n  \"summary\" : {\n    \"activeFindings\" : 0,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 0,\n    \"entities\" : 0,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"126e8590bb65c1a788f24b196c4df4a6342d45d5\",\n    \"head\" : \"126e8590bb65c1a788f24b196c4df4a6342d45d5\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 0,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ ],\n  \"issues\" : [ ],\n  \"suppressions\" : [ ]\n}",
+      "findings": [],
+      "issues": []
+    },
+    {
+      "id": "per-rule-role",
+      "expected": "no match on production role",
+      "exit": 0,
+      "stderr": "PASSED: 1 changed file, no violations (1 warning)\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 0,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 0,
+        "entities": 0,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "126e8590bb65c1a788f24b196c4df4a6342d45d5",
+        "head": "126e8590bb65c1a788f24b196c4df4a6342d45d5"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"8a8d4f73168f0f560965d3f323852f4a3fe06d8ecee71d6f46f252e9dd51efa8\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ENFORCE\",\n  \"summary\" : {\n    \"activeFindings\" : 0,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 0,\n    \"entities\" : 0,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"126e8590bb65c1a788f24b196c4df4a6342d45d5\",\n    \"head\" : \"126e8590bb65c1a788f24b196c4df4a6342d45d5\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 0,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ ],\n  \"issues\" : [ ],\n  \"suppressions\" : [ ]\n}",
+      "findings": [],
+      "issues": []
+    },
+    {
+      "id": "range-trace-and-before",
+      "expected": "method starts at line 4; CC before=1, after=18, delta=17; contributions present",
+      "exit": 1,
+      "stderr": "FAILED: 1 maintainability finding blocked\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "FAILED",
+      "summary": {
+        "activeFindings": 1,
+        "blocking": 1,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 1,
+        "entities": 1,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "126e8590bb65c1a788f24b196c4df4a6342d45d5",
+        "head": "126e8590bb65c1a788f24b196c4df4a6342d45d5"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"FAILED\",\n  \"policyDigest\" : \"f03870a42c2a26b316c1437d4aee28a3ca200e1783a55fb6575ed373949bae30\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ENFORCE\",\n  \"summary\" : {\n    \"activeFindings\" : 1,\n    \"blocking\" : 1,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 1,\n    \"entities\" : 1,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"126e8590bb65c1a788f24b196c4df4a6342d45d5\",\n    \"head\" : \"126e8590bb65c1a788f24b196c4df4a6342d45d5\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 1,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ {\n    \"ruleId\" : \"MT-M001\",\n    \"ruleVersion\" : 1,\n    \"fingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"previousFingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"ruleTitle\" : \"High method complexity\",\n    \"message\" : \"This code now matches MT-M001: High method complexity\",\n    \"severity\" : \"WARNING\",\n    \"maturity\" : \"CANDIDATE\",\n    \"evaluationStatus\" : \"COMPLETE_MATCH\",\n    \"lifecycle\" : \"INTRODUCED\",\n    \"disposition\" : \"ACTIVE\",\n    \"dispositionReason\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"role\" : \"PRODUCTION\",\n    \"entityKey\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"qualifiedName\" : \"Demo\",\n      \"signature\" : \"run(int)\"\n    },\n    \"location\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"baseLocation\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"evidence\" : [ {\n      \"metric\" : \"CC\",\n      \"before\" : 1.0,\n      \"after\" : 18.0,\n      \"delta\" : 17.0,\n      \"min\" : 16.0,\n      \"max\" : null,\n      \"unit\" : \"complexity\",\n      \"completenessReasons\" : [ ],\n      \"contributions\" : [ {\n        \"kind\" : \"entry\",\n        \"amount\" : 1,\n        \"line\" : 4,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 5,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 6,\n    ",
+      "findings": [
+        {
+          "ruleId": "MT-M001",
+          "ruleVersion": 1,
+          "fingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "previousFingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "ruleTitle": "High method complexity",
+          "message": "This code now matches MT-M001: High method complexity",
+          "severity": "WARNING",
+          "maturity": "CANDIDATE",
+          "evaluationStatus": "COMPLETE_MATCH",
+          "lifecycle": "INTRODUCED",
+          "disposition": "ACTIVE",
+          "dispositionReason": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "role": "PRODUCTION",
+          "entityKey": {
+            "path": "src/main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": "run(int)"
+          },
+          "location": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "baseLocation": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "evidence": [
+            {
+              "metric": "CC",
+              "before": 1.0,
+              "after": 18.0,
+              "delta": 17.0,
+              "min": 16.0,
+              "max": null,
+              "unit": "complexity",
+              "completenessReasons": [],
+              "contributions": [
+                {
+                  "kind": "entry",
+                  "amount": 1,
+                  "line": 4,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 5,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 6,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 7,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 8,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 9,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 10,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 11,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 12,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 13,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 14,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 15,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 16,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 17,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 18,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 19,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 20,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 21,
+                  "detail": null
+                }
+              ]
+            }
+          ],
+          "relatedLocations": [],
+          "remediationHint": "A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.",
+          "documentationPath": "docs/rules/mt-m001-high-method-complexity.md",
+          "blocking": true
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "gate-sarif",
+      "expected": "SARIF report written",
+      "exit": 0,
+      "stderr": "PASSED: 1 changed file, no violations (1 warning)\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": null,
+      "summary": null,
+      "comparison": null,
+      "preview": "{\"$schema\":\"https://json.schemastore.org/sarif-2.1.0.json\",\"version\":\"2.1.0\",\"runs\":[{\"tool\":{\"driver\":{\"name\":\"MetricsTree\",\"version\":\"2026.0.0\",\"rules\":[{\"id\":\"MT-M001\",\"name\":\"High method complexity\",\"shortDescription\":{\"text\":\"High method complexity\"},\"fullDescription\":{\"text\":\"A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.\"},\"defaultConfiguration\":{\"level\":\"warning\"},\"properties\":{\"level\":\"method\",\"maturity\":\"candidate\"}}]}},\"invocations\":[{\"executionSuccessful\":true,\"toolExecutionNotifications\":[]}],\"results\":[{\"ruleId\":\"MT-M001\",\"ruleIndex\":0,\"level\":\"warning\",\"message\":{\"text\":\"This code now matches MT-M001: High method complexity\"},\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"src/main/java/Demo.java\"},\"region\":{\"startLine\":1,\"endLine\":1}}}],\"partialFingerprints\":{\"metricstreeFingerprint/v1\":\"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\"},\"relatedLocations\":[],\"properties\":{\"disposition\":\"active\",\"evidence\":\"CC=18.0\",\"lifecycle\":\"introduced\",\"blocking\":\"false\"}}]}]}",
+      "findings": null,
+      "issues": null
+    },
+    {
+      "id": "advisory-agent-md",
+      "expected": "new advisory finding visible in compact report",
+      "exit": 0,
+      "stderr": "PASSED: 1 changed file, no violations (1 warning)\n",
+      "reportPresent": true,
+      "reportKind": "# Maintainability findings\n\n- **Findings:** 1 (0 blocking)\n-",
+      "status": null,
+      "summary": null,
+      "comparison": null,
+      "preview": "# Maintainability findings\n\n- **Findings:** 1 (0 blocking)\n- **Existing:** 0\n- **Suppressed:** 0\n- **Baseline accepted:** 0\n- **Resolved:** 0\n\n## Findings by entity\n\n### Demo#run(int) \u2014 `src/main/java/Demo.java:1`\n\n- **MT-M001 High method complexity** \u2014 introduced, active\n  - This code now matches MT-M001: High method complexity\n  - CC: 1 \u2192 18 (min 16)\n  - what to look at: A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.\n  - more: [docs/rules/mt-m001-high-method-complexity.md](docs/rules/mt-m001-high-method-complexity.md)\n",
+      "findings": null,
+      "issues": null
+    },
+    {
+      "id": "detect-html",
+      "expected": "HTML, lifecycle CURRENT",
+      "exit": 0,
+      "stderr": "PASSED: 1 finding reported, none blocking\n",
+      "reportPresent": true,
+      "reportKind": "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">",
+      "status": null,
+      "summary": null,
+      "comparison": null,
+      "preview": "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Maintainability findings</title>\n<style>:root{--bg:#f6f8fa;--card:#fff;--fg:#1f2328;--muted:#656d76;--accent:#0969da;--border:#d1d9e0;--high:#d1242f;--med:#bf8700;--low:#1a7f37}\n*{box-sizing:border-box}\nbody{margin:0;font:14px/1.5 -apple-system,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--fg)}\nheader{background:#0d1117;color:#fff;padding:24px 32px}\nheader h1{margin:0 0 4px;font-size:20px}\nheader .sub{color:#9da7b3;font-size:13px}\n.container{max-width:1200px;margin:24px auto;padding:0 24px}\n.cards{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:24px}\n.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px 20px;flex:1;min-width:150px}\n.card .num{font-size:28px;font-weight:600}\n.card .lbl{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}\ndetails.section{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;overflow:hidden}\ndetails.section>summary{padding:14px 20px;font-size:15px;font-weight:600;cursor:pointer;display:flex;justify-content:space-between;align-items:center;background:#fbfcfd;list-style:none}\ndetails.section>summary::-webkit-details-marker{display:none}\ndetails.section>summary:hover{background:#f0f3f6}\n.count{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;background:var(--accent);color:#fff}\ntable{width:100%;border-collapse:collapse}\nth,td{text-align:left;padding:8px 20px;border-top:1px solid var(--border);vertical-align:top}\nth{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}\ntd.mono,td.path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}\ntd.path{color:var(--muted);word-break:break-all}\n#search{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;margin-bottom:20px;font-size:14px}\n.sev{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;color:#fff}\n.sev-high{background:var(--high)}.sev-medium{background:var(--med)}.sev-low{background:var(--low)}\n.pass{color:var(--low);font-weight:600}.fail{color:var(--high);font-weight:600}\n.problems{background:#fff8e6;border:1px solid var(--med);border-radius:8px;padding:12px 20px;margin-bottom:16px}\nh2.group{margin:24px 0 12px}\n</style></head><body>\n<header><h1>Maintainability finding",
+      "findings": null,
+      "issues": null
+    },
+    {
+      "id": "detect-sarif",
+      "expected": "SARIF report written",
+      "exit": 0,
+      "stderr": "PASSED: 1 finding reported, none blocking\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": null,
+      "summary": null,
+      "comparison": null,
+      "preview": "{\"$schema\":\"https://json.schemastore.org/sarif-2.1.0.json\",\"version\":\"2.1.0\",\"runs\":[{\"tool\":{\"driver\":{\"name\":\"MetricsTree\",\"version\":\"2026.0.0\",\"rules\":[{\"id\":\"MT-M001\",\"name\":\"High method complexity\",\"shortDescription\":{\"text\":\"High method complexity\"},\"fullDescription\":{\"text\":\"A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.\"},\"defaultConfiguration\":{\"level\":\"warning\"},\"properties\":{\"maturity\":\"candidate\",\"level\":\"method\"}}]}},\"invocations\":[{\"executionSuccessful\":true,\"toolExecutionNotifications\":[]}],\"results\":[{\"ruleId\":\"MT-M001\",\"ruleIndex\":0,\"level\":\"warning\",\"message\":{\"text\":\"Matches MT-M001 at the analysed revision: High method complexity\"},\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"main/java/Demo.java\"},\"region\":{\"startLine\":1,\"endLine\":1}}}],\"partialFingerprints\":{\"metricstreeFingerprint/v1\":\"cb22f68245d90b98eb7a7fe55c1fb31040a11b344aa8c3b332c1e8fe9fc139ea\"},\"relatedLocations\":[],\"properties\":{\"lifecycle\":\"current\",\"evidence\":\"CC=18.0\",\"disposition\":\"active\",\"blocking\":\"false\"}}]}]}",
+      "findings": null,
+      "issues": null
+    },
+    {
+      "id": "detect-stale-suppression",
+      "expected": "stale suppression status emitted",
+      "exit": 0,
+      "stderr": "PASSED: 1 finding reported, none blocking\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 1,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 1,
+        "entities": 1,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": null,
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"ffbbb5cac654c6f8a19c3b8289514338e394731565f20862122aad0f788ddb6d\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ADVISORY\",\n  \"summary\" : {\n    \"activeFindings\" : 1,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 1,\n    \"entities\" : 1,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 1,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ {\n    \"ruleId\" : \"MT-M001\",\n    \"ruleVersion\" : 1,\n    \"fingerprint\" : \"cb22f68245d90b98eb7a7fe55c1fb31040a11b344aa8c3b332c1e8fe9fc139ea\",\n    \"previousFingerprint\" : null,\n    \"ruleTitle\" : \"High method complexity\",\n    \"message\" : \"Matches MT-M001 at the analysed revision: High method complexity\",\n    \"severity\" : \"WARNING\",\n    \"maturity\" : \"CANDIDATE\",\n    \"evaluationStatus\" : \"COMPLETE_MATCH\",\n    \"lifecycle\" : \"CURRENT\",\n    \"disposition\" : \"ACTIVE\",\n    \"dispositionReason\" : null,\n    \"role\" : \"UNKNOWN\",\n    \"entityKey\" : {\n      \"path\" : \"main/java/Demo.java\",\n      \"qualifiedName\" : \"Demo\",\n      \"signature\" : \"run(int)\"\n    },\n    \"location\" : {\n      \"path\" : \"main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"baseLocation\" : null,\n    \"evidence\" : [ {\n      \"metric\" : \"CC\",\n      \"before\" : null,\n      \"after\" : 18.0,\n      \"delta\" : null,\n      \"min\" : 16.0,\n      \"max\" : null,\n      \"unit\" : \"complexity\",\n      \"completenessReasons\" : [ ],\n      \"contributions\" : [ ]\n    } ],\n    \"relatedLocations\" : [ ],\n    \"remediationHint\" : \"A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.\",\n    \"documentationPath\" : \"docs/rules/mt-m001-high-method-complexity.md\",\n    \"blocking\" : false\n  } ],\n  \"issues\" : [ ],\n  \"suppressions\" : [ {\n    \"ruleId\" : \"MT-M001\",\n    \"entity\" : \"Never#run(int) (never.java)\",\n    \"reason\" : \"stale audit fixture\",\n    \"expiresOn\" : null,\n    \"state\" : \"unused\"\n  } ]\n}",
+      "findings": [
+        {
+          "ruleId": "MT-M001",
+          "ruleVersion": 1,
+          "fingerprint": "cb22f68245d90b98eb7a7fe55c1fb31040a11b344aa8c3b332c1e8fe9fc139ea",
+          "previousFingerprint": null,
+          "ruleTitle": "High method complexity",
+          "message": "Matches MT-M001 at the analysed revision: High method complexity",
+          "severity": "WARNING",
+          "maturity": "CANDIDATE",
+          "evaluationStatus": "COMPLETE_MATCH",
+          "lifecycle": "CURRENT",
+          "disposition": "ACTIVE",
+          "dispositionReason": null,
+          "role": "UNKNOWN",
+          "entityKey": {
+            "path": "main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": "run(int)"
+          },
+          "location": {
+            "path": "main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "baseLocation": null,
+          "evidence": [
+            {
+              "metric": "CC",
+              "before": null,
+              "after": 18.0,
+              "delta": null,
+              "min": 16.0,
+              "max": null,
+              "unit": "complexity",
+              "completenessReasons": [],
+              "contributions": []
+            }
+          ],
+          "relatedLocations": [],
+          "remediationHint": "A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.",
+          "documentationPath": "docs/rules/mt-m001-high-method-complexity.md",
+          "blocking": false
+        }
+      ],
+      "issues": [],
+      "suppressions": [
+        {
+          "ruleId": "MT-M001",
+          "entity": "Never#run(int) (never.java)",
+          "reason": "stale audit fixture",
+          "expiresOn": null,
+          "state": "unused"
+        }
+      ]
+    },
+    {
+      "id": "class-suppression-config",
+      "expected": "class identity accepted without method signature",
+      "exit": 0,
+      "stderr": "PASSED: 0 findings reported, none blocking\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 0,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 0,
+        "entities": 0,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": null,
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"b08699cd5b89a4d9ecdfb859bba49e25036d667e9424659bf5a22bc3715a7888\",\n  \"enabledRules\" : [ \"MT-C002\" ],\n  \"enforcement\" : \"ADVISORY\",\n  \"summary\" : {\n    \"activeFindings\" : 0,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 0,\n    \"entities\" : 0,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 0,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ ],\n  \"issues\" : [ ],\n  \"suppressions\" : [ {\n    \"ruleId\" : \"MT-C002\",\n    \"entity\" : \"Demo (main/java/Demo.java)\",\n    \"reason\" : \"exact class exception\",\n    \"expiresOn\" : null,\n    \"state\" : \"unused\"\n  } ]\n}",
+      "findings": [],
+      "issues": []
+    },
+    {
+      "id": "detect-parse-error",
+      "expected": "exit 1, parse diagnostic",
+      "exit": 1,
+      "stderr": "FAILED: 1 file could not be parsed; 0 blocking findings\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "FAILED",
+      "summary": {
+        "activeFindings": 0,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 0,
+        "entities": 0,
+        "issues": 1,
+        "requiredIssues": 1
+      },
+      "comparison": null,
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"FAILED\",\n  \"policyDigest\" : \"f03870a42c2a26b316c1437d4aee28a3ca200e1783a55fb6575ed373949bae30\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ADVISORY\",\n  \"summary\" : {\n    \"activeFindings\" : 0,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 0,\n    \"entities\" : 0,\n    \"issues\" : 1,\n    \"requiredIssues\" : 1\n  },\n  \"analysis\" : {\n    \"completeness\" : \"incomplete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 0,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 0,\n    \"checksUnavailable\" : 1,\n    \"requiredGaps\" : 1,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ {\n      \"ruleId\" : null,\n      \"reasonCode\" : \"current-parse-error\",\n      \"message\" : \"main/java/Demo.java does not parse: Parser reported problems for /private/var/folders/tf/xym81wxn20q4g6pv_vzlh5440000gn/T/metricstree-acceptance-audit-smpu4ean/warn/src/main/java/Demo.java: [(line 1,col 25) Parse error. Found \\\"}\\\", expected one of  \\\")\\\" \\\"@\\\" \\\"abstract\\\" \\\"boolean\\\" \\\"byte\\\" \\\"char\\\" \\\"default\\\" \\\"double\\\" \\\"enum\\\" \\\"exports\\\" \\\"final\\\" \\\"float\\\" \\\"int\\\" \\\"long\\\" \\\"module\\\" \\\"native\\\" \\\"non-sealed\\\" \\\"open\\\" \\\"opens\\\" \\\"permits\\\" \\\"private\\\" \\\"protected\\\" \\\"provides\\\" \\\"public\\\" \\\"record\\\" \\\"requires\\\" \\\"sealed\\\" \\\"short\\\" \\\"static\\\" \\\"strictfp\\\" \\\"synchronized\\\" \\\"to\\\" \\\"transient\\\" \\\"transitive\\\" \\\"uses\\\" \\\"volatile\\\" \\\"with\\\" \\\"yield\\\" <IDENTIFIER>\\nProblem stacktrace : \\n  com.github.javaparser.GeneratedJavaParser.generateParseException(GeneratedJavaParser.java:14041)\\n  com.github.javaparser.GeneratedJavaParser.jj_consume_token(GeneratedJavaParser.java:13886)\\n  com.github.javaparser.GeneratedJavaParser.Parameters(GeneratedJavaParser.java:2362)\\n  com.github.javaparser.GeneratedJavaParser.MethodDeclaration(GeneratedJavaParser.java:2146)\\n  com.github.javaparser.GeneratedJavaParser.ClassOrInterfaceBodyDeclaration(GeneratedJavaParser.java:1785)\\n  com.github.javaparser.GeneratedJavaParser.ClassOrInterfaceBody(GeneratedJavaParser.java:1281)\\n  com.github.javaparser.GeneratedJavaParser.ClassOrInterfaceDeclaration(GeneratedJavaParser.java:538)\\n  com.github.javaparser.GeneratedJavaParser.CompilationUnit(GeneratedJavaParser.java:156)\\n  com.github.javaparser.JavaParser.parse(JavaParser.java:125)\\n  com.github.javaparser.JavaParser.parse(JavaParser.java:231)\\n  org.b333vv.metric.library.javaparser.AstMemoryManager.pars",
+      "findings": [],
+      "issues": [
+        {
+          "ruleId": null,
+          "reasonCode": "current-parse-error",
+          "message": "main/java/Demo.java does not parse: Parser reported problems for /private/var/folders/tf/xym81wxn20q4g6pv_vzlh5440000gn/T/metricstree-acceptance-audit-smpu4ean/warn/src/main/java/Demo.java: [(line 1,col 25) Parse error. Found \"}\", expected one of  \")\" \"@\" \"abstract\" \"boolean\" \"byte\" \"char\" \"default\" \"double\" \"enum\" \"exports\" \"final\" \"float\" \"int\" \"long\" \"module\" \"native\" \"non-sealed\" \"open\" \"opens\" \"permits\" \"private\" \"protected\" \"provides\" \"public\" \"record\" \"requires\" \"sealed\" \"short\" \"static\" \"strictfp\" \"synchronized\" \"to\" \"transient\" \"transitive\" \"uses\" \"volatile\" \"with\" \"yield\" <IDENTIFIER>\nProblem stacktrace : \n  com.github.javaparser.GeneratedJavaParser.generateParseException(GeneratedJavaParser.java:14041)\n  com.github.javaparser.GeneratedJavaParser.jj_consume_token(GeneratedJavaParser.java:13886)\n  com.github.javaparser.GeneratedJavaParser.Parameters(GeneratedJavaParser.java:2362)\n  com.github.javaparser.GeneratedJavaParser.MethodDeclaration(GeneratedJavaParser.java:2146)\n  com.github.javaparser.GeneratedJavaParser.ClassOrInterfaceBodyDeclaration(GeneratedJavaParser.java:1785)\n  com.github.javaparser.GeneratedJavaParser.ClassOrInterfaceBody(GeneratedJavaParser.java:1281)\n  com.github.javaparser.GeneratedJavaParser.ClassOrInterfaceDeclaration(GeneratedJavaParser.java:538)\n  com.github.javaparser.GeneratedJavaParser.CompilationUnit(GeneratedJavaParser.java:156)\n  com.github.javaparser.JavaParser.parse(JavaParser.java:125)\n  com.github.javaparser.JavaParser.parse(JavaParser.java:231)\n  org.b333vv.metric.library.javaparser.AstMemoryManager.parse(AstMemoryManager.java:226)\n  org.b333vv.metric.library.javaparser.AstMemoryManager.parseFile(AstMemoryManager.java:196)\n  org.b333vv.metric.library.javaparser.AstMemoryManager.lambda$parseInWindows$0(AstMemoryManager.java:162)\n  java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197)\n  java.base/java.util.AbstractList$RandomAccessSpliterator.forEachRemaining(AbstractList.java:722)\n  java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:509)\n  java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)\n  java.base/java.util.stream.Nodes$SizedCollectorTask.compute(Nodes.java:1887)\n  java.base/java.util.concurrent.CountedCompleter.exec(CountedCompleter.java:754)\n  java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:387)\n  java.base/java.util.concurrent.ForkJoinTask.invoke(ForkJoinTask.java:667)\n  java.base/java.util.stream.Nodes.collect(Nodes.java:325)\n  java.base/java.util.stream.ReferencePipeline.evaluateToNode(ReferencePipeline.java:111)\n  java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:570)\n  java.base/java.util.stream.AbstractPipeline.evaluateToArrayNode(AbstractPipeline.java:260)\n  java.base/java.util.stream.ReferencePipeline.toArray(ReferencePipeline.java:616)\n  java.base/java.util.stream.ReferencePipeline.toArray(ReferencePipeline.java:622)\n  java.base/java.util.stream.ReferencePipeline.toList(ReferencePipeline.java:627)\n  org.b333vv.metric.library.javaparser.AstMemoryManager.parseInWindows(AstMemoryManager.java:163)\n  org.b333vv.metric.library.javaparser.JavaParserJavaMetricsAnalyzer.lambda$analyzeClasses$6(JavaParserJavaMetricsAnalyzer.java:404)\n  org.b333vv.metric.library.javaparser.JavaParserJavaMetricsAnalyzer.lambda$runInDedicatedPool$15(JavaParserJavaMetricsAnalyzer.java:715)\n  java.base/java.util.concurrent.ForkJoinTask$AdaptedCallable.exec(ForkJoinTask.java:1456)\n  java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:387)\n  java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1312)\n  java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1843)\n  java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1808)\n  java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:188)]",
+          "required": true,
+          "entityKey": null,
+          "location": {
+            "path": "main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "detect-record",
+      "expected": "exit 2, unsupported input diagnostic",
+      "exit": 2,
+      "stderr": "INCOMPLETE: 1 required check could not be evaluated \u2014 see the report for what is missing\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "INCOMPLETE",
+      "summary": {
+        "activeFindings": 0,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 0,
+        "entities": 0,
+        "issues": 1,
+        "requiredIssues": 1
+      },
+      "comparison": null,
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"INCOMPLETE\",\n  \"policyDigest\" : \"f03870a42c2a26b316c1437d4aee28a3ca200e1783a55fb6575ed373949bae30\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ADVISORY\",\n  \"summary\" : {\n    \"activeFindings\" : 0,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 0,\n    \"entities\" : 0,\n    \"issues\" : 1,\n    \"requiredIssues\" : 1\n  },\n  \"analysis\" : {\n    \"completeness\" : \"incomplete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 0,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 0,\n    \"checksUnavailable\" : 1,\n    \"requiredGaps\" : 1,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ {\n      \"ruleId\" : null,\n      \"reasonCode\" : \"unsupported-declaration\",\n      \"message\" : \"main/java/Demo.java declares 1 record are not analysed as classes or methods, so it was not fully analyzed\",\n      \"required\" : true,\n      \"entityKey\" : {\n        \"path\" : \"main/java/Demo.java\",\n        \"qualifiedName\" : null,\n        \"signature\" : null\n      },\n      \"location\" : null\n    } ]\n  },\n  \"findings\" : [ ],\n  \"issues\" : [ {\n    \"ruleId\" : null,\n    \"reasonCode\" : \"unsupported-declaration\",\n    \"message\" : \"main/java/Demo.java declares 1 record are not analysed as classes or methods, so it was not fully analyzed\",\n    \"required\" : true,\n    \"entityKey\" : null,\n    \"location\" : {\n      \"path\" : \"main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    }\n  } ],\n  \"suppressions\" : [ ]\n}",
+      "findings": [],
+      "issues": [
+        {
+          "ruleId": null,
+          "reasonCode": "unsupported-declaration",
+          "message": "main/java/Demo.java declares 1 record are not analysed as classes or methods, so it was not fully analyzed",
+          "required": true,
+          "entityKey": null,
+          "location": {
+            "path": "main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "detect-policy-from-config",
+      "expected": "configured maintainability policy runs",
+      "exit": 0,
+      "stderr": "PASSED: 1 finding reported, none blocking\n"
+    },
+    {
+      "id": "unchanged-neighbor",
+      "expected": "no finding on unchanged Demo",
+      "exit": 0,
+      "stderr": "PASSED: 1 changed file, no violations\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 1,
+        "blocking": 0,
+        "existing": 1,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 1,
+        "entities": 1,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "38d0bcd00dd77dbf45c474d273d25f7bade30aee",
+        "head": "38d0bcd00dd77dbf45c474d273d25f7bade30aee"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"f03870a42c2a26b316c1437d4aee28a3ca200e1783a55fb6575ed373949bae30\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ENFORCE\",\n  \"summary\" : {\n    \"activeFindings\" : 1,\n    \"blocking\" : 0,\n    \"existing\" : 1,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 1,\n    \"entities\" : 1,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"38d0bcd00dd77dbf45c474d273d25f7bade30aee\",\n    \"head\" : \"38d0bcd00dd77dbf45c474d273d25f7bade30aee\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 1,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ {\n    \"ruleId\" : \"MT-M001\",\n    \"ruleVersion\" : 1,\n    \"fingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"previousFingerprint\" : null,\n    \"ruleTitle\" : \"High method complexity\",\n    \"message\" : \"Matches MT-M001 in code this change did not modify.\",\n    \"severity\" : \"WARNING\",\n    \"maturity\" : \"CANDIDATE\",\n    \"evaluationStatus\" : \"COMPLETE_MATCH\",\n    \"lifecycle\" : \"EXISTING\",\n    \"disposition\" : \"EXISTING\",\n    \"dispositionReason\" : \"outside the changed set\",\n    \"role\" : \"PRODUCTION\",\n    \"entityKey\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"qualifiedName\" : \"Demo\",\n      \"signature\" : \"run(int)\"\n    },\n    \"location\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"baseLocation\" : null,\n    \"evidence\" : [ {\n      \"metric\" : \"CC\",\n      \"before\" : null,\n      \"after\" : 18.0,\n      \"delta\" : null,\n      \"min\" : 16.0,\n      \"max\" : null,\n      \"unit\" : \"complexity\",\n      \"completenessReasons\" : [ ],\n      \"contributions\" : [ {\n        \"kind\" : \"entry\",\n        \"amount\" : 1,\n        \"line\" : 4,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 5,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 6,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 7,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 8,\n     ",
+      "findings": [
+        {
+          "ruleId": "MT-M001",
+          "ruleVersion": 1,
+          "fingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "previousFingerprint": null,
+          "ruleTitle": "High method complexity",
+          "message": "Matches MT-M001 in code this change did not modify.",
+          "severity": "WARNING",
+          "maturity": "CANDIDATE",
+          "evaluationStatus": "COMPLETE_MATCH",
+          "lifecycle": "EXISTING",
+          "disposition": "EXISTING",
+          "dispositionReason": "outside the changed set",
+          "role": "PRODUCTION",
+          "entityKey": {
+            "path": "src/main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": "run(int)"
+          },
+          "location": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "baseLocation": null,
+          "evidence": [
+            {
+              "metric": "CC",
+              "before": null,
+              "after": 18.0,
+              "delta": null,
+              "min": 16.0,
+              "max": null,
+              "unit": "complexity",
+              "completenessReasons": [],
+              "contributions": [
+                {
+                  "kind": "entry",
+                  "amount": 1,
+                  "line": 4,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 5,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 6,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 7,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 8,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 9,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 10,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 11,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 12,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 13,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 14,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 15,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 16,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 17,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 18,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 19,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 20,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 21,
+                  "detail": null
+                }
+              ]
+            }
+          ],
+          "relatedLocations": [],
+          "remediationHint": "A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.",
+          "documentationPath": "docs/rules/mt-m001-high-method-complexity.md",
+          "blocking": false
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "removed-method",
+      "expected": "resolved entity-removed finding for run(int)",
+      "exit": 0,
+      "stderr": "PASSED: 1 changed file, no violations\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 0,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 0,
+        "entities": 0,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "666f1666bda137d4dbb3825fd7c478b3474e027c",
+        "head": "666f1666bda137d4dbb3825fd7c478b3474e027c"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"e79c120b09ce56026d2a2689b4ce15de6abfe9e30ba1cb6d02e8408bf27300d0\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ADVISORY\",\n  \"summary\" : {\n    \"activeFindings\" : 0,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 0,\n    \"entities\" : 0,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"666f1666bda137d4dbb3825fd7c478b3474e027c\",\n    \"head\" : \"666f1666bda137d4dbb3825fd7c478b3474e027c\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 0,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ ],\n  \"issues\" : [ ],\n  \"suppressions\" : [ ]\n}",
+      "findings": [],
+      "issues": []
+    },
+    {
+      "id": "java-symlink",
+      "expected": "exit 2 and unsupported issue",
+      "exit": 2,
+      "stderr": "Error: the working tree changed while the analysis was running: Link.java appeared after the snapshot was captured. The verdict would describe content that is no longer there; re-run the check.\n",
+      "reportPresent": false,
+      "reportKind": "",
+      "status": null,
+      "summary": null,
+      "comparison": null,
+      "preview": "",
+      "findings": null,
+      "issues": null
+    },
+    {
+      "id": "staged-new-default-worktree",
+      "expected": "new staged file included in worktree",
+      "exit": 0,
+      "stderr": "PASSED: 1 changed file, no violations\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 1,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 1,
+        "entities": 1,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "65c0f3b90418b230fb7a38704e9d5909bdfbafff",
+        "head": "65c0f3b90418b230fb7a38704e9d5909bdfbafff"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"e79c120b09ce56026d2a2689b4ce15de6abfe9e30ba1cb6d02e8408bf27300d0\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ENFORCE\",\n  \"summary\" : {\n    \"activeFindings\" : 1,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 1,\n    \"entities\" : 1,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"65c0f3b90418b230fb7a38704e9d5909bdfbafff\",\n    \"head\" : \"65c0f3b90418b230fb7a38704e9d5909bdfbafff\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 1,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ {\n    \"ruleId\" : \"MT-M001\",\n    \"ruleVersion\" : 1,\n    \"fingerprint\" : \"c341167304ebf048fbf1392bb1936dc49fd40392a3d2ea67243165e163cc8fd7\",\n    \"previousFingerprint\" : null,\n    \"ruleTitle\" : \"High method complexity\",\n    \"message\" : \"New code matching MT-M001: High method complexity\",\n    \"severity\" : \"WARNING\",\n    \"maturity\" : \"CANDIDATE\",\n    \"evaluationStatus\" : \"COMPLETE_MATCH\",\n    \"lifecycle\" : \"NEW_ENTITY\",\n    \"disposition\" : \"ACTIVE\",\n    \"dispositionReason\" : null,\n    \"role\" : \"PRODUCTION\",\n    \"entityKey\" : {\n      \"path\" : \"src/main/java/New.java\",\n      \"qualifiedName\" : \"New\",\n      \"signature\" : \"run(int)\"\n    },\n    \"location\" : {\n      \"path\" : \"src/main/java/New.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"baseLocation\" : null,\n    \"evidence\" : [ {\n      \"metric\" : \"CC\",\n      \"before\" : null,\n      \"after\" : 18.0,\n      \"delta\" : null,\n      \"min\" : 16.0,\n      \"max\" : null,\n      \"unit\" : \"complexity\",\n      \"completenessReasons\" : [ ],\n      \"contributions\" : [ {\n        \"kind\" : \"entry\",\n        \"amount\" : 1,\n        \"line\" : 4,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 5,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 6,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 7,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 8,\n        \"detail\" : null\n      }",
+      "findings": [
+        {
+          "ruleId": "MT-M001",
+          "ruleVersion": 1,
+          "fingerprint": "c341167304ebf048fbf1392bb1936dc49fd40392a3d2ea67243165e163cc8fd7",
+          "previousFingerprint": null,
+          "ruleTitle": "High method complexity",
+          "message": "New code matching MT-M001: High method complexity",
+          "severity": "WARNING",
+          "maturity": "CANDIDATE",
+          "evaluationStatus": "COMPLETE_MATCH",
+          "lifecycle": "NEW_ENTITY",
+          "disposition": "ACTIVE",
+          "dispositionReason": null,
+          "role": "PRODUCTION",
+          "entityKey": {
+            "path": "src/main/java/New.java",
+            "qualifiedName": "New",
+            "signature": "run(int)"
+          },
+          "location": {
+            "path": "src/main/java/New.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "baseLocation": null,
+          "evidence": [
+            {
+              "metric": "CC",
+              "before": null,
+              "after": 18.0,
+              "delta": null,
+              "min": 16.0,
+              "max": null,
+              "unit": "complexity",
+              "completenessReasons": [],
+              "contributions": [
+                {
+                  "kind": "entry",
+                  "amount": 1,
+                  "line": 4,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 5,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 6,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 7,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 8,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 9,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 10,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 11,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 12,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 13,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 14,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 15,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 16,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 17,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 18,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 19,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 20,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 21,
+                  "detail": null
+                }
+              ]
+            }
+          ],
+          "relatedLocations": [],
+          "remediationHint": "A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.",
+          "documentationPath": "docs/rules/mt-m001-high-method-complexity.md",
+          "blocking": false
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "baseline-empty-diff-export",
+      "expected": "baseline written, containing CC=16 debt",
+      "exit": 0,
+      "stderr": "PASSED: no changed Java files\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": null,
+      "comparison": {
+        "mode": "worktree",
+        "requestedBase": "HEAD",
+        "baseSha": "8d6e9e55e88d06f987e87afd9d491e5f99785e58",
+        "headSha": "8d6e9e55e88d06f987e87afd9d491e5f99785e58",
+        "mergeBaseSha": "8d6e9e55e88d06f987e87afd9d491e5f99785e58",
+        "subjectFiles": [],
+        "unsupported": []
+      },
+      "preview": "{\n  \"status\" : \"PASSED\",\n  \"base\" : \"HEAD\",\n  \"changedFiles\" : 0,\n  \"violations\" : [ ],\n  \"warnings\" : [ ],\n  \"byFile\" : [ ],\n  \"comparison\" : {\n    \"mode\" : \"worktree\",\n    \"requestedBase\" : \"HEAD\",\n    \"baseSha\" : \"8d6e9e55e88d06f987e87afd9d491e5f99785e58\",\n    \"headSha\" : \"8d6e9e55e88d06f987e87afd9d491e5f99785e58\",\n    \"mergeBaseSha\" : \"8d6e9e55e88d06f987e87afd9d491e5f99785e58\",\n    \"subjectFiles\" : [ ],\n    \"unsupported\" : [ ]\n  },\n  \"analysis\" : {\n    \"issues\" : [ ],\n    \"eligibleFiles\" : 0,\n    \"excludedFiles\" : [ ],\n    \"parsedFiles\" : [ ],\n    \"execution\" : \"PARALLEL\"\n  }\n}",
+      "findings": null,
+      "issues": null,
+      "baselinePresent": false
+    },
+    {
+      "id": "baseline-initial-export",
+      "expected": "baseline accepted CC=16",
+      "exit": 0,
+      "stderr": "Wrote 1 accepted finding(s) to /private<fixture>/baseline.json\nPASSED: 1 changed file, no violations (1 warning)\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 1,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 1,
+        "entities": 1,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "1c59e4b0e7cfc4d6a9b80c6a2c13a3865f018f43",
+        "head": "1c59e4b0e7cfc4d6a9b80c6a2c13a3865f018f43"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"f03870a42c2a26b316c1437d4aee28a3ca200e1783a55fb6575ed373949bae30\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ADVISORY\",\n  \"summary\" : {\n    \"activeFindings\" : 1,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 1,\n    \"entities\" : 1,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"1c59e4b0e7cfc4d6a9b80c6a2c13a3865f018f43\",\n    \"head\" : \"1c59e4b0e7cfc4d6a9b80c6a2c13a3865f018f43\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 1,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ {\n    \"ruleId\" : \"MT-M001\",\n    \"ruleVersion\" : 1,\n    \"fingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"previousFingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"ruleTitle\" : \"High method complexity\",\n    \"message\" : \"This code now matches MT-M001: High method complexity\",\n    \"severity\" : \"WARNING\",\n    \"maturity\" : \"CANDIDATE\",\n    \"evaluationStatus\" : \"COMPLETE_MATCH\",\n    \"lifecycle\" : \"INTRODUCED\",\n    \"disposition\" : \"ACTIVE\",\n    \"dispositionReason\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"role\" : \"PRODUCTION\",\n    \"entityKey\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"qualifiedName\" : \"Demo\",\n      \"signature\" : \"run(int)\"\n    },\n    \"location\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"baseLocation\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"evidence\" : [ {\n      \"metric\" : \"CC\",\n      \"before\" : 1.0,\n      \"after\" : 16.0,\n      \"delta\" : 15.0,\n      \"min\" : 16.0,\n      \"max\" : null,\n      \"unit\" : \"complexity\",\n      \"completenessReasons\" : [ ],\n      \"contributions\" : [ {\n        \"kind\" : \"entry\",\n        \"amount\" : 1,\n        \"line\" : 4,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 5,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 6,\n   ",
+      "findings": [
+        {
+          "ruleId": "MT-M001",
+          "ruleVersion": 1,
+          "fingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "previousFingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "ruleTitle": "High method complexity",
+          "message": "This code now matches MT-M001: High method complexity",
+          "severity": "WARNING",
+          "maturity": "CANDIDATE",
+          "evaluationStatus": "COMPLETE_MATCH",
+          "lifecycle": "INTRODUCED",
+          "disposition": "ACTIVE",
+          "dispositionReason": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "role": "PRODUCTION",
+          "entityKey": {
+            "path": "src/main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": "run(int)"
+          },
+          "location": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "baseLocation": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "evidence": [
+            {
+              "metric": "CC",
+              "before": 1.0,
+              "after": 16.0,
+              "delta": 15.0,
+              "min": 16.0,
+              "max": null,
+              "unit": "complexity",
+              "completenessReasons": [],
+              "contributions": [
+                {
+                  "kind": "entry",
+                  "amount": 1,
+                  "line": 4,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 5,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 6,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 7,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 8,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 9,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 10,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 11,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 12,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 13,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 14,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 15,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 16,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 17,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 18,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 19,
+                  "detail": null
+                }
+              ]
+            }
+          ],
+          "relatedLocations": [],
+          "remediationHint": "A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.",
+          "documentationPath": "docs/rules/mt-m001-high-method-complexity.md",
+          "blocking": false
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "baseline-cumulative-growth",
+      "expected": "exit 1, CC=22 is +6 vs accepted 16",
+      "exit": 1,
+      "stderr": "FAILED: 1 maintainability finding blocked; no gate violation\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "FAILED",
+      "summary": {
+        "activeFindings": 1,
+        "blocking": 1,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 1,
+        "entities": 1,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "7d606b800010d5c9f4a8443832cdd076a09e199b",
+        "head": "7d606b800010d5c9f4a8443832cdd076a09e199b"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"FAILED\",\n  \"policyDigest\" : \"f03870a42c2a26b316c1437d4aee28a3ca200e1783a55fb6575ed373949bae30\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ENFORCE\",\n  \"summary\" : {\n    \"activeFindings\" : 1,\n    \"blocking\" : 1,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 1,\n    \"entities\" : 1,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"7d606b800010d5c9f4a8443832cdd076a09e199b\",\n    \"head\" : \"7d606b800010d5c9f4a8443832cdd076a09e199b\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 1,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ {\n    \"ruleId\" : \"MT-M001\",\n    \"ruleVersion\" : 1,\n    \"fingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"previousFingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"ruleTitle\" : \"High method complexity\",\n    \"message\" : \"Already matched MT-M001 before this change: High method complexity\",\n    \"severity\" : \"WARNING\",\n    \"maturity\" : \"CANDIDATE\",\n    \"evaluationStatus\" : \"COMPLETE_MATCH\",\n    \"lifecycle\" : \"WORSENED\",\n    \"disposition\" : \"ACTIVE\",\n    \"dispositionReason\" : \"worsened beyond the values accepted in the findings baseline (CC 16.0); the immediate diff from the base revision was below the rule's own worsening budget\",\n    \"role\" : \"PRODUCTION\",\n    \"entityKey\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"qualifiedName\" : \"Demo\",\n      \"signature\" : \"run(int)\"\n    },\n    \"location\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"baseLocation\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"evidence\" : [ {\n      \"metric\" : \"CC\",\n      \"before\" : 20.0,\n      \"after\" : 22.0,\n      \"delta\" : 2.0,\n      \"min\" : 16.0,\n      \"max\" : null,\n      \"unit\" : \"complexity\",\n      \"completenessReasons\" : [ ],\n      \"contributions\" : [ {\n        \"kind\" : \"entry\",\n        \"amount\" : 1,\n        \"line\" : 4,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 5,\n        \"",
+      "findings": [
+        {
+          "ruleId": "MT-M001",
+          "ruleVersion": 1,
+          "fingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "previousFingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "ruleTitle": "High method complexity",
+          "message": "Already matched MT-M001 before this change: High method complexity",
+          "severity": "WARNING",
+          "maturity": "CANDIDATE",
+          "evaluationStatus": "COMPLETE_MATCH",
+          "lifecycle": "WORSENED",
+          "disposition": "ACTIVE",
+          "dispositionReason": "worsened beyond the values accepted in the findings baseline (CC 16.0); the immediate diff from the base revision was below the rule's own worsening budget",
+          "role": "PRODUCTION",
+          "entityKey": {
+            "path": "src/main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": "run(int)"
+          },
+          "location": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "baseLocation": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "evidence": [
+            {
+              "metric": "CC",
+              "before": 20.0,
+              "after": 22.0,
+              "delta": 2.0,
+              "min": 16.0,
+              "max": null,
+              "unit": "complexity",
+              "completenessReasons": [],
+              "contributions": [
+                {
+                  "kind": "entry",
+                  "amount": 1,
+                  "line": 4,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 5,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 6,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 7,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 8,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 9,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 10,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 11,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 12,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 13,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 14,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 15,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 16,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 17,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 18,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 19,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 20,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 21,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 22,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 23,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 24,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 25,
+                  "detail": null
+                }
+              ]
+            }
+          ],
+          "relatedLocations": [],
+          "remediationHint": "A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.",
+          "documentationPath": "docs/rules/mt-m001-high-method-complexity.md",
+          "blocking": true
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "exact-move-baseline",
+      "expected": "baseline matched through previous identity, cumulative growth still blocks",
+      "exit": 0,
+      "stderr": "PASSED: 1 changed file, no violations\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 1,
+        "blocking": 0,
+        "existing": 1,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 1,
+        "entities": 1,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "301506c2c399e8c5ecb7c1fc173a758d5f9c105c",
+        "head": "301506c2c399e8c5ecb7c1fc173a758d5f9c105c"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"f03870a42c2a26b316c1437d4aee28a3ca200e1783a55fb6575ed373949bae30\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ENFORCE\",\n  \"summary\" : {\n    \"activeFindings\" : 1,\n    \"blocking\" : 0,\n    \"existing\" : 1,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 1,\n    \"entities\" : 1,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"301506c2c399e8c5ecb7c1fc173a758d5f9c105c\",\n    \"head\" : \"301506c2c399e8c5ecb7c1fc173a758d5f9c105c\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 1,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ {\n    \"ruleId\" : \"MT-M001\",\n    \"ruleVersion\" : 1,\n    \"fingerprint\" : \"2c4a47585e705e3467eec7374031c50dac46fff2496be1e57780e2e03b471187\",\n    \"previousFingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"ruleTitle\" : \"High method complexity\",\n    \"message\" : \"Already matched MT-M001 before this change: High method complexity\",\n    \"severity\" : \"WARNING\",\n    \"maturity\" : \"CANDIDATE\",\n    \"evaluationStatus\" : \"COMPLETE_MATCH\",\n    \"lifecycle\" : \"EXISTING\",\n    \"disposition\" : \"EXISTING\",\n    \"dispositionReason\" : \"not-worsened\",\n    \"role\" : \"PRODUCTION\",\n    \"entityKey\" : {\n      \"path\" : \"src/main/java/Moved.java\",\n      \"qualifiedName\" : \"Demo\",\n      \"signature\" : \"run(int)\"\n    },\n    \"location\" : {\n      \"path\" : \"src/main/java/Moved.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"baseLocation\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"evidence\" : [ {\n      \"metric\" : \"CC\",\n      \"before\" : 22.0,\n      \"after\" : 22.0,\n      \"delta\" : 0.0,\n      \"min\" : 16.0,\n      \"max\" : null,\n      \"unit\" : \"complexity\",\n      \"completenessReasons\" : [ ],\n      \"contributions\" : [ {\n        \"kind\" : \"entry\",\n        \"amount\" : 1,\n        \"line\" : 4,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 5,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 6,\n        \"detail\" : null\n      }, {\n      ",
+      "findings": [
+        {
+          "ruleId": "MT-M001",
+          "ruleVersion": 1,
+          "fingerprint": "2c4a47585e705e3467eec7374031c50dac46fff2496be1e57780e2e03b471187",
+          "previousFingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "ruleTitle": "High method complexity",
+          "message": "Already matched MT-M001 before this change: High method complexity",
+          "severity": "WARNING",
+          "maturity": "CANDIDATE",
+          "evaluationStatus": "COMPLETE_MATCH",
+          "lifecycle": "EXISTING",
+          "disposition": "EXISTING",
+          "dispositionReason": "not-worsened",
+          "role": "PRODUCTION",
+          "entityKey": {
+            "path": "src/main/java/Moved.java",
+            "qualifiedName": "Demo",
+            "signature": "run(int)"
+          },
+          "location": {
+            "path": "src/main/java/Moved.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "baseLocation": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "evidence": [
+            {
+              "metric": "CC",
+              "before": 22.0,
+              "after": 22.0,
+              "delta": 0.0,
+              "min": 16.0,
+              "max": null,
+              "unit": "complexity",
+              "completenessReasons": [],
+              "contributions": [
+                {
+                  "kind": "entry",
+                  "amount": 1,
+                  "line": 4,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 5,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 6,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 7,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 8,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 9,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 10,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 11,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 12,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 13,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 14,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 15,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 16,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 17,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 18,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 19,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 20,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 21,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 22,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 23,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 24,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 25,
+                  "detail": null
+                }
+              ]
+            }
+          ],
+          "relatedLocations": [],
+          "remediationHint": "A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.",
+          "documentationPath": "docs/rules/mt-m001-high-method-complexity.md",
+          "blocking": false
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "exact-move-baseline-staged",
+      "expected": "baseline move correspondence retained",
+      "exit": 0,
+      "stderr": "PASSED: 1 changed file, no violations\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "PASSED",
+      "summary": {
+        "activeFindings": 1,
+        "blocking": 0,
+        "existing": 1,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 1,
+        "entities": 1,
+        "issues": 0,
+        "requiredIssues": 0
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "301506c2c399e8c5ecb7c1fc173a758d5f9c105c",
+        "head": "301506c2c399e8c5ecb7c1fc173a758d5f9c105c"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"PASSED\",\n  \"policyDigest\" : \"f03870a42c2a26b316c1437d4aee28a3ca200e1783a55fb6575ed373949bae30\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ENFORCE\",\n  \"summary\" : {\n    \"activeFindings\" : 1,\n    \"blocking\" : 0,\n    \"existing\" : 1,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 1,\n    \"entities\" : 1,\n    \"issues\" : 0,\n    \"requiredIssues\" : 0\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"301506c2c399e8c5ecb7c1fc173a758d5f9c105c\",\n    \"head\" : \"301506c2c399e8c5ecb7c1fc173a758d5f9c105c\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"complete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 1,\n    \"checksUnavailable\" : 0,\n    \"requiredGaps\" : 0,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ ]\n  },\n  \"findings\" : [ {\n    \"ruleId\" : \"MT-M001\",\n    \"ruleVersion\" : 1,\n    \"fingerprint\" : \"2c4a47585e705e3467eec7374031c50dac46fff2496be1e57780e2e03b471187\",\n    \"previousFingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"ruleTitle\" : \"High method complexity\",\n    \"message\" : \"Already matched MT-M001 before this change: High method complexity\",\n    \"severity\" : \"WARNING\",\n    \"maturity\" : \"CANDIDATE\",\n    \"evaluationStatus\" : \"COMPLETE_MATCH\",\n    \"lifecycle\" : \"EXISTING\",\n    \"disposition\" : \"EXISTING\",\n    \"dispositionReason\" : \"not-worsened\",\n    \"role\" : \"PRODUCTION\",\n    \"entityKey\" : {\n      \"path\" : \"src/main/java/Moved.java\",\n      \"qualifiedName\" : \"Demo\",\n      \"signature\" : \"run(int)\"\n    },\n    \"location\" : {\n      \"path\" : \"src/main/java/Moved.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"baseLocation\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"evidence\" : [ {\n      \"metric\" : \"CC\",\n      \"before\" : 22.0,\n      \"after\" : 22.0,\n      \"delta\" : 0.0,\n      \"min\" : 16.0,\n      \"max\" : null,\n      \"unit\" : \"complexity\",\n      \"completenessReasons\" : [ ],\n      \"contributions\" : [ {\n        \"kind\" : \"entry\",\n        \"amount\" : 1,\n        \"line\" : 4,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 5,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\" : 1,\n        \"line\" : 6,\n        \"detail\" : null\n      }, {\n      ",
+      "findings": [
+        {
+          "ruleId": "MT-M001",
+          "ruleVersion": 1,
+          "fingerprint": "2c4a47585e705e3467eec7374031c50dac46fff2496be1e57780e2e03b471187",
+          "previousFingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "ruleTitle": "High method complexity",
+          "message": "Already matched MT-M001 before this change: High method complexity",
+          "severity": "WARNING",
+          "maturity": "CANDIDATE",
+          "evaluationStatus": "COMPLETE_MATCH",
+          "lifecycle": "EXISTING",
+          "disposition": "EXISTING",
+          "dispositionReason": "not-worsened",
+          "role": "PRODUCTION",
+          "entityKey": {
+            "path": "src/main/java/Moved.java",
+            "qualifiedName": "Demo",
+            "signature": "run(int)"
+          },
+          "location": {
+            "path": "src/main/java/Moved.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "baseLocation": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "evidence": [
+            {
+              "metric": "CC",
+              "before": 22.0,
+              "after": 22.0,
+              "delta": 0.0,
+              "min": 16.0,
+              "max": null,
+              "unit": "complexity",
+              "completenessReasons": [],
+              "contributions": [
+                {
+                  "kind": "entry",
+                  "amount": 1,
+                  "line": 4,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 5,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 6,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 7,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 8,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 9,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 10,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 11,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 12,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 13,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 14,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 15,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 16,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 17,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 18,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 19,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 20,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 21,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 22,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 23,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 24,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 25,
+                  "detail": null
+                }
+              ]
+            }
+          ],
+          "relatedLocations": [],
+          "remediationHint": "A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.",
+          "documentationPath": "docs/rules/mt-m001-high-method-complexity.md",
+          "blocking": false
+        }
+      ],
+      "issues": []
+    },
+    {
+      "id": "unavailable-base",
+      "expected": "comparison-unavailable, no invented new entity",
+      "exit": 2,
+      "stderr": "INCOMPLETE: 2 required checks could not be evaluated across 1 changed file \u2014 see the report for what is missing\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "INCOMPLETE",
+      "summary": {
+        "activeFindings": 1,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 1,
+        "entities": 1,
+        "issues": 1,
+        "requiredIssues": 1
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "911b12756f607a2d3e3e3475853637cb1270c360",
+        "head": "911b12756f607a2d3e3e3475853637cb1270c360"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"INCOMPLETE\",\n  \"policyDigest\" : \"e79c120b09ce56026d2a2689b4ce15de6abfe9e30ba1cb6d02e8408bf27300d0\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ADVISORY\",\n  \"summary\" : {\n    \"activeFindings\" : 1,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 1,\n    \"entities\" : 1,\n    \"issues\" : 1,\n    \"requiredIssues\" : 1\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"911b12756f607a2d3e3e3475853637cb1270c360\",\n    \"head\" : \"911b12756f607a2d3e3e3475853637cb1270c360\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"incomplete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 1,\n    \"checksUnavailable\" : 1,\n    \"requiredGaps\" : 1,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ {\n      \"ruleId\" : null,\n      \"reasonCode\" : \"base-parse-error\",\n      \"message\" : \"src/main/java/Demo.java did not parse at the base revision, so it has no comparable history\",\n      \"required\" : true,\n      \"entityKey\" : {\n        \"path\" : \"src/main/java/Demo.java\",\n        \"qualifiedName\" : null,\n        \"signature\" : null\n      },\n      \"location\" : null\n    } ]\n  },\n  \"findings\" : [ {\n    \"ruleId\" : \"MT-M001\",\n    \"ruleVersion\" : 1,\n    \"fingerprint\" : \"75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e\",\n    \"previousFingerprint\" : null,\n    \"ruleTitle\" : \"High method complexity\",\n    \"message\" : \"New code matching MT-M001: High method complexity\",\n    \"severity\" : \"WARNING\",\n    \"maturity\" : \"CANDIDATE\",\n    \"evaluationStatus\" : \"COMPLETE_MATCH\",\n    \"lifecycle\" : \"NEW_ENTITY\",\n    \"disposition\" : \"ACTIVE\",\n    \"dispositionReason\" : null,\n    \"role\" : \"PRODUCTION\",\n    \"entityKey\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"qualifiedName\" : \"Demo\",\n      \"signature\" : \"run(int)\"\n    },\n    \"location\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    },\n    \"baseLocation\" : null,\n    \"evidence\" : [ {\n      \"metric\" : \"CC\",\n      \"before\" : null,\n      \"after\" : 18.0,\n      \"delta\" : null,\n      \"min\" : 16.0,\n      \"max\" : null,\n      \"unit\" : \"complexity\",\n      \"completenessReasons\" : [ ],\n      \"contributions\" : [ {\n        \"kind\" : \"entry\",\n        \"amount\" : 1,\n        \"line\" : 4,\n        \"detail\" : null\n      }, {\n        \"kind\" : \"statement\",\n        \"amount\"",
+      "findings": [
+        {
+          "ruleId": "MT-M001",
+          "ruleVersion": 1,
+          "fingerprint": "75285de08474febbfb064ace6c7f937601c5b3ae05cd3a226ed43fb263e4d84e",
+          "previousFingerprint": null,
+          "ruleTitle": "High method complexity",
+          "message": "New code matching MT-M001: High method complexity",
+          "severity": "WARNING",
+          "maturity": "CANDIDATE",
+          "evaluationStatus": "COMPLETE_MATCH",
+          "lifecycle": "NEW_ENTITY",
+          "disposition": "ACTIVE",
+          "dispositionReason": null,
+          "role": "PRODUCTION",
+          "entityKey": {
+            "path": "src/main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": "run(int)"
+          },
+          "location": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "baseLocation": null,
+          "evidence": [
+            {
+              "metric": "CC",
+              "before": null,
+              "after": 18.0,
+              "delta": null,
+              "min": 16.0,
+              "max": null,
+              "unit": "complexity",
+              "completenessReasons": [],
+              "contributions": [
+                {
+                  "kind": "entry",
+                  "amount": 1,
+                  "line": 4,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 5,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 6,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 7,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 8,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 9,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 10,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 11,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 12,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 13,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 14,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 15,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 16,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 17,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 18,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 19,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 20,
+                  "detail": null
+                },
+                {
+                  "kind": "statement",
+                  "amount": 1,
+                  "line": 21,
+                  "detail": null
+                }
+              ]
+            }
+          ],
+          "relatedLocations": [],
+          "remediationHint": "A method with many independent decision points. Observed structure, not a proven defect: generated parsers and dispatch tables look exactly like this. Inspect the branches for decisions that could be table-driven, and for early returns that flatten nesting.",
+          "documentationPath": "docs/rules/mt-m001-high-method-complexity.md",
+          "blocking": false
+        }
+      ],
+      "issues": [
+        {
+          "ruleId": null,
+          "reasonCode": "base-parse-error",
+          "message": "src/main/java/Demo.java did not parse at the base revision, so it has no comparable history",
+          "required": true,
+          "entityKey": null,
+          "location": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "optional-semantic-local",
+      "expected": "exit 0 with optional unavailable warning",
+      "exit": 2,
+      "stderr": "INCOMPLETE: 4 required checks could not be evaluated across 1 changed file \u2014 see the report for what is missing\nWARNING: ATFD is computed from resolved collaborators across the project, so it needs a classpath as well as analysis scope 'project', or it cannot be measured at all\nWARNING: TCC is computed from resolved collaborators across the project, so it needs a classpath as well as analysis scope 'project', or it cannot be measured at all\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "INCOMPLETE",
+      "summary": {
+        "activeFindings": 1,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 1,
+        "entities": 1,
+        "issues": 6,
+        "requiredIssues": 2
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "64cb185b89ac4df879a9c49159ab9619e6d00cc8",
+        "head": "64cb185b89ac4df879a9c49159ab9619e6d00cc8"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"INCOMPLETE\",\n  \"policyDigest\" : \"b02cd01a9a252c9fcf285a8d7e48446564aeb2eaecfde7cb9543f2a84d6574a1\",\n  \"enabledRules\" : [ \"MT-C001\" ],\n  \"enforcement\" : \"ADVISORY\",\n  \"summary\" : {\n    \"activeFindings\" : 1,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 1,\n    \"entities\" : 1,\n    \"issues\" : 6,\n    \"requiredIssues\" : 2\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"64cb185b89ac4df879a9c49159ab9619e6d00cc8\",\n    \"head\" : \"64cb185b89ac4df879a9c49159ab9619e6d00cc8\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"incomplete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 1,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 1,\n    \"checksUnavailable\" : 2,\n    \"requiredGaps\" : 2,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ {\n      \"ruleId\" : null,\n      \"reasonCode\" : \"metric-unavailable-local\",\n      \"message\" : \"ATFD is computed from resolved collaborators across the project, so it needs a classpath as well as analysis scope 'project', or it cannot be measured at all\",\n      \"required\" : true,\n      \"entityKey\" : null,\n      \"location\" : null\n    }, {\n      \"ruleId\" : null,\n      \"reasonCode\" : \"metric-unavailable-local\",\n      \"message\" : \"TCC is computed from resolved collaborators across the project, so it needs a classpath as well as analysis scope 'project', or it cannot be measured at all\",\n      \"required\" : true,\n      \"entityKey\" : null,\n      \"location\" : null\n    } ]\n  },\n  \"findings\" : [ {\n    \"ruleId\" : \"MT-C001\",\n    \"ruleVersion\" : 1,\n    \"fingerprint\" : \"cf9697129b1929f1774febc4a518ffb4694356a8b44ccd39184bde92301c006b\",\n    \"previousFingerprint\" : \"cf9697129b1929f1774febc4a518ffb4694356a8b44ccd39184bde92301c006b\",\n    \"ruleTitle\" : \"Concentrated class complexity with foreign data access\",\n    \"message\" : \"Could not compare MT-C001 between the two revisions: Concentrated class complexity with foreign data access\",\n    \"severity\" : \"WARNING\",\n    \"maturity\" : \"EXPERIMENTAL\",\n    \"evaluationStatus\" : \"UNAVAILABLE\",\n    \"lifecycle\" : \"COMPARISON_UNAVAILABLE\",\n    \"disposition\" : \"NOT_MATCHED\",\n    \"dispositionReason\" : \"comparison-unavailable\",\n    \"role\" : \"PRODUCTION\",\n    \"entityKey\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"qualifiedName\" : \"Demo\",\n      \"signature\" : null\n    },\n    \"location\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"st",
+      "findings": [
+        {
+          "ruleId": "MT-C001",
+          "ruleVersion": 1,
+          "fingerprint": "cf9697129b1929f1774febc4a518ffb4694356a8b44ccd39184bde92301c006b",
+          "previousFingerprint": "cf9697129b1929f1774febc4a518ffb4694356a8b44ccd39184bde92301c006b",
+          "ruleTitle": "Concentrated class complexity with foreign data access",
+          "message": "Could not compare MT-C001 between the two revisions: Concentrated class complexity with foreign data access",
+          "severity": "WARNING",
+          "maturity": "EXPERIMENTAL",
+          "evaluationStatus": "UNAVAILABLE",
+          "lifecycle": "COMPARISON_UNAVAILABLE",
+          "disposition": "NOT_MATCHED",
+          "dispositionReason": "comparison-unavailable",
+          "role": "PRODUCTION",
+          "entityKey": {
+            "path": "src/main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": null
+          },
+          "location": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "baseLocation": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          },
+          "evidence": [
+            {
+              "metric": "ATFD",
+              "before": null,
+              "after": null,
+              "delta": null,
+              "min": 6.0,
+              "max": null,
+              "unit": "value",
+              "completenessReasons": [
+                "this metric needs project-global and the run used syntax-local"
+              ],
+              "contributions": []
+            },
+            {
+              "metric": "TCC",
+              "before": null,
+              "after": null,
+              "delta": null,
+              "min": null,
+              "max": 0.33,
+              "unit": "ratio",
+              "completenessReasons": [
+                "this metric needs project-global and the run used syntax-local"
+              ],
+              "contributions": []
+            },
+            {
+              "metric": "WMC",
+              "before": 1.0,
+              "after": 2.0,
+              "delta": 1.0,
+              "min": 47.0,
+              "max": null,
+              "unit": "value",
+              "completenessReasons": [],
+              "contributions": []
+            }
+          ],
+          "relatedLocations": [],
+          "remediationHint": "A class whose total complexity is concentrated in methods that reach into several other classes' data. Inspect whether the foreign access can be replaced by a collaborator the class owns. Experimental: both inputs move for reasons unrelated to cohesion, so this rule is advisory only and cannot be made blocking.",
+          "documentationPath": "docs/rules/mt-c001-concentrated-class-complexity.md",
+          "blocking": false
+        }
+      ],
+      "issues": [
+        {
+          "ruleId": "MT-C001",
+          "reasonCode": "metric-unavailable-local",
+          "message": "MT-C001 needs ATFD, which requires project-global. This run used syntax-local, so the number the analysis produced does not stand for the measurement the rule is about.",
+          "required": false,
+          "entityKey": {
+            "path": "src/main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": null
+          },
+          "location": null
+        },
+        {
+          "ruleId": "MT-C001",
+          "reasonCode": "metric-unavailable-local",
+          "message": "MT-C001 needs TCC, which requires project-global. This run used syntax-local, so the number the analysis produced does not stand for the measurement the rule is about.",
+          "required": false,
+          "entityKey": {
+            "path": "src/main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": null
+          },
+          "location": null
+        },
+        {
+          "ruleId": "MT-C001",
+          "reasonCode": "metric-unavailable-local",
+          "message": "MT-C001 needs ATFD, which requires project-global. This run used syntax-local, so the number the analysis produced does not stand for the measurement the rule is about.",
+          "required": false,
+          "entityKey": {
+            "path": "src/main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": null
+          },
+          "location": null
+        },
+        {
+          "ruleId": "MT-C001",
+          "reasonCode": "metric-unavailable-local",
+          "message": "MT-C001 needs TCC, which requires project-global. This run used syntax-local, so the number the analysis produced does not stand for the measurement the rule is about.",
+          "required": false,
+          "entityKey": {
+            "path": "src/main/java/Demo.java",
+            "qualifiedName": "Demo",
+            "signature": null
+          },
+          "location": null
+        },
+        {
+          "ruleId": null,
+          "reasonCode": "metric-unavailable-local",
+          "message": "ATFD is computed from resolved collaborators across the project, so it needs a classpath as well as analysis scope 'project', or it cannot be measured at all",
+          "required": true,
+          "entityKey": null,
+          "location": null
+        },
+        {
+          "ruleId": null,
+          "reasonCode": "metric-unavailable-local",
+          "message": "TCC is computed from resolved collaborators across the project, so it needs a classpath as well as analysis scope 'project', or it cannot be measured at all",
+          "required": true,
+          "entityKey": null,
+          "location": null
+        }
+      ]
+    },
+    {
+      "id": "gate-parse-status",
+      "expected": "exit 1 and JSON status FAILED",
+      "exit": 1,
+      "stderr": "FAILED: 1 file could not be parsed; 1 reported\n",
+      "reportPresent": true,
+      "reportKind": "json",
+      "status": "FAILED",
+      "summary": {
+        "activeFindings": 0,
+        "blocking": 0,
+        "existing": 0,
+        "suppressed": 0,
+        "baselineAccepted": 0,
+        "resolved": 0,
+        "total": 0,
+        "entities": 0,
+        "issues": 1,
+        "requiredIssues": 1
+      },
+      "comparison": {
+        "base": "HEAD",
+        "mergeBase": "023143853c81d4859a588fd8beb2f8e558fe2832",
+        "head": "023143853c81d4859a588fd8beb2f8e558fe2832"
+      },
+      "preview": "{\n  \"schemaVersion\" : \"v2\",\n  \"toolVersion\" : \"2026.0.0\",\n  \"status\" : \"FAILED\",\n  \"policyDigest\" : \"e79c120b09ce56026d2a2689b4ce15de6abfe9e30ba1cb6d02e8408bf27300d0\",\n  \"enabledRules\" : [ \"MT-M001\" ],\n  \"enforcement\" : \"ADVISORY\",\n  \"summary\" : {\n    \"activeFindings\" : 0,\n    \"blocking\" : 0,\n    \"existing\" : 0,\n    \"suppressed\" : 0,\n    \"baselineAccepted\" : 0,\n    \"resolved\" : 0,\n    \"total\" : 0,\n    \"entities\" : 0,\n    \"issues\" : 1,\n    \"requiredIssues\" : 1\n  },\n  \"comparison\" : {\n    \"base\" : \"HEAD\",\n    \"mergeBase\" : \"023143853c81d4859a588fd8beb2f8e558fe2832\",\n    \"head\" : \"023143853c81d4859a588fd8beb2f8e558fe2832\"\n  },\n  \"analysis\" : {\n    \"completeness\" : \"incomplete\",\n    \"eligibleFiles\" : 1,\n    \"analyzedFiles\" : 0,\n    \"excludedFiles\" : [ ],\n    \"checksEvaluated\" : 0,\n    \"checksUnavailable\" : 1,\n    \"requiredGaps\" : 1,\n    \"optionalGaps\" : 0,\n    \"execution\" : \"ordered\",\n    \"issues\" : [ {\n      \"ruleId\" : null,\n      \"reasonCode\" : \"current-parse-error\",\n      \"message\" : \"src/main/java/Demo.java does not parse in the current revision\",\n      \"required\" : true,\n      \"entityKey\" : {\n        \"path\" : \"src/main/java/Demo.java\",\n        \"qualifiedName\" : null,\n        \"signature\" : null\n      },\n      \"location\" : null\n    } ]\n  },\n  \"findings\" : [ ],\n  \"issues\" : [ {\n    \"ruleId\" : null,\n    \"reasonCode\" : \"current-parse-error\",\n    \"message\" : \"src/main/java/Demo.java does not parse in the current revision\",\n    \"required\" : true,\n    \"entityKey\" : null,\n    \"location\" : {\n      \"path\" : \"src/main/java/Demo.java\",\n      \"startLine\" : 1,\n      \"endLine\" : 1,\n      \"column\" : null\n    }\n  } ],\n  \"suppressions\" : [ ]\n}",
+      "findings": [],
+      "issues": [
+        {
+          "ruleId": null,
+          "reasonCode": "current-parse-error",
+          "message": "src/main/java/Demo.java does not parse in the current revision",
+          "required": true,
+          "entityKey": null,
+          "location": {
+            "path": "src/main/java/Demo.java",
+            "startLine": 1,
+            "endLine": 1,
+            "column": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "sidecar-only",
+      "expected": "requested sidecar written",
+      "exit": 0,
+      "sidecarPresent": true
+    },
+    {
+      "id": "action-legacy-counts",
+      "expected": "exit 1 and nonzero blocking-count",
+      "exit": 1,
+      "outputs": "status=FAILED\nexit-code=1\nblocking-count=1\ntotal-count=2\nentities=2\nissues=0\ntool-version=2026.0.0\nreport-path=action.json\nfindings-path=action-findings.json\n",
+      "stderr": "::group::Resolving the base reference\n::endgroup::\n::group::Running the gate\nFAILED: 1 growth budget breach \u2014 worst: CC grew 1\u219218 (+17), budget is 5 in src/main/java/Demo.java\n::endgroup::\n"
+    },
+    {
+      "id": "action-html-scan-count",
+      "expected": "one analysis, two reports",
+      "exit": 0,
+      "gateCalls": 2,
+      "calls": [
+        "['gate', '--base=HEAD~1', '--mode=committed', '-o', 'action.json', '--json-output', 'action-findings.json', '--config=audit.json', '--policy=maintainability']",
+        "['--version']",
+        "['gate', '--base=HEAD~1', '--mode=committed', '--format=html', '-o', 'action.html', '--config=audit.json', '--policy=maintainability']"
+      ],
+      "stderr": "::group::Resolving the base reference\n::endgroup::\n::group::Running the gate\nPASSED: 1 changed file, no violations (1 warning)\n::endgroup::\n"
+    }
+  ]
+}

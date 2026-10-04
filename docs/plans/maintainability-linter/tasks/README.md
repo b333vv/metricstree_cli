@@ -6,8 +6,10 @@ Dependencies are technical prerequisites. Milestone boundaries and external evid
 
 **Acceptance audit (2026-10-04):** implementation exists for ML-001–ML-032, but the historical
 status column below is inconsistent with task-packet handoffs and does not establish acceptance.
-Use the [audit's per-task assessment and reproducible evidence](../audits/2026-10-04/README.md)
-for current readiness. Reconcile DONE/TODO markers after the identified acceptance gaps are repaired.
+Use the [audit's per-task assessment](../audits/2026-10-04/README.md) and the
+[remediation recheck](../audits/2026-10-04-recheck/README.md) for current readiness. The recheck finds
+five original finding groups closed, 15 partially addressed and one open. Reconcile DONE/TODO
+markers after the identified acceptance gaps and regressions are repaired.
 
 | Task | Description | Dependencies | Status |
 | --- | --- | --- | --- |

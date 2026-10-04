@@ -1,0 +1,136 @@
+{
+  "cli_path": "/Users/vadim/code/metricstree_cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli",
+  "cold_summary": {
+    "maxSeconds": 2.4225,
+    "medianSeconds": 2.4225,
+    "method": "median and nearest-rank p95 over 1 cold samples; every sample is retained",
+    "minSeconds": 2.4225,
+    "p95Seconds": 2.4225,
+    "samples": 1
+  },
+  "comparison_mode": "committed",
+  "corpus": {
+    "classesPerPackage": 8,
+    "digest": "da0aae25c8ce184bfae42bc379d85544ddfb4f849aa5242abe39a65f1281d5e8",
+    "fileCount": 96,
+    "kind": "synthetic",
+    "packages": 12,
+    "revision": "2c791e9d8c8f5019f21bf9979838c39fefc26f03",
+    "root": "/private/tmp/metricstree-recheck-bench-local/corpus",
+    "seed": 20260930
+  },
+  "environment": {
+    "cliPath": "/Users/vadim/code/metricstree_cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli",
+    "cpuCount": 8,
+    "javaVersion": "openjdk version \"21.0.3\" 2024-04-16",
+    "machine": "arm64",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "processor": "arm",
+    "python": "3.12.4"
+  },
+  "method": {
+    "analysisScope": "local",
+    "changedFileCount": 12,
+    "comparisonBase": "2c791e9d8c8f5019f21bf9979838c39fefc26f03",
+    "measuredTrials": 5,
+    "memoryMethod": "the tool's own 'Heap after GC' reading, taken at its phase boundary",
+    "mode": "committed",
+    "percentile": "nearest-rank",
+    "warmupTrials": 1,
+    "whatWasMeasured": {
+      "analysedFiles": 12,
+      "changedFiles": 12,
+      "eligibleFiles": 12,
+      "note": "Recorded so a timing cannot be read as 'the analysis was fast' when it establishes only that a fast process exited. Zero analysed files means the comparison was empty and the timing measures nothing."
+    }
+  },
+  "mode": "local",
+  "problems": [
+    "warm local median 2.433s against the 2.0s target: NOT met"
+  ],
+  "samples": [
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 0,
+      "report_digest": "f6ab52a0e4da47ebf8f1a4e33521e9930e2f52ed45061bc3c65c660c43472bfd",
+      "seconds": 2.4225,
+      "warm": false
+    },
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 0,
+      "report_digest": "f6ab52a0e4da47ebf8f1a4e33521e9930e2f52ed45061bc3c65c660c43472bfd",
+      "seconds": 2.424,
+      "warm": true
+    },
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 1,
+      "report_digest": "f6ab52a0e4da47ebf8f1a4e33521e9930e2f52ed45061bc3c65c660c43472bfd",
+      "seconds": 2.4407,
+      "warm": true
+    },
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 2,
+      "report_digest": "f6ab52a0e4da47ebf8f1a4e33521e9930e2f52ed45061bc3c65c660c43472bfd",
+      "seconds": 2.4331,
+      "warm": true
+    },
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 3,
+      "report_digest": "f6ab52a0e4da47ebf8f1a4e33521e9930e2f52ed45061bc3c65c660c43472bfd",
+      "seconds": 2.3588,
+      "warm": true
+    },
+    {
+      "analysed_files": 12,
+      "changed_files": 12,
+      "complete": true,
+      "eligible_files": 12,
+      "exit_code": 0,
+      "heap_after_kb": null,
+      "index": 4,
+      "report_digest": "f6ab52a0e4da47ebf8f1a4e33521e9930e2f52ed45061bc3c65c660c43472bfd",
+      "seconds": 2.4538,
+      "warm": true
+    }
+  ],
+  "schema_version": "v1",
+  "tool_version": "2026.0.0",
+  "warm_summary": {
+    "maxSeconds": 2.4538,
+    "medianSeconds": 2.4331,
+    "method": "median and nearest-rank p95 over 5 warm samples; every sample is retained",
+    "minSeconds": 2.3588,
+    "p95Seconds": 2.4538,
+    "samples": 5
+  },
+  "auditRevision": "70e475bf3cd1aaf86cbfaa61b26d5e1a984d36e3"
+}
