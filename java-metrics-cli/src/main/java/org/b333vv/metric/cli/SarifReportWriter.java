@@ -203,11 +203,42 @@ final class SarifReportWriter {
      *       it fires makes that list describe the last run rather than the tool.</li>
      * </ul>
      *
-     * <p>Only findings that would block are emitted as results. Existing, suppressed and
-     * baseline-accepted debt is deliberately <em>not</em> re-reported as a fresh alert on every run:
-     * a code-scanning consumer cannot tell "new" from "already known", and re-alerting existing debt
-     * makes the tool look like it is reporting the same thing endlessly.
+     * <p>Every <em>active</em> finding becomes a result: new, introduced, worsened, or current for a
+     * detect run. Filtering on {@code blocks()} instead is what the audit's A11 found, and it was
+     * wrong twice over. A project running advisory enforcement -- the recommended first run -- would
+     * upload a SARIF file with zero results, so a code-scanning consumer would report the repository
+     * as clean while the tool had found and written down eleven problems. Visibility and enforcement
+     * are separate decisions, and a report format has no business re-deciding either of them. Each
+     * result's properties carry {@code blocking}, so a consumer that alerts only on enforced rules
+     * can, and one that shows everything sees everything.
+     *
+     * <p>What stays out of {@code results} is the debt this change did not create: existing,
+     * suppressed and baseline-accepted findings are represented by counts and properties, because a
+     * code-scanning consumer cannot tell "new" from "already known", and re-alerting the same
+     * accepted debt on every run makes the tool look like it reports endlessly.
      */
+    /**
+     * Whether this finding becomes a SARIF result.
+     *
+     * <p>The disposition decides, because that is where "this run counts it" is recorded. A finding the
+     * project suppressed, accepted into a baseline, or inherited unchanged has been decided about, and
+     * a code-scanning consumer cannot tell it apart from a fresh alert: re-raising it every run makes
+     * the tool look like it reports the same thing endlessly.
+     *
+     * <p>What is left is the set the contract names -- new, introduced, worsened, and current for a
+     * detect run -- together with everything still active whatever its lifecycle, because visibility
+     * and enforcement are separate questions. Filtering these on {@code blocks()} instead is what the
+     * audit's A11 found: an advisory run, the one the documentation recommends first, produced a SARIF
+     * file with no results, and a code-scanning consumer reported the repository as clean while the
+     * tool had written down every problem it had found.
+     */
+    static boolean isReportable(Finding finding) {
+        return switch (finding.disposition()) {
+            case ACTIVE, NOT_MATCHED -> true;
+            case EXISTING, SUPPRESSED, BASELINE_ACCEPTED, RESOLVED -> false;
+        };
+    }
+
     SarifLog forFindings(FindingReport report) {
         RuleSet rules = new RuleSet("");
         List<SarifLog.Result> results = new ArrayList<>();
@@ -223,7 +254,7 @@ final class SarifReportWriter {
         }
 
         for (Finding finding : report.findings()) {
-            if (!finding.blocks()) {
+            if (!isReportable(finding)) {
                 continue;
             }
             String ruleId = rules.ruleFor(finding.ruleId(), finding.title(), finding.title(),
@@ -240,6 +271,7 @@ final class SarifReportWriter {
                     finding.relatedLocations().stream().map(SarifReportWriter::locationOf).toList(),
                     Map.of("lifecycle", finding.lifecycle().id(),
                             "disposition", finding.disposition().id(),
+                            "blocking", Boolean.toString(finding.blocks()),
                             "evidence", describeEvidence(finding))));
         }
 

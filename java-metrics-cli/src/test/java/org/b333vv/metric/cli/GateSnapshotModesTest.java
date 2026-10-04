@@ -78,6 +78,158 @@ class GateSnapshotModesTest {
         assertTrue(verdict.contains("budget is 5"), verdict);
     }
 
+    // ---------------------------------------------------------------- the index is part of the working tree
+
+    /**
+     * A file that is staged but not committed is part of what the author is proposing.
+     *
+     * <p>This is the audit's A02, and the default mode got it wrong. Worktree mode built its after
+     * snapshot from HEAD's tracked paths, so a newly created file the author had already staged was
+     * absent from the comparison entirely: never materialised, never analysed, never reported -- and the
+     * gate said PASSED over a change sitting in the index waiting to be committed. The author had every
+     * reason to believe the default mode reviewed their work.
+     *
+     * <p>Staged mode included it, which is why the same working copy produced a different verdict
+     * depending only on which mode name was typed.
+     */
+    @Test
+    void worktreeModeSeesAStagedNewFile() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 1));
+        fixture().commitAll("base");
+
+        // New file, already staged, not committed.
+        fixture().write("app/Added.java", classWithIfs("Added", 30));
+        fixture().git("add", "app/Added.java");
+
+        Path report = repo.resolve("report.json");
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        runGate(err, "--base", "HEAD", "--mode", "worktree", "-o", report.toString());
+
+        // The verdict itself is the legacy policy's business: a brand-new file has no base metrics to
+        // grow from, so it produces no threshold or growth finding. What this test is about is whether
+        // the file was *seen at all* -- and before the fix the answer was no, in every mode the gate
+        // offers, so the report claimed a complete pass over a change that was sitting in the index.
+        JsonNode written = mapper.readTree(Files.readString(report));
+        assertEquals(1, written.get("comparison").get("subjectFiles").size(),
+                "the staged new file is the subject of the comparison: "
+                        + written.get("comparison"));
+        assertEquals("app/Added.java",
+                written.get("comparison").get("subjectFiles").get(0).asText(),
+                "and it is the staged file, not the untouched one");
+        assertEquals(1, written.get("analysis").get("eligibleFiles").asInt(),
+                "so the analysis counted it as analysed rather than passing over nothing");
+    }
+
+    /**
+     * A rename in the working tree stays one entity.
+     *
+     * <p>The second half of A02. A move showed up as an unrelated addition and deletion, so the
+     * correspondence that normally carries file relocations through the comparison had nothing to
+     * match: the moved method read as brand-new code and its predecessor read as resolved. A mechanical
+     * reorganisation was scored as a large regression, which is the specific outcome this gate exists
+     * to prevent.
+     */
+    @Test
+    void worktreeModePairsALocalRename() throws Exception {
+        fixture().init();
+        fixture().write("app/Original.java", classWithIfs("Original", 1));
+        fixture().commitAll("base");
+
+        // git mv is already staged, so this is the ordinary way a rename reaches worktree mode.
+        fixture().git("mv", "app/Original.java", "app/Relocated.java");
+        fixture().git("add", "-A");
+
+        ComparisonPlan plan = ComparisonPlanner.plan(repo, "HEAD", ComparisonMode.WORKTREE);
+
+        assertTrue(plan.pathChanges().stream().anyMatch(GitPathChange::isRenamed),
+                "a staged rename is one change to one entity, not an addition plus a deletion: "
+                        + plan.pathChanges());
+        assertTrue(plan.pathChanges().stream()
+                        .noneMatch(change -> change.isAdded() || change.isDeleted()),
+                "nothing should be left over as an unrelated pair: " + plan.pathChanges());
+    }
+
+    /**
+     * Two unrelated files changed together are not a rename.
+     *
+     * <p>The conservative half of the pairing rule. Exactly one addition and one deletion is the only
+     * case where the pairing is unambiguous; anything else would be a guess, and a wrong guess here
+     * reports as one moved entity two independent ones -- a worse error than the one being fixed.
+     */
+    @Test
+    void twoSimultaneousChangesAreNotPairedAsARename() throws Exception {
+        fixture().init();
+        fixture().write("app/Gone.java", classWithIfs("Gone", 1));
+        fixture().write("app/Stays.java", classWithIfs("Stays", 1));
+        fixture().commitAll("base");
+
+        fixture().git("rm", "-q", "app/Gone.java");
+        // Deliberately unlike the deleted file: git's rename detection compares content, and a new file
+        // that happens to resemble a removed one is a similarity question git is entitled to answer.
+        // This test is about an addition and a deletion with nothing in common.
+        fixture().write("app/Fresh.java", classWithIfs("Fresh", 40));
+        fixture().git("add", "-A");
+
+        ComparisonPlan plan = ComparisonPlanner.plan(repo, "HEAD", ComparisonMode.WORKTREE);
+
+        assertFalse(plan.pathChanges().stream().anyMatch(GitPathChange::isRenamed),
+                "a deletion and an unrelated addition are two changes, not a rename: "
+                        + plan.pathChanges());
+        assertTrue(plan.pathChanges().stream().anyMatch(GitPathChange::isAdded));
+        assertTrue(plan.pathChanges().stream().anyMatch(GitPathChange::isDeleted));
+    }
+
+    /**
+     * A file that appears while the analysis runs must not be reported as a clean pass.
+     *
+     * <p>The audit's A03 was not that the stability check was wrong \u2014 it was correct, and unit-tested
+     * against a fixture that mutates a file mid-run \u2014 but that the gate never called it. So the check
+     * existed only in its own test, and a real run could analyse a snapshot, watch the working copy
+     * change underneath it, and publish PASSED without a word about it.
+     *
+     * <p>Exercised through the command rather than the materializer, because the materializer's own test
+     * could only prove the function works, not that anything calls it. A test of a function is not a
+     * test of its use, and this defect was exactly a correct function nothing used.
+     */
+    @Test
+    void aFileAppearingDuringTheRunIsReportedRatherThanPassed() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 1));
+        fixture().commitAll("base");
+        // Something to compare, so the run reaches the analysis rather than returning early on an
+        // empty diff. The gate short-circuits "nothing changed" before any of this is exercised, which
+        // is correct for that case and useless for this one.
+        fixture().write("app/Demo.java", classWithIfs("Demo", 3));
+
+        // A file created while the gate is reading. The analyzer is injected so the write happens
+        // between the capture and the completion of the analysis \u2014 the window the check exists for.
+        CountingAnalyzer analyzer = new CountingAnalyzer(
+                new JavaParserJavaMetricsAnalyzer());
+        Path late = repo.resolve("app/Late.java");
+        analyzer.onFirstAnalysis(() -> {
+            try {
+                Files.writeString(late, classWithIfs("Late", 40));
+            } catch (java.io.IOException exception) {
+                throw new java.io.UncheckedIOException(exception);
+            }
+        });
+
+        JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                analyzer, new MetricReportJsonWriter(), () -> repo);
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = app.run(new String[]{"gate", "--base", "HEAD", "--mode", "worktree"},
+                new ByteArrayOutputStream(), err);
+
+        assertEquals(2, exitCode,
+                "the verdict would describe content that is no longer there, so this is an"
+                        + " environment error rather than a pass or a failure: "
+                        + err.toString(StandardCharsets.UTF_8));
+        assertTrue(err.toString(StandardCharsets.UTF_8).contains("changed while the analysis"),
+                "and the error has to say why, so the reader knows to re-run rather than to fix"
+                        + " code: " + err.toString(StandardCharsets.UTF_8));
+    }
+
     // ---------------------------------------------------------------- mode selection
 
     /**

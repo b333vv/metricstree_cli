@@ -21,9 +21,35 @@ import org.b333vv.metric.library.javaparser.JavaParserJavaMetricsAnalyzer;
  */
 final class CountingAnalyzer implements JavaMetricsAnalyzer {
 
-    private final JavaMetricsAnalyzer delegate = new JavaParserJavaMetricsAnalyzer();
+    private final JavaMetricsAnalyzer delegate;
+
+    /**
+     * Runs at the start of the first analysis, after the snapshot has already been captured.
+     *
+     * <p>That position is the whole point. Several contracts are about what happens when the world moves
+     * <em>during</em> a run, and there is no other way to create that window from a test: the capture
+     * happens first, and the mutation has to land between the capture and the verdict. A hook on the
+     * analyzer is the only seam there is, and the audit found a real defect (A03) that a fixture of
+     * this shape would have caught and an assertion on the helper's own return value did not.
+     */
+    private Runnable onFirstAnalysis = () -> {
+    };
 
     private int invocations;
+
+    CountingAnalyzer() {
+        this(new JavaParserJavaMetricsAnalyzer());
+    }
+
+    CountingAnalyzer(JavaMetricsAnalyzer delegate) {
+        this.delegate = delegate;
+    }
+
+    /** Sets the action to run once, at the start of the first analysis. */
+    CountingAnalyzer onFirstAnalysis(Runnable action) {
+        this.onFirstAnalysis = action;
+        return this;
+    }
 
     /** How many analysis passes have been requested. */
     int invocations() {
@@ -32,6 +58,9 @@ final class CountingAnalyzer implements JavaMetricsAnalyzer {
 
     @Override
     public MetricReport analyze(AnalysisRequest request) {
+        if (invocations == 0) {
+            onFirstAnalysis.run();
+        }
         invocations++;
         return delegate.analyze(request);
     }

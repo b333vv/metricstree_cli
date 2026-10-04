@@ -157,6 +157,19 @@ class MaintainabilityWorkflowTest {
         return "gate:\n  policy: " + policy + "\nmaintainability:\n  enabledRules: [MT-M001]\n";
     }
 
+    /**
+     * The same config, with MT-M001 opted into failing builds.
+     *
+     * <p>MT-M001 ships as a candidate rule whose default mode is {@code warn}, so a run that only sets
+     * {@code --enforcement enforce} reports the finding and exits 0. A test that wants a failing build
+     * therefore has to say which rule is meant to fail it -- and that is the point of the fix: the
+     * enforcement level says whether the project is strict, and the mode says about what.
+     */
+    private static String enforcingConfig(String policy) {
+        return "gate:\n  policy: " + policy + "\nmaintainability:\n  enabledRules: [MT-M001]\n"
+                + "  rules:\n    MT-M001:\n      mode: error\n";
+    }
+
     // ---------------------------------------------------------------- the loop
 
     @Nested
@@ -168,6 +181,7 @@ class MaintainabilityWorkflowTest {
         void endToEndLocalCorrectionLoop() throws Exception {
             GitFixture git = fixture().init();
             git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
             git.commitAll("initial");
             ByteArrayOutputStream err = new ByteArrayOutputStream();
             assertEquals(0, gate(err, "--base", "HEAD", "--mode", "committed"), err.toString());
@@ -278,6 +292,7 @@ class MaintainabilityWorkflowTest {
         void regressionWithoutBaselineStillFails() throws Exception {
             GitFixture git = fixture().init();
             git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
             git.commitAll("initial");
             git.write(SOURCE, withBranches(20));
             commitLocally(git, "complex");
@@ -462,7 +477,7 @@ class MaintainabilityWorkflowTest {
         void projectConfigSelectsThePolicy() throws Exception {
             GitFixture git = fixture().init();
             git.write(SOURCE, withBranches(2));
-            git.write(".metrics-gate.yml", config("maintainability"));
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
             git.commitAll("initial");
             git.write(SOURCE, withBranches(20));
 
@@ -475,6 +490,60 @@ class MaintainabilityWorkflowTest {
                     "the config alone selected the maintainability policy, and only the enabled"
                             + " rule can block");
             assertNotEquals(0, exit, "and the command line should have enforced it");
+        }
+
+        /**
+         * An explicit legacy profile with the new policy is refused, not ignored.
+         *
+         * <p>This is the migration error that slipped through. {@code -p strict} reads like a strictness
+         * level that applies under any policy, so the run succeeded, printed a verdict, and applied no
+         * threshold at all — the author had moved the dial and nothing moved with it. Rejecting it is
+         * the only answer that lets them find out, and the message has to name the input rather than
+         * merely refusing.
+         */
+        @Test
+        @DisplayName("an explicit legacy profile is a usage error, not a silent no-op")
+        void explicitProfileConflictsWithMaintainability() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(20));
+
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gate(err, "--base", "HEAD", "--policy", "maintainability",
+                    "--enforcement", "enforce", "-p", "strict");
+
+            assertEquals(2, exit,
+                    "a threshold profile has no meaning under the rule catalogue, and silently"
+                            + " ignoring it is how an author comes to believe they set a bar they"
+                            + " did not set: " + err);
+            assertTrue(err.toString().contains("-p / --profile"),
+                    "the error names the input, so the fix is obvious: " + err);
+        }
+
+        /**
+         * The same rule for thresholds, which was already refused.
+         *
+         * <p>Stated next to the profile case because they are one decision, and a test that only
+         * covered the one that worked would let the other regress unnoticed.
+         */
+        @Test
+        @DisplayName("an explicit threshold file is refused for the same reason")
+        void explicitThresholdsConflictWithMaintainability() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
+            git.write("t.json", "{\"thresholds\":{\"CC\":{\"min\":100}}}");
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(20));
+
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gate(err, "--base", "HEAD", "--policy", "maintainability",
+                    "--enforcement", "enforce", "-t", "t.json");
+
+            assertEquals(2, exit, "exit=" + exit + " err=" + err);
+            assertTrue(err.toString().contains("-t / --thresholds"), err.toString());
         }
     }
 }

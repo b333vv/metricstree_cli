@@ -127,8 +127,10 @@ class MethodRuleEvaluatorTest {
         assertEquals(1, evaluation.issues().size(), "the missing input has to be named");
         assertTrue(evaluation.issues().get(0).message().contains("CC"),
                 "the issue says which input was missing: " + evaluation.issues().get(0).message());
-        assertTrue(evaluation.issues().get(0).required(),
-                "a required rule's missing input compromises the exit code");
+        assertFalse(evaluation.issues().get(0).required(),
+                "MT-M003 ships as a candidate advisory rule, so the project never required this"
+                        + " check; reporting it is enough, and marking it required made every"
+                        + " advisory run exit 2 over a gap nobody had opted into enforcing");
 
         MaintainabilityRule m001 = MaintainabilityRules.byId("MT-M001").orElseThrow();
         assertEquals(EvaluationStatus.UNAVAILABLE,

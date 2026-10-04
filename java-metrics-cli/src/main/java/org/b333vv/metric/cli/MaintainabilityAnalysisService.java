@@ -127,16 +127,51 @@ final class MaintainabilityAnalysisService {
             MetricRequirements.Scope scope, MaintainabilitySettings settings,
             EntityCorrespondence correspondence, Enforcement enforcement, Clock clock) {
 
-        List<Finding> findings = new ArrayList<>();
-        List<EvaluationIssue> issues = new ArrayList<>();
+        return evaluate(base, current, logicalPath, scope, settings, correspondence, enforcement,
+                clock, null, base != null);
+    }
 
-        for (MaintainabilityRule rule : enabledRules(settings)) {
-            if (effectiveMode(rule, settings) == RuleMode.OFF) {
+    /**
+     * The evaluation with an optional restriction on which entities may produce findings.
+     *
+     * <p>Eligibility is a <em>separate</em> decision from measurement. The contract requires full
+     * context so symbols resolve, and requires that findings be limited to changed paths. Passing both
+     * through one predicate would mean either an unsound measurement or a gate reporting files nobody
+     * touched, so the filter is applied to what may become a finding and never to what may be measured.
+     *
+     * @param eligiblePaths logical paths whose findings this run may publish, or {@code null} for all
+     */
+    Result evaluate(MetricReport base, MetricReport current, Function<Path, String> logicalPath,
+            MetricRequirements.Scope scope, MaintainabilitySettings settings,
+            EntityCorrespondence correspondence, Enforcement enforcement, Clock clock,
+            Set<String> eligiblePaths, boolean comparing) {
+
+        List<Finding> findings = new ArrayList<>();
+        List<Finding> ineligible = new ArrayList<>();
+        List<EvaluationIssue> issues = new ArrayList<>();
+        RoleClassifier roles = new RoleClassifier(
+                settings.hasConfiguredRoles() ? settings.roleRules() : RoleClassifier.DEFAULT_RULES);
+
+        for (MaintainabilityRule catalogued : enabledRules(settings)) {
+            // The rule this run actually judges by: catalogue data with the project's overrides
+            // applied. Evaluating the catalogue rule and merely checking OFF afterwards was the
+            // defect A01 describes -- a configured limit of CC >= 100 still matched at CC 18, because
+            // nothing ever replaced the bound it compared against.
+            MaintainabilityRule rule = effectiveRule(catalogued, settings);
+            if (effectiveMode(catalogued, settings) == RuleMode.OFF) {
                 continue;
             }
             for (ClassReport classReport : current.classes()) {
                 String path = logicalPath.apply(classReport.sourcePath());
                 EntityKey classKey = EntityKey.ofClass(path, classReport.qualifiedName());
+                EntityRole role = roles.classify(path);
+
+                // A rule that does not apply to this role is not evaluated at all. Applying it anyway
+                // and labelling the result afterwards produced findings on test and generated code
+                // while still reporting them as PRODUCTION, which is the same defect with extra steps.
+                if (!effectiveRoles(catalogued, settings).contains(role)) {
+                    continue;
+                }
 
                 // A rule is evaluated only against the entity kind it is about.
                 //
@@ -149,9 +184,11 @@ final class MaintainabilityAnalysisService {
                 // class it lives in.
                 if (rule.level() == MaintainabilityRule.RuleLevel.CLASS) {
                     RuleEvaluation classEvaluation =
-                            classEvaluator.evaluate(rule, classKey, classReport.metrics(), scope);
+                            classEvaluator.evaluate(rule, classKey, classReport.metrics(), scope,
+                                    role, enforcement);
                     collect(rule, classEvaluation, base, classKey, false, path, logicalPath, scope,
-                            correspondence, findings, issues);
+                            correspondence, findings, ineligible, issues, role, eligiblePaths,
+                            comparing);
                 }
 
                 for (MethodReport method : classReport.methods()) {
@@ -161,9 +198,10 @@ final class MaintainabilityAnalysisService {
                     EntityKey methodKey =
                             EntityKey.ofMethod(path, classReport.qualifiedName(), method.signature());
                     RuleEvaluation methodEvaluation = methodEvaluator.evaluate(rule, methodKey,
-                            method.metrics());
+                            method.metrics(), method);
                     collect(rule, methodEvaluation, base, methodKey, true, path, logicalPath, scope,
-                            correspondence, findings, issues);
+                            correspondence, findings, ineligible, issues, role, eligiblePaths,
+                            comparing);
                 }
             }
         }
@@ -177,7 +215,13 @@ final class MaintainabilityAnalysisService {
                 settings.suppressions(), clock);
         FindingSuppressionFilter.Result filtered = filter.apply(findings);
 
-        return new Result(applyEnforcement(filtered.findings(), enforcement), issues,
+        // Ineligible entities were measured in full and are reported as existing debt, never as
+        // findings about this change. Keeping them is what lets a reader see that the untouched
+        // neighbour of a changed file was analysed and not merely ignored.
+        List<Finding> decided = new ArrayList<>(filtered.findings());
+        decided.addAll(ineligible);
+
+        return new Result(applyEnforcement(decided, enforcement), issues,
                 requiredMetrics(settings), filtered.status());
 
     }
@@ -192,17 +236,53 @@ final class MaintainabilityAnalysisService {
             MetricReport base, EntityKey currentKey, boolean isMethod, String path,
             Function<Path, String> logicalPath, MetricRequirements.Scope scope,
             EntityCorrespondence correspondence, List<Finding> findings,
-            List<EvaluationIssue> issues) {
+            List<Finding> ineligible, List<EvaluationIssue> issues, EntityRole role,
+            Set<String> eligiblePaths, boolean comparing) {
 
         if (currentEvaluation.status() == EvaluationStatus.NOT_APPLICABLE) {
             return;
         }
         RuleEvaluation baseEvaluation = baseEvaluationFor(rule, base, currentKey, isMethod,
                 logicalPath, scope, correspondence);
+
+        // Eligibility is decided by the changed path, and it is decided *here*, at the one point where
+        // a logical path exists. Checking it against the base counterpart instead would be wrong in
+        // both directions: a file this change created has no base copy and would be classified
+        // ineligible, which is exactly the new-code case a diff-aware gate exists to report.
+        //
+        // An ineligible entity is still evaluated -- the analysis measured it, and a check that could
+        // not run over an untouched file is not this change's problem. What changes is the lifecycle:
+        // with no base counterpart a match would classify as NEW_ENTITY, and the gate would fail a
+        // build over a file the author never opened. It is pre-existing debt, and it is reported as
+        // such rather than silently dropped.
+        if (!eligible(path, eligiblePaths)) {
+            if (currentEvaluation.status() == EvaluationStatus.COMPLETE_MATCH) {
+                ineligible.add(new Finding(
+                        rule.id(), rule.version(), currentKey, rule.title(),
+                        "Matches " + rule.id() + " in code this change did not modify.",
+                        FindingLocation.of(path, 1), null, rule.severity(), rule.maturity(),
+                        currentEvaluation.status(), FindingLifecycle.EXISTING,
+                        currentEvaluation.evidence(), List.of(),
+                        rule.description(), rule.documentationPath(), role,
+                        FindingDisposition.EXISTING, "outside the changed set", false));
+            }
+            return;
+        }
+
         FindingDeltaEvaluator.Delta delta = deltaEvaluator.compare(rule, baseEvaluation,
-                currentEvaluation, correspondence, path);
+                currentEvaluation, correspondence, path, role, comparing);
         findings.addAll(delta.findings());
         issues.addAll(delta.issues());
+    }
+
+    /**
+     * Whether a logical path's entities may produce findings for this comparison.
+     *
+     * <p>A {@code null} set means "no restriction", which is what a current-only detect run wants: it
+     * was asked about the source it was given, not about a diff.
+     */
+    private static boolean eligible(String path, Set<String> eligiblePaths) {
+        return eligiblePaths == null || eligiblePaths.contains(path);
     }
 
     /** Re-evaluates the same rule against the base report's version of this entity. */
@@ -221,7 +301,9 @@ final class MaintainabilityAnalysisService {
                 continue;
             }
             if (!isMethod) {
-                return classEvaluator.evaluate(rule, baseKey, classReport.metrics(), scope);
+                return classEvaluator.evaluate(rule, baseKey, classReport.metrics(), scope,
+                        EntityRole.PRODUCTION,
+                        MaintainabilityAnalysisService.Enforcement.ENFORCE);
             }
             for (MethodReport method : classReport.methods()) {
                 if (method.signature().equals(baseKey.signature())) {
@@ -272,10 +354,14 @@ final class MaintainabilityAnalysisService {
     /**
      * Applies the enforcement level to a set of findings.
      *
-     * <p>Under advisory every active finding is re-dispositioned rather than merely ignored, so the
-     * report says plainly that these exist and did not block. A finding that appears active and then
-     * does not fail the build, with nothing said, is the exact confusion enforcement mode exists to
-     * remove.
+     * <p>Advisory no longer relabels anything. It used to rewrite every ACTIVE finding to
+     * {@code EXISTING} with the reason "advisory: not blocking", which destroyed two facts at once:
+     * a newly introduced finding was reported as pre-existing debt, and the {@code existing} count in
+     * every summary came to mean "advisory". The finding's disposition already says it is a match; what
+     * advisory changes is only whether it may stop a build, which is {@link Finding#withBlocking}.
+     *
+     * <p>Leaving disposition alone is also what keeps the baseline export honest: it reads
+     * {@code isMatch()}, so an advisory run still records the debt it found.
      */
     private static List<Finding> applyEnforcement(List<Finding> findings, Enforcement enforcement) {
         if (enforcement == Enforcement.ENFORCE) {
@@ -283,10 +369,39 @@ final class MaintainabilityAnalysisService {
         }
         List<Finding> adjusted = new ArrayList<>(findings.size());
         for (Finding finding : findings) {
-            adjusted.add(finding.disposition() == FindingDisposition.ACTIVE
-                    ? finding.withDisposition(FindingDisposition.EXISTING, "advisory: not blocking")
-                    : finding);
+            adjusted.add(finding.withBlocking(false));
         }
         return adjusted;
+    }
+
+    /**
+     * The catalogue rule with this project's overrides applied, which is what a run actually judges by.
+     *
+     * <p>{@code limits} replaces the whole condition map rather than merging into it, which is the
+     * behaviour {@link MaintainabilitySettings} already documents and the loader already validates.
+     * Applying it here rather than reading it at match time is the difference between a retuned
+     * threshold being honoured and being decorative.
+     */
+    static MaintainabilityRule effectiveRule(MaintainabilityRule rule,
+            MaintainabilitySettings settings) {
+        MaintainabilitySettings.RuleOverride override = settings.overrides().get(rule.id());
+        if (override == null) {
+            return rule;
+        }
+        return new MaintainabilityRule(
+                rule.id(),
+                rule.version(),
+                rule.title(),
+                rule.description(),
+                rule.level(),
+                override.limits() == null ? rule.conditions() : override.limits(),
+                effectiveRoles(rule, settings),
+                rule.maturity(),
+                override.mode() == null ? rule.defaultMode() : override.mode(),
+                override.severity() == null ? rule.severity() : override.severity(),
+                rule.documentationPath(),
+                rule.requiredScope(),
+                rule.worsening(),
+                rule.worseningBudgets());
     }
 }

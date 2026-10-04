@@ -19,6 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>Each row of the contract's table exists because of a confusion it removes, so each is tested
  * directly. The two rows that matter most are the ones whose wrong answer looks clean: an unavailable
  * base that must not become "new", and a disabled rule that must not become "resolved".
+ *
+ * <p>The assertions about blocking are about <em>eligibility</em>, not about policy. MT-M001 ships as a
+ * candidate rule whose default mode is {@code warn}, so its findings are reported and counted but do not
+ * block; the tests that need to talk about a build failing say so by evaluating an {@code error}-mode
+ * rule, and {@code #warnModeIsReportedButDoesNotBlock} pins the difference. Getting this wrong in the
+ * permissive direction is exactly the audit's A01 defect: every candidate rule behaved as though it
+ * had been opted into failing builds.
  */
 class FindingDeltaEvaluatorTest {
 
@@ -56,8 +63,53 @@ class FindingDeltaEvaluatorTest {
         return MaintainabilityRules.byId("MT-M001").orElseThrow();
     }
 
+    /**
+     * MT-M001 raised to {@code error} mode, for the rows that have to talk about a failing build.
+     *
+     * <p>Everything else about the rule is the catalogue's, so only the mode differs. A test that wanted
+     * to assert "this regression blocks" without changing the mode would be asserting the defect.
+     */
+    private MaintainabilityRule ccAsError() {
+        MaintainabilityRule catalogue = cc();
+        return new MaintainabilityRule(catalogue.id(), catalogue.version(), catalogue.title(),
+                catalogue.description(), catalogue.level(), catalogue.conditions(),
+                catalogue.applicableRoles(), catalogue.maturity(), RuleMode.ERROR,
+                catalogue.severity(), catalogue.documentationPath(), catalogue.requiredScope(),
+                catalogue.worsening(), catalogue.worseningBudgets());
+    }
+
     private FindingDeltaEvaluator.Delta compare(RuleEvaluation base, RuleEvaluation current) {
         return evaluator.compare(cc(), base, current, none(), PATH);
+    }
+
+    /** The same comparison, with the rule opted into failing builds. */
+    private FindingDeltaEvaluator.Delta compareEnforcing(RuleEvaluation base,
+            RuleEvaluation current) {
+        MaintainabilityRule rule = ccAsError();
+        return evaluator.compare(rule, base, current, none(), PATH);
+    }
+
+    /**
+     * The mode decides blocking, and nothing else does.
+     *
+     * <p>The same match, the same evidence, the same lifecycle: reported as a match either way, blocking
+     * only under {@code error}. A mode that is read for {@code off} and ignored for the other two values
+     * makes every candidate rule behave like an opted-in error, and the project has no way to see that
+     * from the report.
+     */
+    @Test
+    void warnModeIsReportedButDoesNotBlock() {
+        RuleEvaluation current = evaluate(cc(), key, values(MetricCode.CC, 18));
+
+        Finding warn = compare(null, current).findings().get(0);
+        assertEquals(FindingLifecycle.NEW_ENTITY, warn.lifecycle());
+        assertEquals(FindingDisposition.ACTIVE, warn.disposition(),
+                "a warn-mode match is a match: advisory reporting must not relabel it as debt");
+        assertFalse(warn.blocks(), "the catalogue ships MT-M001 as warn, so it must not block");
+
+        Finding error = compareEnforcing(null, current).findings().get(0);
+        assertEquals(FindingLifecycle.NEW_ENTITY, error.lifecycle());
+        assertTrue(error.blocks(), "the same match under an opted-in error mode does block");
     }
 
     // ---------------------------------------------------------------- new and introduced
@@ -71,22 +123,23 @@ class FindingDeltaEvaluatorTest {
      */
     @Test
     void newComplexMethodDetectedWithoutGrowthBase() {
-        Finding finding = compare(null, evaluate(cc(), key, values(MetricCode.CC, 18)))
+        Finding finding = compareEnforcing(null, evaluate(cc(), key, values(MetricCode.CC, 18)))
                 .findings().get(0);
 
         assertEquals(FindingLifecycle.NEW_ENTITY, finding.lifecycle());
-        assertTrue(finding.blocks(), "new complex code blocks under the rule's own eligibility");
+        assertTrue(finding.blocks(),
+                "new complex code blocks when the rule is opted into failing builds");
         assertEquals(18.0, finding.evidence().get(0).after());
     }
 
     /** A code entity that passed and now matches is *introduced*, distinct from new. */
     @Test
     void passingToMatchingIntroduced() {
-        Finding finding = compare(evaluate(cc(), key, values(MetricCode.CC, 4)),
+        Finding finding = compareEnforcing(evaluate(cc(), key, values(MetricCode.CC, 4)),
                 evaluate(cc(), key, values(MetricCode.CC, 16))).findings().get(0);
 
         assertEquals(FindingLifecycle.INTRODUCED, finding.lifecycle());
-        assertTrue(finding.blocks());
+        assertTrue(finding.blocks(), "an introduced match blocks once the rule is opted in");
 
     }
     // ---------------------------------------------------------------- worsened vs existing
@@ -110,11 +163,20 @@ class FindingDeltaEvaluatorTest {
                 "a rise below the budget is pre-existing debt, not a regression");
         assertEquals(FindingDisposition.EXISTING, existing.disposition());
 
-        Finding worsened = compare(base, evaluate(cc(), key, values(MetricCode.CC, 21)))
+        Finding worsened = compareEnforcing(base, evaluate(cc(), key, values(MetricCode.CC, 21)))
                 .findings().get(0);
         assertEquals(FindingLifecycle.WORSENED, worsened.lifecycle());
         assertTrue(worsened.blocks(),
                 "a rise of exactly the budget is significant: the bound is inclusive");
+
+        // Same comparison under the shipped warn mode: still a significant worsening, still reported,
+        // and still not a reason to fail anybody's build. The lifecycle and the mode are independent
+        // decisions, and conflating them is what made every candidate rule look opted-in.
+        Finding warned = compare(base, evaluate(cc(), key, values(MetricCode.CC, 21)))
+                .findings().get(0);
+        assertEquals(FindingLifecycle.WORSENED, warned.lifecycle());
+        assertEquals(FindingDisposition.ACTIVE, warned.disposition());
+        assertFalse(warned.blocks(), "warn mode reports the worsening without enforcing it");
     }
 
     /** The same at MT-M002's budget of two. */

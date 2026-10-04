@@ -48,7 +48,15 @@ record AnalysisCompleteness(
         List<String> parsedFiles,
         org.b333vv.metric.library.core.AnalysisExecution execution) {
 
-    /** A completeness record for a run whose schedule is not being reported. */
+    /**
+     * A completeness record for a run whose schedule is not known.
+     *
+     * <p>PARALLEL, because that is the analyzer's own default and this shape exists for callers that
+     * never chose a schedule. It is only a statement about how the run was produced, never about
+     * whether the run is trustworthy, and a caller that <em>did</em> choose must say so: the gate
+     * analyses with ORDERED precisely because reproducibility is the product, and a report that claimed
+     * PARALLEL for that run would describe a different run than the one that happened.
+     */
     AnalysisCompleteness(
             List<CheckEvaluationIssue> issues,
             int eligibleFiles,
@@ -112,6 +120,35 @@ record AnalysisCompleteness(
             List<String> parseErrors,
             List<CheckEvaluationIssue> contextIssues,
             GateAnalysisContext analysisContext) {
+        return of(report, snapshot, subjectPaths, checkedMetrics, unparseableBaseFiles,
+                unavailableMetrics, unsupportedSources, excluded, parseErrors, contextIssues,
+                analysisContext, org.b333vv.metric.library.core.AnalysisExecution.ORDERED);
+    }
+
+    /**
+     * The completeness picture of one run, reporting the schedule that run actually used.
+     *
+     * <p>The schedule is a parameter rather than a constant because it is a fact about the run, and the
+     * run is what the report describes. Hardcoding it here made every report claim ORDERED whether or
+     * not the analysis had used it -- which is the audit's A05, and it is the kind of small untruth that
+     * makes a report unusable as evidence: a reader comparing two runs for reproducibility is
+     * comparing a stated schedule with a real one.
+     *
+     * @param execution the schedule the analysis was performed with
+     */
+    static AnalysisCompleteness of(
+            MetricReport report,
+            SourceSnapshot snapshot,
+            Set<String> subjectPaths,
+            Set<MetricCode> checkedMetrics,
+            Set<String> unparseableBaseFiles,
+            List<GateMetricSelection.UnavailableMetric> unavailableMetrics,
+            List<String> unsupportedSources,
+            List<String> excluded,
+            List<String> parseErrors,
+            List<CheckEvaluationIssue> contextIssues,
+            GateAnalysisContext analysisContext,
+            org.b333vv.metric.library.core.AnalysisExecution execution) {
 
         List<CheckEvaluationIssue> issues = new ArrayList<>(contextIssues);
         List<String> parsed = new ArrayList<>();
@@ -222,8 +259,7 @@ record AnalysisCompleteness(
                     path + " was excluded by configuration and was not checked"));
         }
 
-        return new AnalysisCompleteness(issues, subjectPaths.size(), excluded, parsed,
-                org.b333vv.metric.library.core.AnalysisExecution.ORDERED);
+        return new AnalysisCompleteness(issues, subjectPaths.size(), excluded, parsed, execution);
     }
 
     /**

@@ -42,19 +42,47 @@ import java.util.function.Function;
 final class ClassRuleEvaluator {
 
     /**
-     * Evaluates one rule against one class, in the scope the run actually used.
+     * Evaluates one rule against one class with no role or enforcement context.
      *
-     * @param rule      the catalogue rule
-     * @param entityKey the class's identity
-     * @param metrics   what was measured for this class
-     * @param scope     the analysis scope of this run
+     * <p>The shape the tests state a case in. It assumes the strictest reading — unknown role,
+     * enforcement in force — so an unavailable metric raises a required issue. A production run goes
+     * through {@link #evaluate(MaintainabilityRule, EntityKey, Map, MetricRequirements.Scope,
+     * EntityRole, MaintainabilityAnalysisService.Enforcement)}, which decides both from the policy.
      */
     RuleEvaluation evaluate(MaintainabilityRule rule, EntityKey entityKey,
             Map<MetricCode, Value> metrics, MetricRequirements.Scope scope) {
+        return evaluate(rule, entityKey, metrics, scope, EntityRole.UNKNOWN,
+                MaintainabilityAnalysisService.Enforcement.ENFORCE);
+    }
+
+    /**
+     * Evaluates one rule against one class, in the scope the run actually used.
+     *
+     * <p>Whether a gap is required or optional is decided here from the two facts that decide it: the
+     * run's enforcement level and the rule's effective mode. A {@code warn}-mode rule whose metric is
+     * unavailable produces an <em>optional</em> issue, because the project never said that check had
+     * to happen -- only that a failure would be reported. Marking it required made every advisory run
+     * exit 2 over checks nobody had asked for, which is how "report first" became "cannot pass at all".
+     *
+     * @param rule        the rule, already carrying this project's overrides
+     * @param entityKey   the class's identity
+     * @param metrics     what was measured for this class
+     * @param scope       the analysis scope of this run
+     * @param role        the classified role of the code this class lives in
+     * @param enforcement the enforcement level in force for this run
+     */
+    RuleEvaluation evaluate(MaintainabilityRule rule, EntityKey entityKey,
+            Map<MetricCode, Value> metrics, MetricRequirements.Scope scope, EntityRole role,
+            MaintainabilityAnalysisService.Enforcement enforcement) {
         List<FindingEvidence> evidence = new ArrayList<>(rule.conditions().size());
         List<EvaluationIssue> issues = new ArrayList<>();
         boolean allPresent = true;
         boolean allSatisfied = true;
+        // Required only when the project has actually committed to this check. Mode error makes it
+        // required whatever the enforcement level; otherwise enforcement must be enforce as well.
+        boolean required = rule.maturity().allowsBlocking()
+                && rule.defaultMode() == RuleMode.ERROR
+                && enforcement == MaintainabilityAnalysisService.Enforcement.ENFORCE;
 
         for (Map.Entry<MetricCode, MaintainabilityRule.MetricBounds> condition
                 : sortedConditions(rule).entrySet()) {
@@ -68,8 +96,7 @@ final class ClassRuleEvaluator {
                         MethodRuleEvaluator.unitOf(metric),
                         List.of("this metric needs " + scopeId(MetricRequirements.scopeOf(metric))
                                 + " and the run used " + scopeId(scope))));
-                issues.add(EvaluationIssue.required(rule.id(), entityKey,
-                        CheckEvaluationIssue.METRIC_UNAVAILABLE_LOCAL,
+                issues.add(gap(rule, entityKey, required,
                         rule.id() + " needs " + metric + ", which requires "
                                 + scopeId(MetricRequirements.scopeOf(metric))
                                 + ". This run used " + scopeId(scope)
@@ -83,8 +110,7 @@ final class ClassRuleEvaluator {
                 evidence.add(new FindingEvidence(metric, null, null, bounds.min(), bounds.max(), null,
                         MethodRuleEvaluator.unitOf(metric),
                         List.of("the metric was not measured for this class")));
-                issues.add(EvaluationIssue.required(rule.id(), entityKey,
-                        CheckEvaluationIssue.METRIC_UNAVAILABLE_LOCAL,
+                issues.add(gap(rule, entityKey, required,
                         rule.id() + " needs " + metric + ", which was not measured for "
                                 + entityKey.render()
                                 + ". The rule has not been shown to fail; it could not be run."));
@@ -105,14 +131,29 @@ final class ClassRuleEvaluator {
                 : RuleEvaluation.nonmatch(rule.id(), entityKey, evidence);
 
     }
-    /** Evaluates a rule against each class of a report, in report order. */
+
+    /** A gap marked required or optional according to what the project committed to. */
+    private static EvaluationIssue gap(MaintainabilityRule rule, EntityKey entityKey,
+            boolean required, String message) {
+        return new EvaluationIssue(rule.id(), entityKey, null,
+                CheckEvaluationIssue.METRIC_UNAVAILABLE_LOCAL, message, required);
+    }
+
+    /**
+     * Evaluates a rule against each class of a report, in report order.
+     *
+     * <p>The convenience form for tests and for callers with no role or enforcement context: it
+     * classifies nothing and assumes the strictest reading, so a class whose metric is unavailable
+     * raises a required issue. Production callers go through the service, which decides both.
+     */
     List<RuleEvaluation> evaluateAll(MaintainabilityRule rule, List<ClassReport> classes,
             Function<Path, String> logicalPath, MetricRequirements.Scope scope) {
         List<RuleEvaluation> evaluations = new ArrayList<>(classes.size());
         for (ClassReport classReport : classes) {
             EntityKey key = EntityKey.ofClass(logicalPath.apply(classReport.sourcePath()),
                     classReport.qualifiedName());
-            evaluations.add(evaluate(rule, key, classReport.metrics(), scope));
+            evaluations.add(evaluate(rule, key, classReport.metrics(), scope, EntityRole.UNKNOWN,
+                    MaintainabilityAnalysisService.Enforcement.ENFORCE));
         }
         return evaluations;
     }

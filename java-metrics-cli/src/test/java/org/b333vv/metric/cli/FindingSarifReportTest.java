@@ -32,7 +32,7 @@ class FindingSarifReportTest {
                 List.of(new FindingEvidence(MetricCode.CC, null, 18.0, 16.0, null, null,
                         "complexity", List.of())),
                 List.of(), "inspect the branches", "docs/rules/mt-m001.md", EntityRole.PRODUCTION,
-                disposition, null);
+                disposition, null, blocking);
     }
 
     private static FindingReport report(List<Finding> findings, List<EvaluationIssue> issues) {
@@ -99,19 +99,38 @@ class FindingSarifReportTest {
         assertTrue(notifications.get(0).get("properties").get("required").asBoolean());
     }
 
-    /** Debt that is not a fresh alert is not re-reported as one on every run. */
+    /**
+     * Active findings are results; accepted debt is not.
+     *
+     * <p>Two decisions that used to be collapsed into {@code blocks()}. Filtering on blocking meant an
+     * advisory run -- the recommended first run, and the one the docs lead with -- uploaded a SARIF
+     * file with no results at all, so a code-scanning consumer reported the repository as clean while
+     * the tool had written down every problem it found. Filtering on the disposition instead keeps
+     * every fresh match visible while still not re-alerting debt the project has already decided about,
+     * which is what a code-scanning consumer cannot usefully be shown twice.
+     */
     @Test
-    void suppressedExistingDebtNotRepeatedAsActiveAlert() throws Exception {
+    void activeFindingsAreResultsAndAcceptedDebtIsNot() throws Exception {
         JsonNode log = sarif(report(List.of(
                 finding("a()", FindingLifecycle.WORSENED, FindingDisposition.ACTIVE, true),
-                finding("b()", FindingLifecycle.EXISTING, FindingDisposition.EXISTING, false),
-                finding("c()", FindingLifecycle.NEW_ENTITY, FindingDisposition.SUPPRESSED, false),
-                finding("d()", FindingLifecycle.NEW_ENTITY, FindingDisposition.BASELINE_ACCEPTED,
+                finding("b()", FindingLifecycle.WORSENED, FindingDisposition.ACTIVE, false),
+                finding("c()", FindingLifecycle.CURRENT, FindingDisposition.ACTIVE, false),
+                finding("d()", FindingLifecycle.EXISTING, FindingDisposition.EXISTING, false),
+                finding("e()", FindingLifecycle.NEW_ENTITY, FindingDisposition.SUPPRESSED, false),
+                finding("f()", FindingLifecycle.NEW_ENTITY, FindingDisposition.BASELINE_ACCEPTED,
                         false)), List.of()));
 
-        assertEquals(1, log.get("runs").get(0).get("results").size(),
-                "only what would block is an alert; a code-scanning consumer cannot tell new from"
-                        + " already known and re-alerting known debt looks endless");
+        assertEquals(3, log.get("runs").get(0).get("results").size(),
+                "every active finding is a result, blocking or not: the advisory finding and the"
+                        + " detect finding are the two the blocking filter used to drop, and dropping"
+                        + " them told a consumer the repository was clean;"
+                        + " existing, suppressed and baseline-accepted debt is not re-alerted");
+
+        // The distinction the consumer actually needs is preserved in the result itself.
+        assertEquals("true", log.get("runs").get(0).get("results").get(0).get("properties")
+                .get("blocking").asText(), "the enforced one says so");
+        assertEquals("false", log.get("runs").get(0).get("results").get(1).get("properties")
+                .get("blocking").asText(), "and the advisory one does too");
     }
 
     // ---------------------------------------------------------------- parity with the JSON

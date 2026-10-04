@@ -35,11 +35,11 @@ import java.util.Map;
 final class MethodRuleEvaluator {
 
     /**
-     * Evaluates one rule against one method.
+     * Evaluates one rule against one method, in the scope the run actually used.
      *
-     * @param rule      the catalogue rule
-     * @param entityKey the method's identity, carrying path, class and signature
-     * @param metrics   what was measured for this method; absent codes are the missing inputs
+     * @param rule        the rule, already carrying this project's overrides
+     * @param entityKey   the method's identity, carrying path, class and signature
+     * @param metrics     what was measured for this method; absent codes are the missing inputs
      */
     RuleEvaluation evaluate(MaintainabilityRule rule, EntityKey entityKey,
             Map<MetricCode, Value> metrics) {
@@ -72,7 +72,7 @@ final class MethodRuleEvaluator {
                 allPresent = false;
                 evidence.add(new FindingEvidence(metric, null, null, bounds.min(), bounds.max(), null,
                         unitOf(metric), List.of("the metric was not measured for this method")));
-                issues.add(EvaluationIssue.required(rule.id(), entityKey,
+                issues.add(EvaluationIssue.optional(rule.id(), entityKey,
                         CheckEvaluationIssue.METRIC_UNAVAILABLE_LOCAL,
                         rule.id() + " needs " + metric + ", which was not measured for "
                                 + entityKey.render()

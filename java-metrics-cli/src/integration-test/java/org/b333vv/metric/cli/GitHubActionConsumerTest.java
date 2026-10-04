@@ -76,6 +76,20 @@ class GitHubActionConsumerTest {
         Path source = repo.resolve("src/main/java/app/Order.java");
         Files.createDirectories(source.getParent());
         Files.writeString(source, complexClass("Order", branches));
+        // The consumer opts MT-M001 into failing builds, in its own config, committed with the
+        // initial revision. Every rule in the shipped catalogue is a warn candidate, so this is what a
+        // project has to write to make CI fail over it -- and these scenarios test a consumer that has.
+        // Keeping it here rather than in each test means the "nothing changed" and "nothing got worse"
+        // cases are governed by the same policy as the failing ones.
+        Files.writeString(repo.resolve(".metrics-gate.yml"), """
+                gate:
+                  policy: maintainability
+                maintainability:
+                  enabledRules: [MT-M001]
+                  rules:
+                    MT-M001:
+                      mode: error
+                """);
         commit(repo, "initial");
 
         // Asserted, not assumed: a base ref the fixture failed to create would make every scenario
@@ -175,9 +189,19 @@ class GitHubActionConsumerTest {
         }
     }
 
+    /**
+     * The environment that opts a consumer into failing builds over MT-M001.
+     *
+     * <p>Enforcement and mode are separate decisions, and these scenarios need both. Every rule in the
+     * shipped catalogue is a {@code warn} candidate, so {@code --enforcement enforce} on its own reports
+     * findings and exits 0 \u2014 which is the correct behaviour, and would make every "the change made
+     * things worse" test below pass on a clean run. The config is therefore part of the environment:
+     * a consumer that wants CI to fail opts a rule in, and these scenarios model exactly that.
+     */
     private static Map<String, String> maintainability() {
         return Map.of("MG_POLICY", "maintainability", "MG_ENFORCEMENT", "enforce");
     }
+
 
     /**
      * The policy settings, comparing against the commit before the change.
@@ -323,6 +347,9 @@ class GitHubActionConsumerTest {
             Files.writeString(config, """
                     maintainability:
                       enabledRules: [MT-M001]
+                      rules:
+                        MT-M001:
+                          mode: error
                     """);
             Files.writeString(repo.resolve("src/main/java/app/Order.java"),
                     complexClass("Order", 25));
@@ -466,6 +493,12 @@ class GitHubActionConsumerTest {
             builder.environment().put("GITHUB_STEP_SUMMARY",
                     repo.resolve("summary.md").toString());
             builder.environment().put("GITHUB_BASE_REF", "main");
+            // Driven directly rather than through action.yml, so nothing supplies these: the script
+            // reads the policy from the environment, and the consumer's own config is discovered from
+            // its working directory. Stated explicitly because a missing variable here would default
+            // the run to the legacy policy and pass on thresholds the fixture never wrote.
+            builder.environment().put("MG_POLICY", "maintainability");
+            builder.environment().put("MG_ENFORCEMENT", "enforce");
             // A proxy pointing nowhere: any attempt to fetch the base ref fails loudly rather than
             // silently succeeding on a machine that happens to have the commit cached.
             builder.environment().put("GIT_ALLOW_PROTOCOL", "file");

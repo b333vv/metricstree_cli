@@ -1,5 +1,64 @@
 # what has been done
 
+## Session: fixing the ML-001–ML-032 audit findings (2026-10-04)
+
+Working through the [audit matrix](plans/maintainability-linter/audits/2026-10-04/README.md)
+defect by defect. This entry records what is closed and what is not; it is a progress log, not a
+claim that the audit is discharged.
+
+**Closed so far — the enforcement core (A01, A04, A05, A06, A08, A16).** The central finding was
+that the policy was recorded but not applied. `MaintainabilitySettings` carried overrides that
+nothing read: a rule configured `mode: warn` blocked, a `limits` retune left the catalogue bound in
+force, and configured `roles` were applied after evaluation so a finding could be generated for
+test code and labelled `production`. Fixed by making the *effective* rule the thing that is
+evaluated (`MaintainabilityAnalysisService.effectiveRule`), deciding blocking from mode + maturity +
+enforcement, and making visibility and enforcement separate facts: `Finding` now carries an explicit
+`blocking` flag rather than deriving it from disposition, so advisory no longer relabels new findings
+as inherited debt. A gate that cannot tell "warn mode" from "enforced" cannot be configured at all.
+
+Also fixed: an explicit `-p/--profile` with `--policy maintainability` is now a usage error naming
+the input (A04) rather than a silent no-op; an empty metric request selects nothing instead of
+`MetricSelection.all()` (A05); the report's `execution` field states the schedule the run actually
+used rather than a hardcoded `ORDERED` (A05); the gate computes one verdict from one set of inputs
+and stamps it on the findings report, instead of the command and the policy each deciding separately
+and disagreeing (A06); and a current-only `detect` run reports `CURRENT`, not `NEW_ENTITY`, because
+it cannot know whether the code it read was introduced by any change (A08).
+
+**Closed — input fidelity (A02, A03).** Worktree mode built its after snapshot from HEAD's tracked
+paths, so a staged *new* file was never materialised, analysed or reported — the default mode passed
+over a change sitting in the index. It now takes the index's paths too, and uses `git diff -M` over
+the index and working tree for rename detection, so a `git mv` stays one entity instead of appearing
+as an addition plus a deletion that the correspondence could not pair. Local deletions are recorded
+in worktree mode as well, and git's records are reconciled with the per-path comparison so one edit
+is one record. Separately, `SnapshotMaterializer.verifyUnchanged` was correct, unit-tested, and
+never called by the CLI: no run ever checked whether the working copy moved during its analysis. It
+is now called after the analysis and before anything is published, with an end-to-end test that
+mutates the repository mid-run — a test of the *use*, not of the helper, which is the gap that let
+this defect exist.
+
+**Closed — output (A11).** `--format sarif` was rejected for the gate and unresolvable for detect's
+maintainability path, and the findings SARIF writer filtered on `blocks()`, so an advisory run
+uploaded a file with zero results and a code-scanning consumer reported the repository as clean.
+SARIF is registered for both commands (delegating from each command's own adapter, since the
+registry holds one adapter per format), and results are selected by disposition rather than by
+blocking, with `blocking` carried in the result properties.
+
+**Tests.** Several existing assertions encoded the defective behaviour — "a warn-mode rule blocks",
+"an advisory run relabels findings as existing", "detect reports every match as new". Those were
+rewritten to state the corrected contract rather than deleted, each with the reason it was wrong,
+because a test that is deleted and a test that is corrected look identical from the outside and only
+one of them changes what the code must do. New coverage: effective limits and roles, warn-vs-error
+blocking, optional vs required gaps by mode, `CURRENT` vs `NEW_ENTITY`, staged additions and renames
+in worktree mode, mid-run mutation detection, and the profile/threshold migration errors.
+
+**Not yet done.** A07 (changed-path filtering in project scope), A09 (remaining detect report-parity
+gaps), A10 (evidence ranges, before-values, fingerprint field), A12 (trace cap, per-metric), A13
+(cumulative baseline regression must block), A14 (digest coverage), A15 (legacy method findings in
+other formats), A17 (suppression identity for class rules, stale status), A18–A19 (release workflow
+and Action outputs), and the two harness defects: A20 (the benchmark measures HEAD against itself)
+and A21 (the evaluation harness counts an invalid Java fixture as a rule miss). A21 in particular
+means the recorded evaluation rates still cannot substantiate anything.
+
 ## Session: acceptance audit of ML-001–ML-032 (2026-10-04)
 
 Audited implementation revision `6e4c03e2d8b19511db513b6ae4d57e6c1d99ad1b` against all 32

@@ -27,6 +27,9 @@ final class DetectCommand implements Callable<Integer> {
     private final PrintWriter stdout;
     private final PrintWriter stderr;
 
+    /** The findings report this run produced, kept so the verdict and the sidecar agree. */
+    private FindingReport maintainabilityReport;
+
     DetectCommand(
             JavaMetricsAnalyzer analyzer,
             Supplier<Path> currentWorkingDirectorySupplier,
@@ -57,6 +60,13 @@ final class DetectCommand implements Callable<Integer> {
                     + "over the analysed source with no base revision. Defaults to detect.policy in "
                     + "a project config. Cannot be combined with the legacy rule files.")
     private String policy;
+
+    @CommandLine.Option(names = "--scope", paramLabel = "SCOPE",
+            description = "How much of the project the analysis may use under --policy"
+                    + " maintainability: local (default) measures only metrics provable from one"
+                    + " file's syntax, so a run without a classpath is still trustworthy; project"
+                    + " also resolves symbols and measures coupling, and needs a usable classpath.")
+    private org.b333vv.metric.library.core.MetricRequirements.Scope scope;
 
     @CommandLine.Option(names = "--enforcement", paramLabel = "LEVEL",
             description = "For --policy maintainability: advisory (default) reports findings without "
@@ -164,8 +174,11 @@ final class DetectCommand implements Callable<Integer> {
         // Resolved before anything is read: a migration error costs no analysis time.
         MaintainabilityPolicy activePolicy;
         try {
+            // detect has no --profile and no thresholds, so the legacy inputs it can carry are the rule
+            // files; profileGiven is false by construction rather than passed as an absent value.
             activePolicy = MaintainabilityPolicy.resolve(policy, null, enforcement, null, config,
-                    classRulesFile != null || packageRulesFile != null || methodRulesFile != null);
+                    classRulesFile != null || packageRulesFile != null || methodRulesFile != null,
+                    false);
         } catch (IllegalArgumentException exception) {
             stderr.println("Error: " + exception.getMessage());
             stderr.flush();
@@ -244,10 +257,15 @@ final class DetectCommand implements Callable<Integer> {
         if (activePolicy.isMaintainability()) {
             // Current-only by construction: detect compares nothing against a base revision, and
             // inventing one would report every match as brand new on every run.
+            //
+            // "No base" therefore has to be expressed as its own lifecycle rather than as
+            // NEW_ENTITY. A current-only run cannot know whether the code it just read is new, and
+            // asserting that it is fabricates a history this command never established. CURRENT is
+            // visible, counted and ordered, and does not block -- the gate is where a change is judged.
             MaintainabilityAnalysisService.Result result =
                     new MaintainabilityAnalysisService().evaluate(
                             null, report, this::logicalPathOf,
-                            org.b333vv.metric.library.core.MetricRequirements.Scope.SYNTAX_LOCAL,
+                            resolveScope(),
                             activePolicy.settings(), null, activePolicy.enforcement());
             if (jsonOutputFile != null
                     && outputFile.toAbsolutePath().normalize()
@@ -258,25 +276,40 @@ final class DetectCommand implements Callable<Integer> {
                 stderr.flush();
                 return 2;
             }
-            FindingReport findings = new FindingReport(FindingReport.SCHEMA_VERSION,
+            if ("-".equals(jsonOutputFile == null ? "" : jsonOutputFile.toString())) {
+                stderr.println("Error: --json-output cannot be stdout: the findings JSON needs a"
+                        + " file so the verdict line can still be read on its own.");
+                stderr.flush();
+                return 2;
+            }
+            maintainabilityReport = new FindingReport(FindingReport.SCHEMA_VERSION,
                     result.blocking().isEmpty() ? "PASSED" : "FAILED", activePolicy.settings(),
-                    result.findings(), result.issues());
-            String rendered = new FindingJsonReportAdapter()
-                    .render(new FindingReportContext(findings, null));
+                    result.findings(), result.issues(), result.suppressions());
+            // Rendered through the registry, not from the JSON adapter directly, so --format sarif,
+            // html and agent-md produce the findings report rather than silently writing JSON into a
+            // file the caller believes is SARIF. A format that has no findings adapter says so.
+            String rendered = reportAdapters.render(ReportType.FINDINGS, effectiveFormat,
+                    new FindingReportContext(maintainabilityReport, null));
             if (jsonOutputFile != null) {
-                writeAtomically(jsonOutputFile, rendered);
+                writeAtomically(jsonOutputFile,
+                        new FindingJsonReportAdapter()
+                                .render(new FindingReportContext(maintainabilityReport, null)));
             }
             if ("-".equals(outputFile.toString())) {
                 // The report goes to stdout; the verdict and every error stay on stderr, so a
-                // pipeline reading one stream gets JSON and nothing else.
+                // pipeline reading one stream gets the report and nothing else.
                 stdout.println(rendered);
                 stdout.flush();
             } else {
                 writeAtomically(outputFile, rendered);
             }
+            stderr.println(result.blocking().isEmpty()
+                    ? "PASSED: " + reported(result) + " finding"
+                            + (reported(result) == 1 ? "" : "s") + " reported, none blocking"
+                    : "FAILED: " + result.blocking().size() + " finding"
+                            + (result.blocking().size() == 1 ? "" : "s") + " blocked");
             stderr.flush();
-            return activePolicy.enforcement() == MaintainabilityAnalysisService.Enforcement.ENFORCE
-                    && !result.blocking().isEmpty() ? 1 : 0;
+            return result.blocking().isEmpty() ? 0 : 1;
         }
 
         String serializedReport = toReport(classMatches, classRulesSummary, packageMatches,
@@ -288,6 +321,42 @@ final class DetectCommand implements Callable<Integer> {
         }
         Files.writeString(normalizedOutputFile, serializedReport);
         return 0;
+    }
+
+    /**
+     * How many findings this run reported, whatever the verdict.
+     *
+     * <p>Named separately from the blocking count because "nothing blocked" and "nothing was found"
+     * are different sentences, and a PASSED line that gives only the first is how an advisory run
+     * comes to read as a clean one.
+     */
+    private static int reported(MaintainabilityAnalysisService.Result result) {
+        return result.findings().size();
+    }
+
+    /**
+     * The analysis scope detect runs in: an explicit option, then the config, then local.
+     *
+     * <p>Local, because it is the only scope whose numbers are trustworthy without a classpath. A
+     * detect run that quietly published unresolved coupling values would be making claims about
+     * numbers it could not measure, and detect has no classpath of its own to make them true.
+     */
+    /**
+     * The analysis scope detect runs in, from {@code --scope} only.
+     *
+     * <p>Local unless the caller says otherwise, because it is the only scope whose numbers are
+     * trustworthy without a classpath. A detect run that quietly published unresolved coupling values
+     * would be making claims about numbers it could not measure, and detect has no classpath of its
+     * own to make them true.
+     *
+     * <p>No config key is read for this. {@code detect} has no analysis section, and inventing one
+     * here would be a setting with no validation, no documentation and no place a reader would look
+     * for it. A flag a user can see in {@code --help} is worth more than a silent default.
+     */
+    private org.b333vv.metric.library.core.MetricRequirements.Scope resolveScope() {
+        return scope == null
+                ? org.b333vv.metric.library.core.MetricRequirements.Scope.SYNTAX_LOCAL
+                : scope;
     }
 
     /**

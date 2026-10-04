@@ -47,7 +47,10 @@ final class FindingDeltaEvaluator {
     }
 
     /**
-     * Compares one rule's evaluations across the two revisions.
+     * Compares one rule's evaluations across the two revisions, with no role context.
+     *
+     * <p>The shape tests state a case in. A finding's role defaults to PRODUCTION here, which is what
+     * an unconfigured run classifies most paths as anyway.
      *
      * @param base          the evaluation at the base revision, or {@code null} when the entity is new
      * @param correspondence how entities correspond between the revisions
@@ -55,13 +58,35 @@ final class FindingDeltaEvaluator {
      */
     Delta compare(MaintainabilityRule rule, RuleEvaluation base, RuleEvaluation current,
             EntityCorrespondence correspondence, String path) {
+        return compare(rule, base, current, correspondence, path, EntityRole.PRODUCTION, true);
+    }
+
+    /**
+     * Compares one rule's evaluations across the two revisions.
+     *
+     * @param base          the evaluation at the base revision, or {@code null} when the entity is new
+     * @param correspondence how entities correspond between the revisions
+     * @param path          the current logical path, for the finding's location
+     * @param role          the classified role, recorded on the finding
+     */
+    Delta compare(MaintainabilityRule rule, RuleEvaluation base, RuleEvaluation current,
+            EntityCorrespondence correspondence, String path, EntityRole role, boolean comparing) {
         List<Finding> findings = new ArrayList<>();
         List<EvaluationIssue> issues = new ArrayList<>();
 
         if (base == null) {
             if (current.status() == EvaluationStatus.COMPLETE_MATCH) {
-                findings.add(finding(rule, current, FindingLifecycle.NEW_ENTITY,
-                        FindingDisposition.ACTIVE, null, path, null));
+                // Two different reasons to have no base value, and they are not interchangeable.
+                //
+                // A *comparison* with no base means the entity is new: this change created it, which
+                // is a claim the base revision supports by not containing it. A *current-only* run has
+                // no base at all, and says nothing about when the code appeared -- calling that NEW_ENTITY
+                // asserts a history the run never established. It is the audit's A08, and the difference
+                // is the difference between "you added this" and "this matches", both printed to a reader
+                // who has no way to tell which one they are looking at.
+                findings.add(finding(rule, current,
+                        comparing ? FindingLifecycle.NEW_ENTITY : FindingLifecycle.CURRENT,
+                        FindingDisposition.ACTIVE, null, path, null, role));
             } else if (current.status().isUnavailable()) {
                 issues.addAll(current.issues());
             }
@@ -75,7 +100,7 @@ final class FindingDeltaEvaluator {
         if (current.status().isUnavailable() || base.status().isUnavailable()) {
             findings.add(finding(rule, current, FindingLifecycle.COMPARISON_UNAVAILABLE,
                     FindingDisposition.NOT_MATCHED, "comparison-unavailable", path,
-                    base.entityKey()));
+                    base.entityKey(), role));
             issues.addAll(base.issues());
             issues.addAll(current.issues());
             return new Delta(findings, issues);
@@ -86,17 +111,17 @@ final class FindingDeltaEvaluator {
 
         if (!baseMatched && currentMatched) {
             findings.add(finding(rule, current, FindingLifecycle.INTRODUCED,
-                    FindingDisposition.ACTIVE, null, path, base.entityKey()));
+                    FindingDisposition.ACTIVE, null, path, base.entityKey(), role));
         } else if (baseMatched && !currentMatched) {
             findings.add(finding(rule, base, FindingLifecycle.RESOLVED,
-                    FindingDisposition.RESOLVED, "no-longer-matches", path, base.entityKey()));
+                    FindingDisposition.RESOLVED, "no-longer-matches", path, base.entityKey(), role));
         } else if (baseMatched) {
             if (isSignificantlyWorse(rule, base, current)) {
                 findings.add(finding(rule, current, FindingLifecycle.WORSENED,
-                        FindingDisposition.ACTIVE, null, path, base.entityKey()));
+                        FindingDisposition.ACTIVE, null, path, base.entityKey(), role));
             } else {
                 findings.add(finding(rule, current, FindingLifecycle.EXISTING,
-                        FindingDisposition.EXISTING, "not-worsened", path, base.entityKey()));
+                        FindingDisposition.EXISTING, "not-worsened", path, base.entityKey(), role));
             }
         }
         return new Delta(findings, issues);
@@ -214,11 +239,22 @@ final class FindingDeltaEvaluator {
         return values;
     }
 
+    /**
+     * Builds one finding, applying the rule's effective mode to decide whether it may block.
+     *
+     * <p>This is where A01's second half is settled. A match on a rule in {@code warn} mode is a real
+     * finding with disposition {@code ACTIVE} — it is reported, counted and ordered like any other —
+     * but {@code blocks()} is false, because the project said a match would be reported rather than
+     * enforced. Before, the mode was read only for {@code off}, so every {@code warn} rule behaved
+     * like {@code error} and {@code --enforcement enforce} failed builds nobody asked it to fail.
+     */
     private Finding finding(MaintainabilityRule rule, RuleEvaluation evaluation,
             FindingLifecycle lifecycle, FindingDisposition disposition, String dispositionReason,
-            String path, EntityKey baseKey) {
+            String path, EntityKey baseKey, EntityRole role) {
         String previous = baseKey == null ? null
                 : FindingFingerprint.of(rule.id(), rule.version(), baseKey);
+        boolean mayBlock = rule.defaultMode() == RuleMode.ERROR
+                && rule.maturity().allowsBlocking();
         return new Finding(
                 rule.id(), rule.version(), evaluation.entityKey(), rule.title(),
                 message(rule, lifecycle),
@@ -226,8 +262,10 @@ final class FindingDeltaEvaluator {
                 baseKey == null ? null : FindingLocation.of(baseKey.path(), 1),
                 rule.severity(), rule.maturity(), evaluation.status(), lifecycle,
                 evaluation.evidence(), List.of(),
-                rule.description(), rule.documentationPath(), EntityRole.PRODUCTION,
-                disposition, dispositionReason == null ? previous : dispositionReason);
+                rule.description(), rule.documentationPath(),
+                role == null ? EntityRole.PRODUCTION : role,
+                disposition, dispositionReason == null ? previous : dispositionReason,
+                mayBlock);
     }
 
     private static String message(MaintainabilityRule rule, FindingLifecycle lifecycle) {
@@ -236,6 +274,7 @@ final class FindingDeltaEvaluator {
             case INTRODUCED -> "This code now matches " + rule.id() + ": " + rule.title();
             case WORSENED -> "Existing match of " + rule.id() + " got worse: " + rule.title();
             case EXISTING -> "Already matched " + rule.id() + " before this change: " + rule.title();
+            case CURRENT -> "Matches " + rule.id() + " at the analysed revision: " + rule.title();
             case RESOLVED -> "No longer matches " + rule.id() + ": " + rule.title();
             case COMPARISON_UNAVAILABLE -> "Could not compare " + rule.id()
                     + " between the two revisions: " + rule.title();
@@ -251,9 +290,22 @@ final class FindingDeltaEvaluator {
      * method may have been deleted, moved somewhere unanalysed, or renamed.
      */
     Delta reportRemovedEntity(MaintainabilityRule rule, RuleEvaluation base, String path) {
+        return reportRemovedEntity(rule, base, path, EntityRole.PRODUCTION);
+    }
+
+    /**
+     * Reports a finding whose entity disappeared, with the reason stated and the role recorded.
+     *
+     * <p>A removal counts as resolved, and the reason says it was the <em>entity</em> that went, not
+     * the code that improved. Reporting it as an improvement would be a claim nobody can support: the
+     * method may have been deleted, moved somewhere unanalysed, or renamed.
+     */
+    Delta reportRemovedEntity(MaintainabilityRule rule, RuleEvaluation base, String path,
+            EntityRole role) {
         return new Delta(
                 List.of(finding(rule, base, FindingLifecycle.RESOLVED,
-                        FindingDisposition.RESOLVED, REASON_ENTITY_REMOVED, path, base.entityKey())),
+                        FindingDisposition.RESOLVED, REASON_ENTITY_REMOVED, path, base.entityKey(),
+                        role)),
                 List.of());
     }
 }

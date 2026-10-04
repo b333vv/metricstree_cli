@@ -147,14 +147,67 @@ final class ComparisonPlanner {
             case STAGED -> {
                 // Stage-0 index contents. GitOps.indexEntries throws on an unmerged entry, which is
                 // the contract's requirement for this mode.
-                Map<String, String> staged = new LinkedHashMap<>();
-                for (Map.Entry<String, String> entry : GitOps.indexEntries(repoRoot).entrySet()) {
-                    staged.put(entry.getKey(), entry.getValue().split(" ")[1]);
-                }
-                yield AfterSnapshot.fromObjects(staged);
+                yield AfterSnapshot.fromObjects(indexObjectIds(repoRoot));
             }
-            case WORKTREE -> AfterSnapshot.fromDisk(objectIdsOf(headTree));
+            case WORKTREE -> {
+                // Worktree mode is HEAD's tracked paths *plus* everything the index already tracks,
+                // which is the audit's A02. Reading only HEAD meant a file the author had staged and
+                // not yet committed did not exist as far as the comparison was concerned: it was not in
+                // the after snapshot, so it was never materialised, never analysed and never reported
+                // -- and the gate said PASSED over a change that was sitting in the index waiting to be
+                // committed. Staged mode included those files, which is what made the same working copy
+                // produce a different verdict depending only on which mode was named.
+                //
+                // The index contributes the *paths*; the content still comes from disk, because that is
+                // what "worktree" means: unstaged edits on a tracked file must be seen too. A path the
+                // index knows about but that is not on disk is reported by the deletion pass below
+                // rather than being materialised from a stale blob.
+                yield AfterSnapshot.fromDisk(worktreePaths(repoRoot, headTree));
+            }
         };
+    }
+
+    /**
+     * The paths that exist in the working copy right now: everything the index tracks, plus everything
+     * HEAD tracked that is still on disk.
+     *
+     * <p>The index is authoritative for paths it knows about, and it is the only thing that knows about
+     * a file the author has newly staged. HEAD's paths are added back only when the file is physically
+     * present, because that is the other half of "exists": a file HEAD tracked and the index no longer
+     * has was deleted or renamed away, and putting it back would make the after snapshot claim a file
+     * exists that does not \u2014 which is how the deletion and rename records below were being erased.
+     *
+     * <p>The object IDs are carried along rather than being read: the worktree snapshot compares content
+     * on disk against them, and they are how a modification is told from a file that merely exists.
+     */
+    private static Map<String, String> worktreePaths(Path repoRoot, Map<String, GitTreeEntry> headTree)
+            throws GitOps.GitException {
+        Map<String, String> paths = new LinkedHashMap<>(indexObjectIds(repoRoot));
+        for (Map.Entry<String, GitTreeEntry> entry : headTree.entrySet()) {
+            String path = entry.getKey();
+            paths.putIfAbsent(path, entry.getValue().objectId());
+            if (!Files.exists(repoRoot.resolve(path))) {
+                paths.remove(path);
+            }
+        }
+        return paths;
+    }
+
+    /**
+     * The index's stage-0 entries, as path to object ID.
+     *
+     * <p>Stage is parsed and a nonzero stage is refused rather than skipped. Choosing one of several
+     * stages would resolve a conflict by picking, and the gate's whole claim is that its verdict is a
+     * fact about the code rather than an artefact of which side git listed first.
+     */
+    private static Map<String, String> indexObjectIds(Path repoRoot)
+            throws GitOps.GitException {
+        Map<String, String> staged = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : GitOps.indexEntries(repoRoot).entrySet()) {
+            String[] parts = entry.getValue().split(" ");
+            staged.put(entry.getKey(), parts[1]);
+        }
+        return staged;
     }
 
     /**
@@ -183,6 +236,22 @@ final class ComparisonPlanner {
             GitOps.indexEntries(repoRoot);
         }
         List<GitPathChange> local = new ArrayList<>();
+        // Git's own rename detection over the live index and working tree.
+        //
+        // The earlier implementation compared each path against HEAD and then paired "one addition plus
+        // one deletion" into a rename. That is the audit's A02 arriving through the fix: two unrelated
+        // files edited in the same commit are indistinguishable from a move by that test, and reporting
+        // them as one moved entity is worse than the original defect, because it merges two histories.
+        // Git compares content, so it recognises a move when the content matches and leaves two
+        // unrelated edits alone.
+        //
+        // It is also the only thing that can see a rename *within* the working tree, which is the common
+        // case: `git mv` stages both halves, so the pair only exists in the index diff.
+        local.addAll(GitOps.workingTreeChanges(repoRoot, headSha));
+
+        // The per-path comparison below covers what git's diff cannot: it is how a path is checked
+        // against the exact commit HEAD recorded, including entries git's own diff would consider
+        // unchanged. Both are kept, and duplicates by (status, oldPath, newPath) collapse.
         for (Map.Entry<String, String> entry : after.contentByObjectId().entrySet()) {
             String path = entry.getKey();
             if (!GitOps.isJavaPath(path)) {
@@ -210,14 +279,49 @@ final class ComparisonPlanner {
         }
         // A file deleted locally still has to be recorded, or the gate would compare against a base
         // entity whose current counterpart is gone.
-        if (!after.readsFromDisk()) {
-            for (String path : headTree.keySet()) {
-                if (GitOps.isJavaPath(path) && !after.contentByObjectId().containsKey(path)) {
-                    local.add(new GitPathChange("D", null, path, null));
-                }
+        // A locally deleted Java file has to be recorded whichever mode is running. Worktree mode used
+        // to skip this entirely, on the grounds that its after snapshot came from disk and a missing
+        // file would simply not be there -- but the gate reads the *file set* from the plan, so a
+        // deleted method silently stopped being compared and its base entity was judged against
+        // nothing.
+        for (String path : headTree.keySet()) {
+            if (GitOps.isJavaPath(path) && !after.contentByObjectId().containsKey(path)) {
+                local.add(new GitPathChange("D", null, path, null));
             }
         }
-        return local;
+
+        // Git's diff and the per-path comparison both describe the same working copy, and a rename
+        // needs reconciling between them: git reports it as one R record, while the per-path loop sees
+        // the new path as absent from HEAD and the old path as gone, i.e. an A and a D.
+        //
+        // Both descriptions are true and neither is the one the comparison wants. Emitting both meant a
+        // renamed file appeared twice in the plan \u2014 once as a move with its base content reachable,
+        // once as an addition with none \u2014 and the gate then reported the same file as both new code
+        // and pre-existing debt. The rename wins, because it is the description that carries the old
+        // path, and without that the comparison cannot read the entity's own history.
+        Set<String> renameEndpoints = local.stream()
+                .filter(GitPathChange::isRenamed)
+                .flatMap(change -> java.util.stream.Stream.of(change.oldPath(), change.newPath()))
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+
+        List<GitPathChange> distinct = new ArrayList<>();
+        java.util.Set<String> described = new java.util.LinkedHashSet<>();
+        for (GitPathChange change : local) {
+            boolean shadowedByRename = (change.isAdded() && renameEndpoints.contains(change.newPath()))
+                    || (change.isDeleted() && renameEndpoints.contains(change.oldPath()));
+            // Keyed on the path the change ends at, not on the whole record. Git writes a modification
+            // as (M, -, null, path) because it has no single old path, while the per-path comparison
+            // writes (M, -, path, path) so the base side can be found \u2014 the same fact about the same
+            // file, described two ways. Deduplicating on the record kept both, and the gate then saw
+            // every edited file twice: two findings for one edit, and the "one changed file" counts in
+            // the report disagreeing with the file list beneath them.
+            String endpoint = change.isDeleted() ? change.oldPath() : change.newPath();
+            if (!shadowedByRename && described.add(change.status() + "\u0000" + endpoint)) {
+                distinct.add(change);
+            }
+        }
+        return distinct;
     }
 
     /**

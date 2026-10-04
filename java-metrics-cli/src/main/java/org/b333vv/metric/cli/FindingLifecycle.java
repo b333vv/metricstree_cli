@@ -36,6 +36,20 @@ enum FindingLifecycle {
     /** Already matched, and it did not worsen significantly. */
     EXISTING,
 
+    /**
+     * A match at a revision with nothing to compare it against.
+     *
+     * <p>Distinct from {@link #NEW_ENTITY} and from {@link #INTRODUCED}, and the difference is the
+     * whole point. A current-only run — {@code detect} — cannot know whether the code it just read is
+     * new, so labelling every match {@code new-entity} would be a fabricated history: it asserts this
+     * change introduced the problem, on a run that never compared anything. It is also distinct from
+     * {@code INTRODUCED}, which is a real before/after claim and is the only one that may block.
+     *
+     * <p>So a detect match is visible, counted and ordered, and it does not block. A reader who wants
+     * blocking findings reads the gate, which has the evidence for the claim.
+     */
+    CURRENT,
+
     /** Matched at the base and no longer matches. */
     RESOLVED,
 

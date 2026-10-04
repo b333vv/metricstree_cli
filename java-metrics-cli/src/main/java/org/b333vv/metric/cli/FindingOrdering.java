@@ -124,7 +124,8 @@ final class FindingOrdering {
                 first.message(), first.location(), first.baseLocation(), first.severity(),
                 first.maturity(), first.evaluationStatus(), first.lifecycle(), evidence, related,
                 first.remediationHint(), first.documentationPath(), first.role(),
-                dispositionSource.disposition(), dispositionSource.dispositionReason());
+                dispositionSource.disposition(), dispositionSource.dispositionReason(),
+                blocking != null);
     }
 
     /**

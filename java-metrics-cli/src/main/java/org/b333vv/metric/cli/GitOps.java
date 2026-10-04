@@ -228,8 +228,33 @@ final class GitOps {
      */
     static List<GitPathChange> pathChanges(Path repoRoot, String baseCommit, String headCommit)
             throws GitException {
-        byte[] output = runBytes(repoRoot, "diff", "--name-status", "-z", "-M",
-                "--find-renames", baseCommit, headCommit);
+        return pathChanges(runBytes(repoRoot, "diff", "--name-status", "-z", "-M",
+                "--find-renames", baseCommit, headCommit));
+    }
+
+    /**
+     * The same change records for the live working copy against a commit.
+     *
+     * <p>Used by worktree and staged mode, where the "after" side is not a commit. Git's own rename
+     * detection is the deciding instrument: it compares content, so a rename is recognised when the
+     * content matches and rejected when it does not. Re-deriving the pairing here from "one addition
+     * and one deletion happened" cannot do that — it would report two unrelated edits made in one
+     * commit as a rename, which is the audit's A02 arriving through the fix.
+     *
+     * <p>Two invocations rather than one: the index separately from the working tree, because the two
+     * answers are different questions. A file staged and then edited is one addition to the index and
+     * one modification of the tree, and the union of both is the working copy's actual change.
+     */
+    static List<GitPathChange> workingTreeChanges(Path repoRoot, String baseCommit)
+            throws GitException {
+        List<GitPathChange> changes = new ArrayList<>(pathChanges(runBytes(repoRoot,
+                "diff", "--name-status", "-z", "-M", "--find-renames", baseCommit)));
+        changes.addAll(pathChanges(runBytes(repoRoot,
+                "diff", "--name-status", "-z", "-M", "--find-renames", "--cached", baseCommit)));
+        return changes;
+    }
+
+    private static List<GitPathChange> pathChanges(byte[] output) throws GitException {
         List<GitPathChange> changes = new ArrayList<>();
         int index = 0;
         List<byte[]> records = splitNul(output);

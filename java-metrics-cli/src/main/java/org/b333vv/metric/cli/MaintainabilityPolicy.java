@@ -15,11 +15,13 @@ import java.util.List;
  * a project keeps in version control. Config is for the standing decision; a flag is for this run.
  *
  * <h2>Legacy inputs are refused alongside the new policy, not ignored</h2>
- * <p>Supplying {@code -t}, {@code gate.growth} or {@code gate.failOn} with
+ * <p>Supplying {@code -t}, {@code -p}, {@code gate.growth} or {@code gate.failOn} with
  * {@code --policy maintainability} is a migration error naming the conflicting input. The tempting
  * alternative is to accept both and let the new policy win \u2014 but the author who wrote a threshold
  * table would then get a run that silently does not use it, and would have no way to tell from the
- * verdict that their configuration had stopped being enforced.
+ * verdict that their configuration had stopped being enforced. That is the audit's A04, and the
+ * profile case is the one that slips through most easily: {@code -p strict} looks like it selects a
+ * strictness level under any policy, so the run succeeds and the threshold never applies.
  */
 final class MaintainabilityPolicy {
 
@@ -81,6 +83,18 @@ final class MaintainabilityPolicy {
     static MaintainabilityPolicy resolve(String explicitPolicy, String configuredPolicy,
             String enforcementFlag, String configuredEnforcement, ProjectConfig config,
             boolean thresholdsGiven) {
+        return resolve(explicitPolicy, configuredPolicy, enforcementFlag, configuredEnforcement,
+                config, thresholdsGiven, false);
+    }
+
+    /**
+     * The policy for a gate run.
+     *
+     * @param profileGiven whether {@code -p/--profile} was supplied on the command line
+     */
+    static MaintainabilityPolicy resolve(String explicitPolicy, String configuredPolicy,
+            String enforcementFlag, String configuredEnforcement, ProjectConfig config,
+            boolean thresholdsGiven, boolean profileGiven) {
 
         Kind kind = explicitPolicy != null
                 ? Kind.fromId(explicitPolicy)
@@ -89,7 +103,7 @@ final class MaintainabilityPolicy {
                         : Kind.fromId(configuredPolicy));
 
         if (kind == Kind.MAINTAINABILITY) {
-            rejectLegacyInputs(config, thresholdsGiven);
+            rejectLegacyInputs(config, thresholdsGiven, profileGiven);
         }
 
         // Advisory is the default: a policy nobody has evaluated should report, not fail builds.
@@ -113,10 +127,18 @@ final class MaintainabilityPolicy {
      * control what the gate enforces, so honouring one and ignoring the other would make the gate
      * weaker than its author believes in exactly the way that is hardest to notice.
      */
-    private static void rejectLegacyInputs(ProjectConfig config, boolean thresholdsGiven) {
+    private static void rejectLegacyInputs(ProjectConfig config, boolean thresholdsGiven,
+            boolean profileGiven) {
         List<String> conflicts = new java.util.ArrayList<>();
         if (thresholdsGiven) {
             conflicts.add("-t / --thresholds");
+        }
+        // An explicit profile is a legacy input for the same reason -t is. It names a table of
+        // thresholds, and under the maintainability policy nothing reads that table, so accepting it
+        // silently would leave an author believing they had chosen a strictness level that had no
+        // effect at all. That is worse than the error, because nothing in the report says so.
+        if (profileGiven) {
+            conflicts.add("-p / --profile");
         }
         if (config != null && config.gate() != null && config.gateGrowth() != null) {
             conflicts.add("gate.growth");

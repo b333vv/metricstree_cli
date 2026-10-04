@@ -45,7 +45,28 @@ record Finding(
         String documentationPath,
         EntityRole role,
         FindingDisposition disposition,
-        String dispositionReason) {
+        String dispositionReason,
+        boolean blocking) {
+
+    /**
+     * The pre-decoupling shape: a finding blocks exactly when its disposition and lifecycle say so.
+     *
+     * <p>Kept so that callers which never consult a policy still build a self-consistent finding. It is
+     * <em>not</em> the right answer for a policy run — there, {@code blocking} is decided from the
+     * rule's effective mode and the run's enforcement level, which is the whole point of A01.
+     */
+    Finding(String ruleId, int ruleVersion, EntityKey entityKey, String title, String message,
+            FindingLocation location, FindingLocation baseLocation, RuleSeverity severity,
+            RuleMaturity maturity, EvaluationStatus evaluationStatus, FindingLifecycle lifecycle,
+            List<FindingEvidence> evidence, List<FindingLocation> relatedLocations,
+            String remediationHint, String documentationPath, EntityRole role,
+            FindingDisposition disposition, String dispositionReason) {
+        this(ruleId, ruleVersion, entityKey, title, message, location, baseLocation, severity,
+                maturity, evaluationStatus, lifecycle, evidence, relatedLocations, remediationHint,
+                documentationPath, role, disposition, dispositionReason,
+                disposition.isBlocking() && lifecycle.eligibleForBlocking()
+                        && evaluationStatus == EvaluationStatus.COMPLETE_MATCH);
+    }
 
     Finding {
         ruleId = requireText(ruleId, "ruleId");
@@ -90,9 +111,17 @@ record Finding(
         return FindingFingerprint.of(ruleId, ruleVersion, entityKey);
     }
 
-    /** Whether this finding may block a build under the policy that produced it. */
+    /**
+     * Whether this finding may block a build under the policy that produced it.
+     *
+     * <p>The three answers are multiplied, not chosen between. A finding can be an eligible match whose
+     * rule is in {@code warn} mode, or an eligible match on code nobody asked to be strict about: both
+     * are real findings that this run reports, and neither stops a build. Visibility is decided by
+     * lifecycle and disposition; blocking is decided by {@link #blocking} and belongs to the policy.
+     */
     boolean blocks() {
-        return disposition.isBlocking()
+        return blocking
+                && disposition.isBlocking()
                 && lifecycle.eligibleForBlocking()
                 && evaluationStatus == EvaluationStatus.COMPLETE_MATCH;
     }
@@ -106,6 +135,14 @@ record Finding(
     Finding withDisposition(FindingDisposition newDisposition, String reason) {
         return new Finding(ruleId, ruleVersion, entityKey, title, message, location, baseLocation,
                 severity, maturity, evaluationStatus, lifecycle, evidence, relatedLocations,
-                remediationHint, documentationPath, role, newDisposition, reason);
+                remediationHint, documentationPath, role, newDisposition, reason, blocking);
+    }
+
+    /** The same finding with a different blocking decision, as policy decides it. */
+    Finding withBlocking(boolean mayBlock) {
+        return mayBlock == blocking ? this : new Finding(ruleId, ruleVersion, entityKey, title,
+                message, location, baseLocation, severity, maturity, evaluationStatus, lifecycle,
+                evidence, relatedLocations, remediationHint, documentationPath, role, disposition,
+                dispositionReason, mayBlock);
     }
 }

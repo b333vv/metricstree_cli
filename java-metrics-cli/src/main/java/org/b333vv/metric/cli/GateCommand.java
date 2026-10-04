@@ -75,8 +75,14 @@ final class GateCommand implements Callable<Integer> {
         this.currentWorkingDirectorySupplier = currentWorkingDirectorySupplier;
         this.stdout = stdout;
         this.stderr = stderr;
+        // SARIF joins the gate's own adapters. Without it, `--format sarif` on a maintainability run
+        // resolved no adapter and failed at render time -- after the verdict line had already said
+        // PASSED -- so the command reported a clean build and then wrote no report at all, or exited
+        // 1 having written none. The gate's adapters already serve the findings report for json, html
+        // and agent-md; SARIF was the one format missing, which is the whole of A11.
         this.reportAdapters = new ReportAdapterRegistry(List.of(
-                new GateJsonReportAdapter(), new GateHtmlReportAdapter(), new GateAgentMarkdownAdapter()));
+                new GateJsonReportAdapter(), new GateHtmlReportAdapter(),
+                new GateAgentMarkdownAdapter(), new GateSarifReportAdapter()));
     }
 
     @CommandLine.Spec
@@ -171,8 +177,11 @@ final class GateCommand implements Callable<Integer> {
     private boolean replaceFindingsBaseline;
 
     @CommandLine.Option(names = {"--format"}, converter = OutputFormatConverter.class, paramLabel = "FORMAT",
-            description = "Report format: json (default) or html. SARIF is rejected: the gate's "
-                    + "output is a verdict over a diff, not a findings list. agent-md is available for compact agent output.")
+            description = "Report format: json (default), html, agent-md, or sarif under --policy"
+                    + " maintainability. SARIF with the legacy policy is refused: its output is a"
+                    + " verdict over a diff rather than a findings list, and writing one would give a"
+                    + " consumer a file claiming to enumerate results that do not exist. agent-md is"
+                    + " available for compact agent output.")
     private OutputFormat format;
 
     @Override
@@ -207,7 +216,7 @@ final class GateCommand implements Callable<Integer> {
                     config.gate() == null ? null : config.gate().policy(),
                     enforcement,
                     config.gate() == null ? null : config.gate().enforcement(),
-                    config, thresholdsFile != null);
+                    config, thresholdsFile != null, profile != null);
         } catch (IllegalArgumentException exception) {
             stderr.println("Error: " + exception.getMessage());
             stderr.flush();
@@ -236,11 +245,14 @@ final class GateCommand implements Callable<Integer> {
             analysisContext = resolveAnalysisContext(repoRoot, config, workingDirectory, plan);
             this.activePolicy = activePolicy;
             this.plan = plan;
+            // Refused for the legacy policy only, and before anything is analysed. The maintainability
+            // policy produces findings, which is exactly what SARIF is for; the legacy gate's output is a
+            // verdict over a diff, and enumerating it as results would be a claim the report cannot back.
             if (sarifRequested && !activePolicy.isMaintainability()) {
                 throw new CommandLine.ParameterException(spec.commandLine(),
-                        "gate does not support --format sarif with the legacy policy: its output is"
-                                + " a verdict over a diff, not a findings list. Use --policy"
-                                + " maintainability, which produces findings.");
+                        "gate --format sarif needs --policy maintainability: SARIF enumerates"
+                                + " findings, and the legacy policy produces a verdict over a diff"
+                                + " rather than a findings list.");
             }
             checkOutputPaths();
         } catch (GitOps.GitException | IllegalArgumentException exception) {
@@ -410,6 +422,28 @@ final class GateCommand implements Callable<Integer> {
                         physical -> after.logicalPath(physical).orElse(physical.toString()),
                         before, after);
             }
+
+            // Did the working copy move while we were reading it?
+            //
+            // The materializer already retries a file that changes mid-capture and refuses to return a
+            // half-read snapshot, but that only covers the capture window itself. An analysis of a real
+            // project takes seconds, and an editor or a build running alongside it can save a file after
+            // the bytes were read -- leaving a verdict describing a state nobody can go back to,
+            // published without saying so.
+            //
+            // This is the audit's A03: the check existed, was unit-tested against a mutating fixture,
+            // and was never called, so no run ever learned whether its own input had moved under it.
+            // Placed after the analysis and before anything is published, because the answer must still
+            // be able to change the outcome -- detecting that the world moved after writing PASSED is
+            // not detecting it.
+            List<String> drift = SnapshotMaterializer.verifyUnchanged(repoRoot, plan, after);
+            if (!drift.isEmpty()) {
+                throw new UnstableAnalysisContextException("the working tree changed while the"
+                        + " analysis was running: " + drift.get(0)
+                        + (drift.size() > 1 ? " (and " + (drift.size() - 1) + " more)" : "")
+                        + ". The verdict would describe content that is no longer there; re-run the"
+                        + " check.");
+            }
         } catch (SnapshotMaterializer.UnstableSourceException exception) {
             // The working tree moved while it was being read. Reporting this as a gate failure would
             // blame the code for an editor saving a file; reporting it as a pass would publish a
@@ -441,7 +475,6 @@ final class GateCommand implements Callable<Integer> {
         if (activePolicy.isMaintainability()) {
             maintainabilityReport = runMaintainabilityPolicy(activePolicy, policyInput, plan,
                     resolveAnalysisScope(config), completeness);
-            maintainabilityBlockingCount = maintainabilityReport.blocking().size();
         }
 
         List<GateFinding> violations = new ArrayList<>(parseErrors);
@@ -458,18 +491,41 @@ final class GateCommand implements Callable<Integer> {
         // that had accepted its debt through a baseline still failed on the legacy thresholds, with
         // the exit code saying FAILED while the findings report it had just written said PASSED.
         // Two documents disagreeing about the same run is worse than either one.
-        boolean policyFailed = maintainabilityReport != null
-                && "FAILED".equals(maintainabilityReport.status());
+        // One decision, computed once, from every input that can bear on it. The audit's A06 is that
+        // the policy computed its own status from its own issue list while the command computed a
+        // second one from the completeness record -- two answers to the same question, published in the
+        // same run, disagreeing whenever a gap was recorded in one place and not the other. Whichever
+        // won decided the exit code, so a run could exit 1 while the findings report it had just written
+        // said PASSED, or exit 0 while it said INCOMPLETE.
+        //
+        // The inputs are: the blocking findings (from whichever policy ran), the parse errors, and every
+        // required gap from both sources. A parse error is a hard failure regardless of policy -- the
+        // code does not compile and no amount of missing evidence makes that a pass.
+        int blockingCount = maintainabilityReport == null
+                ? 0
+                : maintainabilityReport.blocking().size();
+        int requiredGaps = completeness.requiredGapCount() + (maintainabilityReport == null
+                ? 0
+                : (int) maintainabilityReport.issues().stream()
+                        .filter(EvaluationIssue::required).count());
         boolean legacyDecides = maintainabilityReport == null;
-        if (policyFailed || (legacyDecides && !violations.isEmpty()) || !parseErrors.isEmpty()) {
+        if (!parseErrors.isEmpty()
+                || blockingCount > 0
+                || (legacyDecides && !violations.isEmpty())) {
             status = "FAILED";
             exitCode = 1;
-        } else if (completeness.hasRequiredGaps()) {
+        } else if (requiredGaps > 0) {
             status = "INCOMPLETE";
             exitCode = 2;
         } else {
             status = "PASSED";
             exitCode = 0;
+        }
+        // The findings report is stamped with the verdict this run actually reached, so the document on
+        // disk and the exit code are the same statement. The policy's own provisional status was
+        // computed from a narrower view of the same run.
+        if (maintainabilityReport != null && !maintainabilityReport.status().equals(status)) {
+            maintainabilityReport = maintainabilityReport.withStatus(status);
         }
 
         // The verdict is printed first, and buffered config warnings after it. A CI log is read top
@@ -477,7 +533,8 @@ final class GateCommand implements Callable<Integer> {
         // cut off, and a config warning printed above it both hides the verdict and makes a
         // passing-looking build the first thing a reviewer sees.
         String verdict = verdictLine(status, violations, result.warnings(), subjectPaths.size(),
-                completeness, maintainabilityReport == null, parseErrors.size());
+                requiredGaps, completeness.optionalGapCount(), maintainabilityReport == null,
+                parseErrors.size(), blockingCount);
         stderr.println(verdict);
         stderr.flush();
         flushWarnings(warningBuffer);
@@ -535,6 +592,10 @@ final class GateCommand implements Callable<Integer> {
         List<Finding> findings = baseline == null ? result.findings()
                 : applyBaseline(result, baseline);
 
+        // A provisional status from what this method alone can see. The command computes the verdict
+        // once from every input -- these findings, the parse errors and the analysis completeness --
+        // and stamps the result onto the report, because two computations of one verdict are exactly
+        // how the audit's A06 produced a run that exited 1 beside a report saying PASSED.
         String status = !blocking(findings).isEmpty() ? "FAILED"
                 : issues.stream().anyMatch(EvaluationIssue::required) ? "INCOMPLETE" : "PASSED";
         return new FindingReport(FindingReport.SCHEMA_VERSION, status, activePolicy.settings(),
@@ -995,20 +1056,22 @@ final class GateCommand implements Callable<Integer> {
             List<GateFinding> violations,
             List<GateFinding> warnings,
             int changedFiles,
-            AnalysisCompleteness completeness,
-            boolean legacyDecides, int parseErrors) {
+            int requiredGaps,
+            int optionalGaps,
+            boolean legacyDecides,
+            int parseErrors,
+            int blockingFindings) {
         if ("FAILED".equals(status)) {
-            return failedLine(violations, warnings, changedFiles, legacyDecides, parseErrors);
+            return failedLine(violations, warnings, changedFiles, legacyDecides, parseErrors,
+                    blockingFindings);
         }
         if ("INCOMPLETE".equals(status)) {
-            int required = completeness.requiredGapCount();
-            int optional = completeness.optionalGapCount();
-            return "INCOMPLETE: " + required + " required check" + (required == 1 ? "" : "s")
+            return "INCOMPLETE: " + requiredGaps + " required check" + (requiredGaps == 1 ? "" : "s")
                     + " could not be evaluated across " + changedFiles + " changed file"
                     + (changedFiles == 1 ? "" : "s")
                     + " — see the report for what is missing"
-                    + (optional > 0
-                            ? " (" + optional + " optional check" + (optional == 1 ? "" : "s")
+                    + (optionalGaps > 0
+                            ? " (" + optionalGaps + " optional check" + (optionalGaps == 1 ? "" : "s")
                                     + " also unavailable)"
                             : "");
         }
@@ -1016,9 +1079,8 @@ final class GateCommand implements Callable<Integer> {
                 + ", no violations"
                 + (warnings.isEmpty() ? "" : " (" + warnings.size() + " warning"
                         + (warnings.size() == 1 ? "" : "s") + ")");
-        int optional = completeness.optionalGapCount();
-        if (optional > 0) {
-            line += "; " + optional + " optional check" + (optional == 1 ? "" : "s")
+        if (optionalGaps > 0) {
+            line += "; " + optionalGaps + " optional check" + (optionalGaps == 1 ? "" : "s")
                     + " could not be evaluated";
         }
         return line;
@@ -1035,15 +1097,14 @@ final class GateCommand implements Callable<Integer> {
      */
     private String failedLine(
             List<GateFinding> violations, List<GateFinding> warnings, int changedFiles,
-            boolean legacyDecides, int parseErrors) {
+            boolean legacyDecides, int parseErrors, int blockingFindings) {
         Map<GateFinding.Type, Integer> counts = new LinkedHashMap<>();
         for (GateFinding violation : violations) {
             counts.merge(violation.type(), 1, Integer::sum);
         }
         if (counts.isEmpty()) {
-            int blocking = maintainabilityBlockingCount;
-            return "FAILED: " + blocking + " maintainability finding"
-                    + (blocking == 1 ? "" : "s") + " blocked; no gate violation";
+            return "FAILED: " + blockingFindings + " maintainability finding"
+                    + (blockingFindings == 1 ? "" : "s") + " blocked; no gate violation";
         }
         if (!legacyDecides) {
             // The counts are the legacy evaluator's, which under this policy are reported and not
@@ -1058,9 +1119,8 @@ final class GateCommand implements Callable<Integer> {
                         + " could not be parsed; " + violations.size()
                         + " reported";
             }
-            int blocking = maintainabilityBlockingCount;
-            return "FAILED: " + blocking + " maintainability finding"
-                    + (blocking == 1 ? "" : "s") + " blocked";
+            return "FAILED: " + blockingFindings + " maintainability finding"
+                    + (blockingFindings == 1 ? "" : "s") + " blocked";
         }
         StringBuilder line = new StringBuilder("FAILED:");
         for (Map.Entry<GateFinding.Type, Integer> entry : counts.entrySet()) {
@@ -1075,15 +1135,6 @@ final class GateCommand implements Callable<Integer> {
         }
         return line.toString();
     }
-
-    /**
-     * How many findings blocked the last run, for the verdict line.
-     *
-     * <p>Set once the policy has run and read once when the line is built. A field rather than a
-     * parameter because the line is formatted in several places and threading a count through all
-     * of them would spread the question of "which policy decided this" across the whole command.
-     */
-    private int maintainabilityBlockingCount;
 
     private static String plural(GateFinding.Type type, int count) {
         String singular = switch (type) {

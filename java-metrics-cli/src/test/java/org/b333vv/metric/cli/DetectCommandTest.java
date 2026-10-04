@@ -384,12 +384,15 @@ class DetectCommandTest {
     /**
      * The maintainability policy on detect, with no base revision.
      *
-     * <p>Every match is new, and none is claimed to be pre-existing debt: detect compares nothing
-     * against anything, and inventing a base would report the whole codebase as brand new on every
-     * run.
+     * <p>No match is claimed to be new. Detect compares nothing against anything, so it cannot know
+     * whether the code it read was written today, and labelling every match {@code new-entity} asserts
+     * a history the run never established \u2014 while also implying the change under review introduced
+     * it, which is precisely the claim a current-only run has no evidence for. {@code current} says
+     * what was measured and nothing more; the gate is where a change is judged.
      */
     @Test
-    void detectUnderMaintainabilityPolicyReportsNewFindings(@TempDir Path tempDir) throws Exception {
+    void detectUnderMaintainabilityPolicyReportsCurrentFindings(@TempDir Path tempDir)
+            throws Exception {
         Path source = tempDir.resolve("Demo.java");
         Files.writeString(source, "class Demo { int f(int x){ if(x>0) return 1; return 0; } }");
         Path output = tempDir.resolve("out.json");
@@ -405,13 +408,23 @@ class DetectCommandTest {
         JsonNode json = mapper.readTree(Files.readString(output));
         assertEquals("PASSED", json.get("status").asText());
         assertFalse(json.get("findings").isEmpty());
-        assertTrue(json.get("findings").get(0).get("lifecycle").asText().equals("NEW_ENTITY"),
-                "with no base revision nothing can be existing debt");
+        assertEquals("CURRENT", json.get("findings").get(0).get("lifecycle").asText(),
+                "a current-only run cannot claim the code is new, and equally cannot claim it is"
+                        + " inherited debt; it reports what matched at the revision it read");
+        assertEquals(0, json.get("summary").get("blocking").asInt(),
+                "and a current match is never blocking: there is no change to have regressed");
     }
 
-    /** Under enforce the same findings fail the build. */
+    /**
+     * Enforcement only changes what may block, and only for a rule that is allowed to block.
+     *
+     * <p>Both halves matter. With the shipped catalogue \u2014 every rule in {@code warn} mode \u2014
+     * {@code --enforcement enforce} still exits 0, because the project asked for findings and never
+     * asked for them to fail a build. Reading {@code warn} as though it were {@code error} is what made
+     * the first enforce run in any repository fail over rules nobody had opted into.
+     */
     @Test
-    void detectUnderEnforceFailsOnEligibleFindings(@TempDir Path tempDir) throws Exception {
+    void detectUnderEnforceStillPassesForWarnModeRules(@TempDir Path tempDir) throws Exception {
         Path source = tempDir.resolve("Demo.java");
         Files.writeString(source, "class Demo {}");
         Path output = tempDir.resolve("out.json");
@@ -423,7 +436,12 @@ class DetectCommandTest {
                 "--enforcement", "enforce", "-o", output.toString()},
                 new ByteArrayOutputStream(), new ByteArrayOutputStream());
 
-        assertEquals(1, exitCode);
+        assertEquals(0, exitCode,
+                "MT-M001 is a warn-mode rule, so --enforcement enforce does not make it blocking");
+        JsonNode json = mapper.readTree(Files.readString(output));
+        assertFalse(json.get("findings").isEmpty(),
+                "the findings are still there: warn mode is not a quieter absence");
+        assertEquals(0, json.get("summary").get("blocking").asInt());
     }
 
     /** Legacy rule files alongside the new policy are a migration error naming the conflict. */

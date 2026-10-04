@@ -90,9 +90,20 @@ record GateMetricSelection(
         }
 
         return new GateMetricSelection(
-                // An empty request means "analyse everything": the caller asked for nothing in
-                // particular, and silently analysing nothing would look like a clean run.
-                available.isEmpty() ? MetricSelection.all() : new MetricSelection(available),
+                // Deliberately *not* MetricSelection.all() for an empty request.
+                //
+                // The old fallback existed to stop an empty selection analysing nothing, and it solved
+                // that by running every visitor in the enum — which is the opposite of a selection. It
+                // is the audit's A05: a project that turned every rule off asked for no measurements and
+                // received forty of them, in the scope-correct-but-not-requested sense, with the
+                // resulting values invisible in the report. It also made "no rules enabled" the most
+                // expensive configuration rather than the cheapest, which is the opposite of what
+                // disabling rules should do.
+                //
+                // An empty set means an empty set. A caller that genuinely wants everything asks for
+                // everything; a caller that asks for nothing must be able to say so, and the only way to
+                // say it is to select nothing.
+                new MetricSelection(available),
                 scope,
                 reasons.entrySet().stream()
                         .map(entry -> new UnavailableMetric(

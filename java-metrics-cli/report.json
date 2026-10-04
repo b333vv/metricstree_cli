@@ -1,0 +1,26 @@
+{
+  "status" : "PASSED",
+  "base" : "HEAD",
+  "changedFiles" : 1,
+  "violations" : [ ],
+  "warnings" : [ ],
+  "byFile" : [ ],
+  "comparison" : {
+    "mode" : "worktree",
+    "requestedBase" : "HEAD",
+    "baseSha" : "463bd361a3facdbd0e84ec27cd6c935fc730c837",
+    "headSha" : "463bd361a3facdbd0e84ec27cd6c935fc730c837",
+    "mergeBaseSha" : "463bd361a3facdbd0e84ec27cd6c935fc730c837",
+    "beforeDigest" : "38c945943aebea332beb53f8073a989e9d08e53d9c1039a95521dc8cc7b834f5",
+    "afterDigest" : "501a0dc16321cb1e1ea395bb9305a3b22f07a2840c114031564f59a2d127e546",
+    "subjectFiles" : [ "app/Added.java" ],
+    "unsupported" : [ ]
+  },
+  "analysis" : {
+    "issues" : [ ],
+    "eligibleFiles" : 1,
+    "excludedFiles" : [ ],
+    "parsedFiles" : [ "app/Added.java" ],
+    "execution" : "ORDERED"
+  }
+}
