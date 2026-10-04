@@ -132,6 +132,21 @@ final class MaintainabilityAnalysisService {
     }
 
     /**
+     * The evaluation with a restriction on which entities may produce findings.
+     *
+     * <p>What a diff-aware gate needs: measured in full context, reported for the change.
+     *
+     * @param eligiblePaths logical paths whose findings may be published, or {@code null} for all
+     */
+    Result evaluate(MetricReport base, MetricReport current, Function<Path, String> logicalPath,
+            MetricRequirements.Scope scope, MaintainabilitySettings settings,
+            EntityCorrespondence correspondence, Enforcement enforcement, Clock clock,
+            Set<String> eligiblePaths) {
+        return evaluate(base, current, logicalPath, scope, settings, correspondence, enforcement,
+                clock, eligiblePaths, base != null);
+    }
+
+    /**
      * The evaluation with an optional restriction on which entities may produce findings.
      *
      * <p>Eligibility is a <em>separate</em> decision from measurement. The contract requires full

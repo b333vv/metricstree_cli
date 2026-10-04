@@ -117,6 +117,20 @@ class MaintainabilityWorkflowTest {
     }
 
     /** A class with no findings, so a test can distinguish \"clean\" from \"found nothing\". */
+    /**
+     * A complex method in a class of its own name, for a file that is not {@code Order}.
+     *
+     * <p>{@link #withBranches} always declares {@code Order}. Writing it to a differently named file
+     * produces a file whose public class does not match its name -- not valid Java, and the class is
+     * then attributed to whichever type the parser can still see. The fixture has to be honest about
+     * this or the test asserts something about a broken corpus.
+     */
+    private static String complexClassNamed(String name, int ifs) {
+        String body = withBranches(ifs).replace("public class Order", "public class " + name);
+        return body;
+    }
+
+    /** A class with no findings, so a test can distinguish "clean" from "found nothing". */
     private static String trivial() {
         return "package app;\npublic class Trivial {\n"
                 + "    public int f(int x) { return x; }\n}\n";
@@ -552,6 +566,67 @@ class MaintainabilityWorkflowTest {
         private void assertArrayEqualsWithMessage(byte[] expected, byte[] actual, String message) {
             assertEquals(new String(expected, StandardCharsets.UTF_8),
                     new String(actual, StandardCharsets.UTF_8), message);
+        }
+    }
+
+    @Nested
+    @DisplayName("Analysis scope")
+    class Scope {
+
+        /**
+         * Project scope must not turn the gate into a scanner.
+         *
+         * <p>The audit's A07. Project mode analyses the whole declared source root, because metrics
+         * have to resolve symbols against real context -- a class's WMC cannot be measured while its
+         * collaborators are invisible. That is necessary and correct. What is not correct is reporting
+         * everything it found: before the fix, the findings were not filtered back down to the change,
+         * so a one-line edit to one file produced a finding for every complex method in the repository,
+         * each classified NEW_ENTITY, and failed the pull request over code its author never opened.
+         *
+         * <p>So the context is what the analysis may see and the changed set is what it may report
+         * about, and the untouched neighbour is reported as pre-existing debt rather than as new code.
+         */
+        @Test
+        @DisplayName("project scope reports the change, not the whole repository")
+        void projectScopeIsLimitedToTheChangedPaths() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write("src/main/java/app/Legacy.java", complexClassNamed("Legacy", 40));
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(20));
+            commitLocally(git, "the change under review");
+
+            Path report = repo.resolve("project-scope.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gateWithReport(report, err, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--enforcement", "enforce", "--analysis-scope", "project",
+                    "--source-root", "src/main/java");
+
+            JsonNode written = mapper.readTree(Files.readString(report));
+            assertEquals(List.of("MT-M001"), blockingRuleIds(written.get("findings")),
+                    "exactly the changed file may block: a gate that reports the repository is a"
+                            + " scanner, and the untouched legacy file is not this change's problem: "
+                            + err.toString(StandardCharsets.UTF_8));
+            assertEquals(1, written.get("summary").get("blocking").asInt(),
+                    "and the blocking count agrees with the list, from the same computation");
+            assertEquals(1, exit, err.toString(StandardCharsets.UTF_8));
+
+            // And the untouched file is still visible as what it is: analysed, pre-existing, not this
+            // change's regression. Silently dropping it would leave a reader unable to tell "checked
+            // and clean" from "not considered".
+            boolean legacyReported = false;
+            for (JsonNode finding : written.get("findings")) {
+                if (finding.get("entityKey").get("path").asText().contains("Legacy.java")) {
+                    legacyReported = true;
+                    assertEquals("EXISTING", finding.get("lifecycle").asText(),
+                            "an untouched file's match is pre-existing debt, never new code: "
+                                    + finding);
+                }
+            }
+            assertTrue(legacyReported,
+                    "the neighbour was analysed in full context and its finding is recorded as"
+                            + " debt, so the reader can tell it was looked at");
         }
     }
 

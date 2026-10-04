@@ -420,7 +420,7 @@ final class GateCommand implements Callable<Integer> {
                 // happens below so it can see the analysis-level completeness as well.
                 policyInput = new PolicyInput(baseReport, currentReport,
                         physical -> after.logicalPath(physical).orElse(physical.toString()),
-                        before, after);
+                        before, after, java.util.Set.copyOf(subjectPaths));
             }
 
             // Did the working copy move while we were reading it?
@@ -574,9 +574,18 @@ final class GateCommand implements Callable<Integer> {
                 entityKeys(input.baseReport(), input.before()),
                 entityKeys(input.currentReport(), input.after()), fileMoves(plan));
 
+        // Eligibility is the changed set, in both scopes.
+        //
+        // Local mode analyses only the changed files, so this was already true. Project mode analyses
+        // the whole declared source root because metrics have to resolve symbols against their real
+        // context -- and then the findings are filtered down to the change, which is the audit's A07.
+        // Without that filter the gate reported every complex method in the project, lifecycle
+        // NEW_ENTITY for each, and failed a pull request for code the author never opened. The gate is
+        // not a scanner; the context is what the analysis may see, never what the comparison is about.
         MaintainabilityAnalysisService.Result result = new MaintainabilityAnalysisService().evaluate(
                 input.baseReport(), input.currentReport(), input.logicalPath(), scope,
-                activePolicy.settings(), correspondence, activePolicy.enforcement());
+                activePolicy.settings(), correspondence, activePolicy.enforcement(),
+                java.time.Clock.systemUTC(), input.eligiblePaths());
 
         // A gap the analysis already established is a gap under this policy too: a policy is not a
         // licence to publish a pass over a check that did not run.
@@ -748,7 +757,8 @@ final class GateCommand implements Callable<Integer> {
             MetricReport currentReport,
             java.util.function.Function<Path, String> logicalPath,
             SourceSnapshot before,
-            SourceSnapshot after) {
+            SourceSnapshot after,
+            java.util.Set<String> eligiblePaths) {
     }
 
     /**
