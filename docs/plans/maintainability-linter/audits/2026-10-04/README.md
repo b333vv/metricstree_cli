@@ -28,7 +28,11 @@ regression now blocks), A16 (advisory no longer relabels findings as debt), A20 
 against a pinned parent commit and publishes what it analysed), A21 (an unanalysable case is missing
 data, and the bundled corpus is valid Java).
 
-**Open:** A07, A09, A10, A12, A14, A15, A17, A18, A19. Also still open from the detail sections: the
+Also closed since: A07 (project-scope findings are limited to the changed paths), A10 (evidence
+carries both revisions and their delta; `previousFingerprint` is a field; the findings sidecar is written
+without `--output`).
+
+**Open:** A09, A12, A14, A15, A18, A19. Also still open from the detail sections: the
 PMD adapter's array-shaped input, and the case schemas' missing project ID, roots/classpath digest and
 configuration identity.
 

@@ -91,12 +91,39 @@ That absence is why the benchmark could not see what it was measuring from outsi
 published, null rather than zero-filled so "nothing was measured" and "measured nothing" stay
 distinguishable.
 
-**Not yet done.** A07 (changed-path filtering in project scope), A09 (remaining detect report-parity
-gaps), A10 (evidence ranges, before-values, fingerprint field), A12 (trace cap, per-metric), A14
-(digest coverage), A15 (legacy method findings in other formats), A17 (suppression identity for class
-rules, stale status), A18–A19 (release workflow and Action outputs). The PMD adapter also still
-expects a JSON array rather than PMD's documented `files`/`violations` object, and the case schemas
-still lack project ID, roots/classpath digest and configuration identity.
+**Closed — scope, evidence and exceptions (A07, A10, A17).** Project scope analyses a whole source
+root, because metrics cannot be measured while their collaborators are invisible; reporting everything
+it found is a different question. The findings were not filtered back to the change, so a one-line edit
+produced a finding for every complex method in the repository, each `NEW_ENTITY`, failing a pull
+request over code its author never opened. Entities outside the change are still evaluated and still
+recorded, as pre-existing debt with the reason stated, so a reader can tell "checked and clean" from
+"not considered".
+
+A finding about a change is a claim about two revisions, and every finding published `before: null` and
+`delta: null` -- including the findings whose entire reason for existing is a comparison. The
+evaluators each measure one side at a time, which is what makes them reusable; the pairing now happens
+where both sides are in hand, and never invents a missing side. `previousFingerprint` was recovered
+from the disposition reason by recognising 64 hex characters, so an edited reason silently dropped the
+correlation a SARIF consumer needs; it is a field. And the findings sidecar was written inside the
+primary report's branch, so `--json-output` without `--output` exited 0 having written nothing -- the
+composite Action's own invocation, which is why it went unnoticed.
+
+A class-level rule's suppression could not be expressed at all: `signature` was required
+unconditionally, and the finding it has to name has no signature. The only way past the error was to
+invent one, which suppresses nothing while looking handled. The state enum also used `STALE` for three
+different situations; expired-and-matched is now `EXPIRED` (it will start producing findings again)
+and expired-never-matched is `STALE` (it is finished).
+
+
+**Not yet done.** A09 (remaining detect report-parity gaps), A12 (per-metric trace cap), A14 (digest
+coverage of roles and metric semantic versions), A15 (legacy method findings absent from the other
+report formats), A18 (release workflow: real version, unversioned builds report `-dev` rather than
+`unspecified`, pinned action SHAs) and A19 (Action: no `latest` download without a verified checksum,
+required findings-count/completeness outputs, the documented legacy violations-count alias, shallow
+ancestry, and re-running the CLI for the human format instead of rendering every format from the one
+report). Two harness details also remain: the PMD adapter expects a JSON array rather than PMD's
+documented `files`/`violations` object, and the case schemas still lack project ID, roots/classpath
+digest and configuration identity.
 
 ## Session: acceptance audit of ML-001–ML-032 (2026-10-04)
 
