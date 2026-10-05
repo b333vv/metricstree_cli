@@ -294,6 +294,15 @@ final class AgentMarkdownReportWriter {
             out.append("\n_").append(presentation.omitted())
                     .append(" further finding(s) are not shown here; the JSON report has every one._\n");
         }
+        if (presentation.unchangedDebtOmitted() > 0) {
+            // Said separately from the truncation line, because they are not the same fact. This
+            // one says "none of these are yours to fix", which is the opposite of a reader reaching
+            // the bottom of a list and wondering what else the report held.
+            out.append("\n_").append(presentation.unchangedDebtOmitted())
+                    .append(" finding(s) are unchanged pre-existing debt \u2014 the same match at both"
+                            + " revisions, with nothing for this change to do. They are counted in the"
+                            + " summary and present in the JSON report; they are not listed here._\n");
+        }
         return out.toString();
     }
 

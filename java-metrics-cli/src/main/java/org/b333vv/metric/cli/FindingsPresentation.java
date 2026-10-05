@@ -39,10 +39,11 @@ final class FindingsPresentation {
     private final int existingCount;
     private final int resolvedCount;
     private final int omitted;
+    private final int unchangedDebtOmitted;
 
     private FindingsPresentation(List<FindingOrdering.EntityGroup> groups, List<EvaluationIssue> issues,
             int totalEntries, int blockingEntries, int suppressedCount, int baselineCount,
-            int existingCount, int resolvedCount, int omitted) {
+            int existingCount, int resolvedCount, int omitted, int unchangedDebtOmitted) {
         this.groups = groups;
         this.issues = issues;
         this.totalEntries = totalEntries;
@@ -52,6 +53,7 @@ final class FindingsPresentation {
         this.existingCount = existingCount;
         this.resolvedCount = resolvedCount;
         this.omitted = omitted;
+        this.unchangedDebtOmitted = unchangedDebtOmitted;
     }
 
     /**
@@ -75,14 +77,50 @@ final class FindingsPresentation {
         int existing = count(ordered, FindingDisposition.EXISTING);
         int resolved = count(ordered, FindingDisposition.RESOLVED);
 
-        List<Finding> shown = limit == null || ordered.size() <= limit
-                ? ordered
-                : ordered.subList(0, limit);
+        // Compact output drops unchanged debt before it applies the limit.
+        //
+        // An EXISTING finding is the same match at both revisions: the code has not changed and
+        // there is nothing to do about it in this pull request. Printing it beside the entries that
+        // did change tells the reader to act on code this change did not touch -- and it spends the
+        // scarce part of a bounded report on it, so a real regression can be pushed out of view by
+        // debt that predates it.
+        //
+        // Excluded only when compact. The JSON reports are the record of what the analysis found and
+        // keep everything; what changes is what a reader is handed first.
+        List<Finding> unchangedDebt = new java.util.ArrayList<>();
+        List<Finding> actionable = new java.util.ArrayList<>(ordered);
+        if (limit != null) {
+            for (java.util.Iterator<Finding> it = actionable.iterator(); it.hasNext();) {
+                Finding finding = it.next();
+                if (isUnchangedDebt(finding)) {
+                    unchangedDebt.add(finding);
+                    it.remove();
+                }
+            }
+        }
+
+        List<Finding> shown = limit == null || actionable.size() <= limit
+                ? actionable
+                : actionable.subList(0, limit);
 
         List<FindingOrdering.EntityGroup> groups = FindingOrdering.groupByEntity(shown);
 
         return new FindingsPresentation(groups, report.issues(), total, blocking, suppressed,
-                baseline, existing, resolved, total - shown.size());
+                baseline, existing, resolved, actionable.size() - shown.size(),
+                unchangedDebt.size());
+    }
+
+    /**
+     * Whether this is debt the report is carrying rather than something the reader must act on.
+     *
+     * <p>A finding that is EXISTING in both lifecycle and disposition is a match that was already
+     * there and still is. WORSENED, INTRODUCED and NEW_ENTITY all describe a change; RESOLVED
+     * describes a fix a reader may want to confirm; SUPPRESSED and BASELINE_ACCEPTED describe a
+     * decision someone made and neither asks for action nor is silent about it.
+     */
+    private static boolean isUnchangedDebt(Finding finding) {
+        return finding.lifecycle() == FindingLifecycle.EXISTING
+                && finding.disposition() == FindingDisposition.EXISTING;
     }
 
     private static int count(List<Finding> findings, FindingDisposition disposition) {
@@ -109,6 +147,18 @@ final class FindingsPresentation {
     /** How many of them block. */
     int blockingEntries() {
         return blockingEntries;
+    }
+
+    /**
+     * How many unchanged existing findings compact output left out.
+     *
+     * <p>Counted apart from {@link #omitted()} because the two are different omissions. {@code
+     * omitted} is "there were more problems than fit"; this is "these are not your problems". They
+     * are reported in different sentences for that reason, and adding them together would let a
+     * reader conclude that a pull request with 20 regressions and 200 old findings was truncated.
+     */
+    int unchangedDebtOmitted() {
+        return unchangedDebtOmitted;
     }
 
     /** How many the compact presentation left out, which it says out loud. */

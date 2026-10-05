@@ -57,8 +57,12 @@ class FindingPresentationTest {
         FindingReport report = report(List.of(
                 finding("MT-M001", "total(int)", FindingLifecycle.NEW_ENTITY,
                         FindingDisposition.ACTIVE, 18),
-                finding("MT-C002", "total(int)", FindingLifecycle.EXISTING,
-                        FindingDisposition.EXISTING, 19)), List.of());
+                // WORSENED rather than EXISTING: this test is about two rules on one entity staying
+                // two findings, and an EXISTING/EXISTING finding is now omitted from compact output as
+                // unchanged debt. Leaving it would have made the fixture test something else by
+                // accident, and the two subjects would fail together for one reason.
+                finding("MT-C002", "total(int)", FindingLifecycle.WORSENED,
+                        FindingDisposition.ACTIVE, 19)), List.of());
 
         String md = markdown(report);
         String page = html(report);
@@ -156,6 +160,103 @@ class FindingPresentationTest {
                 "hiding a blocking finding to show an advisory one makes the report misleading");
         assertEquals(6, presentation.omitted(),
                 "twenty-six findings, twenty shown, six hidden");
+    }
+
+    // ---------------------------------------------------------------- unchanged debt
+
+    /**
+     * Compact output does not list findings this change did not cause.
+     *
+     * <p>The recheck replayed a change to one method and got a compact report that also printed an
+     * untouched, unchanged method -- the same match at both revisions, with nothing to do about it in
+     * this pull request. The recheck's own name for the case, {@code compact-unchanged-debt}, is the
+     * clearest statement of it.
+     *
+     * <p>Two reasons it is worse than noise. It tells the reader to act on code this change did not
+     * touch, and it consumes the scarce part of a bounded report, so a real regression can be pushed
+     * out of view by debt that predates it. The second is the one a cap of twenty makes invisible.
+     */
+    @Test
+    void compactOutputLeavesOutUnchangedExistingDebt() {
+        FindingReport report = report(List.of(
+                finding("MT-M001", "a-unchanged()", FindingLifecycle.EXISTING,
+                        FindingDisposition.EXISTING, 18),
+                finding("MT-M001", "z-worsened()", FindingLifecycle.WORSENED,
+                        FindingDisposition.ACTIVE, 24)), List.of());
+
+        String md = markdown(report);
+
+        assertFalse(md.contains("a-unchanged()"),
+                "an unchanged match at both revisions is not something this change asks the reader to"
+                        + " fix: " + md);
+        assertTrue(md.contains("z-worsened()"),
+                "what did change is still here: " + md);
+    }
+
+    /**
+     * The debt is counted and named, not silently dropped.
+     *
+     * <p>Hiding it would make the summary and the list disagree, and a reader who knows the project
+     * has forty old findings would read the report as saying it has none.
+     */
+    @Test
+    void theOmittedDebtIsReportedSeparatelyFromTruncation() {
+        FindingReport report = report(List.of(
+                finding("MT-M001", "a-unchanged()", FindingLifecycle.EXISTING,
+                        FindingDisposition.EXISTING, 18),
+                finding("MT-M001", "z-worsened()", FindingLifecycle.WORSENED,
+                        FindingDisposition.ACTIVE, 24)), List.of());
+
+        String md = markdown(report);
+
+        assertTrue(md.contains("1 finding(s) are unchanged pre-existing debt"), md);
+        assertTrue(md.contains("nothing for this change to do"), md);
+        assertFalse(md.contains("further finding(s) are not shown"),
+                "the two omissions are different facts and are counted apart: " + md);
+    }
+
+    /**
+     * The JSON reports keep everything.
+     *
+     * <p>They are the record of what the analysis found. Dropping a finding from the evidence and
+     * dropping it from a reading list are different acts, and only the second is a presentation
+     * decision.
+     */
+    @Test
+    void theFullPresentationStillCarriesUnchangedDebt() {
+        FindingReport report = report(List.of(
+                finding("MT-M001", "a-unchanged()", FindingLifecycle.EXISTING,
+                        FindingDisposition.EXISTING, 18),
+                finding("MT-M001", "z-worsened()", FindingLifecycle.WORSENED,
+                        FindingDisposition.ACTIVE, 24)), List.of());
+
+        FindingsPresentation full = FindingsPresentation.of(report, null);
+
+        assertEquals(2, full.groups().stream().mapToInt(group -> group.findings().size()).sum(),
+                "with no limit there is nothing to make room for");
+        assertEquals(0, full.unchangedDebtOmitted());
+    }
+
+    /**
+     * A finding that is EXISTING but newly suppressed is still shown.
+     *
+     * <p>Suppression is a decision someone made and it is time-bounded; the reader needs to see that
+     * it exists and when it lapses. Excluding it as debt would hide the exception rather than the
+     * code.
+     */
+    @Test
+    void suppressedDebtIsNotTreatedAsUnchangedNoise() {
+        FindingReport report = report(List.of(
+                finding("MT-M001", "a-suppressed()", FindingLifecycle.EXISTING,
+                        FindingDisposition.SUPPRESSED, 18),
+                finding("MT-M001", "z-worsened()", FindingLifecycle.WORSENED,
+                        FindingDisposition.ACTIVE, 24)), List.of());
+
+        String md = markdown(report);
+
+        assertTrue(md.contains("Suppressed:** 1"), md);
+        assertFalse(md.contains("are unchanged pre-existing debt"),
+                "a suppressed finding is a decision on the record, not unread debt: " + md);
     }
 
     // ---------------------------------------------------------------- escaping and shape
