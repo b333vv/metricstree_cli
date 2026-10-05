@@ -161,24 +161,25 @@ accepted contract and validate actual gate/detect/sidecar reports plus negative 
 
 - **Failed base:** `unavailable-base-error` repairs malformed base source into CC=18 and returns
   exit 1/FAILED/NEW_ENTITY. Under advisory the original replay is INCOMPLETE but still NEW_ENTITY.
-  Base parse failure is not evidence of introduction; retain COMPARISON_UNAVAILABLE and exclude it
-  from differential blocking. See service base lookup and A08.
+  (fixed) The base side is checked for readability before an absent entity is concluded; an
+  unreadable base gives COMPARISON_UNAVAILABLE and a required gap, not NEW_ENTITY.
 - **Optional semantics:** experimental advisory local MT-C001 still exits 2; four entity-level
   optional gaps coexist with two run-level required ATFD/TCC gaps. stderr counts the required gaps
-  again. Per-check policy requiredness has not reached [AnalysisCompleteness.java][completeness].
+  again. (fixed) A metric only advisory checks need is an optional gap; requiredness derives from the
+  effective rules, so promoting MT-C001 to error makes it required again.
 - **Empty diff:** malformed baseline accepted without reading; requested baseline not created for
-  existing CC=16 debt. Gate's early return at line 295 precedes baseline validation/export.
-- **Evidence:** CC before/delta and trace are repaired, but both method ranges remain 1 instead of
-  4; C001 WMC 47->67 / ATFD 6->6 / TCC .3->.2 still gives `worsened=false`; MND retained witness
-  max=1 for actual depth=5. Fix metric direction and preserve the maximum witness before truncation.
+  existing CC=16 debt. (fixed) The no-change fast path yields to either baseline option; export drops the eligibility
+  restriction, so a baseline records the debt that exists.
+- **Evidence:** CC before/delta and trace are repaired, but (fixed) Ranges come from the entity's own source location on both sides of the comparison;
+  direction comes from the rule's bound; a maximum metric keeps its extreme contribution past the cap.
 - **Identity:** detect `-s src` versus `-s src/main/java` changes path from main/java/Demo.java to
-  Demo.java and changes the same method's fingerprint. Local versus project gate scope retains the
-  same policyDigest, despite the digest contract explicitly including scope.
-- **Presentation/context:** changing only Other.java still publishes unchanged Demo.java, including
-  in compact Markdown. The service labels it EXISTING but does not remove it from default findings.
+  Demo.java and changes the same method's fingerprint. (fixed) Scope is folded into the digest, resolved once before any early return. Baseline
+  regeneration is required, which is what the contract specifies for a policy change.
+- **Presentation/context:** (fixed) Compact output drops unchanged EXISTING/EXISTING debt before applying the limit and says
+  how many it left out, separately from truncation; the JSON reports keep everything.
   Explicit snapshot units still override configured source-root boundaries and parse ordering.
-- **Harnesses:** benchmark fixture INCOMPLETE/exit 2/requiredGaps=1 becomes `complete: true`;
-  evaluation split validation accepts two cases from one project in tuning/holdout; simulated valid
+- **Harnesses:** (fixed) A trial is complete only for PASSED and FAILED, and records the status it saw;
+  (fixed) Split leakage is refused on repository identity as well as content; simulated valid
   PMD-shaped object still raises AttributeError. The PMD probe verifies adapter shape handling only.
 - **Delivery:** offline HTML Action replay still records two gate invocations. Release/version,
   checksum, required outputs and hosted delivery acceptance remain as detailed in the first audit.

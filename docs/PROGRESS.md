@@ -1,5 +1,61 @@
 # what has been done
 
+## Session: the recheck's reproduced failures (2026-10-04)
+
+Ten defects from the follow-up audit, each with a test that fails without its fix.
+
+**Metric direction.** `risesBy` compared `now - was` and `othersHoldOrImprove` treated every
+non-primary metric as one where a fall is an improvement. Both hold only for a metric bounded from
+below. MT-C001 also bounds TCC from above -- the rule fires once cohesion drops to 0.33 -- so a
+cohesion rule was reading decay as improvement, and a class whose complexity grew by its full
+budget while its cohesion collapsed reported as unchanged. The sign now comes from the bound, and
+only an *improvement* disqualifies a growth: a metric that moved the wrong way is a second thing
+that got worse.
+
+**The MND witness.** The trace collector keeps the first hundred contributions per metric, which is
+right for CC (a sum, where any hundred describe the method equally) and wrong for MND (a maximum,
+whose trace exists to name the one block that produced the number). A JavaParser walk descends as it
+goes, so the deep blocks arrived last and were reliably discarded: the metric read 5 and its own
+evidence read 1. `MetricSemantics.isMaximum` now marks such metrics and the collector retains their
+extreme past the cap. The omitted count is untouched -- the witness is complete, the trace is not.
+
+**Line ranges.** Smaller than the audit called it: `ClassReport` and `MethodReport` already carry
+the node's `SourceLocation`, and five call sites threw it away for line 1. The base's path has to
+come from the correspondence rather than the base report, which is analysed from a temporary
+snapshot -- a name derived from that snapshot is absolute, and the mode-equality test is what caught
+it.
+
+**Scope in the digest.** The implementation excluded analysis scope on the reasoning that it changes
+what a run produces rather than what it judges. Local scope has no resolved symbols, so MT-C001 is
+not evaluated there at all: switching scope withdraws a rule rather than rerendering a verdict. The
+contract already required scope in the digest. Baseline digests now change for every user, which is
+the contract's specified response to a policy change and is worth announcing.
+
+**An unreadable base.** A base the parser could not read produced NEW_ENTITY -- a claim about a
+revision the analysis never loaded, reported in the one lifecycle that blames the author. The
+finding still appears, as COMPARISON_UNAVAILABLE, blocks nothing, and the run reports INCOMPLETE
+with a required gap. Readability is a membership test in a set the gate already builds for the
+legacy evaluator, because the snapshot that owns those paths is the only thing that can map them
+back; I first matched on file name and wrote down why that is the worse answer.
+
+**Compact output.** Unchanged EXISTING/EXISTING debt is dropped before the limit, not after, and
+counted separately from truncation. JSON keeps everything.
+
+**Baseline operations.** The no-change fast path returned above the baseline handling, so a
+malformed baseline was accepted without being read and `--write-findings-baseline` wrote nothing.
+That made the documented first step -- generate a baseline for a repository that already has debt,
+in the commit where you turn the gate on -- impossible.
+
+**Gap requiredness.** An experimental advisory rule's unmeasurable metric was a required gap, so
+ordinary local runs reported INCOMPLETE over a rule that could never block. Derived from the
+effective rules, so promoting MT-C001 to error makes it required again.
+
+**The benchmark harness.** `complete` was "is status a string", which INCOMPLETE satisfies, so a run
+that analysed nothing was recorded as a measurement.
+
+**Split leakage.** The holdout check compared content, so two cases sharing no bytes passed. A
+repository contributes its own idiom, so sharing one across splits is refused too.
+
 ## Session: A18 and A19 — release and action integration (2026-10-04)
 
 Fixed the authoring half of both release-side findings. What remains for each is a hosted run, which
