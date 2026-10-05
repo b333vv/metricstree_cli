@@ -36,6 +36,14 @@ jobs:
   verify:
     name: Verify on ${{ matrix.os }}, JDK ${{ matrix.java }}
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Windows runs `run:` steps in PowerShell, where ${VERSION#v} is a variable name rather than
+        # a shell expansion and ./gradlew is an extensionless file PowerShell will not resolve. The
+        # matrix covers windows-latest, so this job needs bash declared rather than assumed -- and
+        # every other step below is written as bash anyway (`set -eu`, `${var#v}`), so declaring it
+        # states what was always meant rather than changing anything for Ubuntu and macOS.
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -70,6 +78,9 @@ jobs:
     name: Build the distribution
     needs: verify
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Check out the repository
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -119,6 +130,9 @@ jobs:
     # than no release, because it looks complete.
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: write
     steps:

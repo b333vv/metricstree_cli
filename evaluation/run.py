@@ -381,6 +381,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
 
+    # Resolved here rather than passed through, because every invocation of it runs with a
+    # different working directory: run_case sets cwd to the case's own repository, so a relative
+    # path that existed at parse time stops existing at the moment the CLI is started. The check
+    # below passes and the failure arrives later as FileNotFoundError out of subprocess, which
+    # reads as a harness defect rather than as the obvious thing it is.
+    #
+    # The supplied PMD is run the same way and for the same reason.
+    args.cli = Path(args.cli).resolve()
+    if args.pmd is not None:
+        args.pmd = Path(args.pmd).resolve()
     if not args.cli.exists():
         print(f"Error: no CLI at {args.cli}. Build one with "
               f"./gradlew :java-metrics-cli:installDist.", file=sys.stderr)

@@ -83,7 +83,7 @@ jobs:
             exit 1
           fi
           expected=$(awk '{print $1; exit}' "$checksum")
-          actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
+          actual=$(shasum -a 256 "$archives" | cut -d' ' -f1)
           if [ "$expected" != "$actual" ]; then
             echo "::error::The published checksum does not describe the published archive."
             echo "  expected $expected"
