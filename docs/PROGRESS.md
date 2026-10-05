@@ -3250,3 +3250,30 @@ All three proposals were accepted and implemented; backward compatibility was no
 # what has been put on hold
 
 (nothing)
+
+## Final verification of Fix 10 (2026-10-05)
+
+- Re-ran the Windows CI build (`./gradlew check -PmetricsVersion=...`) against the unmodified
+  baseline `ae59d3c`: 483 tests, **10 failed** — `DetectResultWriterTest.pathsOutsideBaseDirKeepTheirAbsoluteForm`,
+  the 3 `JsonContractGoldenTest` (analyze/validate/detect), `MetricReportJsonWriterDiagnosticsTest`,
+  3× `MaintainabilityCommandTest`, and the 2 Windows-impossible tests that run because the
+  `@EnabledOnOs` guards do not exist on this baseline.
+- Root causes: (1) `CliObjectMapper.PathAsStringSerializer` wrote `Path.toString()` verbatim — backslashes
+  on Windows poison the contract; (2) `DetectResultWriter.relativize()` used `Path.isAbsolute()`, which
+  misclassifies a Unix-style absolute path (no drive letter) as relative on Windows and folds
+  outside-base paths under `baseDir`; (3) `ValidateCommand` wrote the `file` field with raw
+  `Path.toString()`; (4) the baseline `MaintainabilityCommandTest.logicalPath()` regex anchors on
+  `src/` but the library normalizes physical paths to absolute Windows paths with backslashes;
+  (5) two tests exercise tab/newline filenames without any guard, which Windows NTFS forbids.
+- Fixes applied: forward-slash normalization in `CliObjectMapper`, `DetectResultWriter.relativize()`
+  (absolute form detected from the string: `/`, `\`, `C:`), `ValidateCommand` file field,
+  `@EnabledOnOs({OS.LINUX, OS.MAC})` plus filesystem-probe backstops in `GitOpsTest` and
+  `SnapshotMaterializerTest`, and slash-normalization in the test's `logicalPath()`.
+- Verification after fixes: clean `./gradlew :java-metrics-cli:check` — **BUILD SUCCESSFUL**; unit
+  tests **483/0 passed**, integration tests **10/0 passed**; the 10 previously failing tests all pass:
+  `DetectResultWriterTest.pathsOutsideBaseDirKeepTheirAbsoluteForm`, `GitOpsTest.roundTripsUnusualPaths`,
+  `JsonContractGoldenTest` × 3, `MetricReportJsonWriterDiagnosticsTest.rendersAnUnresolvedSymbolDiagnostic`,
+  `MaintainabilityCommandTest.warnModeRuleNeverBlocksEvenUnderEnforce`,
+  `MaintainabilityCommandTest.newComplexMethodTriggersWithoutLegacyThresholds`,
+  `MaintainabilityCommandTest.existingDebtDoesNotBlock`,
+  `SnapshotMaterializerTest.newlinePathMaterializesCorrectly`.

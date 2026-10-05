@@ -89,9 +89,13 @@ class SnapshotMaterializerTest {
     void newlinePathMaterializesCorrectly(@TempDir Path dir) throws Exception {
         // Backstop: a newline in a filename is invalid on Windows NTFS. @EnabledOnOs is the
         // primary mechanism; this runtime check is a safety net in case the annotation is not
-        // honored on the runner.
-        if (System.getProperty("os.name", "").startsWith("Windows")) {
-            System.out.println("skipped: newline in filename not supported on Windows");
+        // honored on the runner — it probes the filesystem's actual behavior (a newline filename
+        // throws InvalidPathException on NTFS), not the reported OS name, so it survives runners
+        // whose os.name is reported in an unexpected form.
+        try {
+            Files.writeString(dir.resolve("newline\tinname"), "x");
+        } catch (java.nio.file.InvalidPathException ignored) {
+            System.out.println("skipped: newline/tab in filenames not supported on this filesystem");
             return;
         }
         String oddName = "app/Odd\nName.java";

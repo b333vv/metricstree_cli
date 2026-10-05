@@ -7,6 +7,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -63,7 +64,7 @@ class GitOpsTest {
         try {
             Files.writeString(tempDir.resolve("tab\thello"), "x");
             Files.writeString(tempDir.resolve("nl\nhello"), "x");
-        } catch (java.nio.file.InvalidPathException ignored) {
+        } catch (InvalidPathException ignored) {
             System.out.println("skipped: tab/newline in filenames not supported on this filesystem");
             return;
         }
