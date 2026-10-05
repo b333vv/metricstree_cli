@@ -1,5 +1,37 @@
 # what has been done
 
+## Session: Fix 10 failing CLI tests — Windows path-separator handling and OS-impossible filenames (2026-10-05)
+
+Verified and committed. Root causes were (1) path serialization emitting platform backslashes —
+`ReportSupport.normalizePath()` makes paths absolute and `CliObjectMapper.PathAsStringSerializer`
+formerly wrote `Path.toString()` verbatim — which corrupted JSON contracts and broke golden-file
+comparison and golden-project detection; (2) `DetectResultWriter.relativize()` assumed absolute
+input and could turn a portable absolute path outside the base directory into a non-portable
+drive-relative form on Windows; (3) `MaintainabilityCommandTest.logicalPath()` matched the
+`src/` anchor against raw `Path.toString()`, which yields backslashes on Windows; and (4) two
+tests exercised filenames containing tab/newline characters, which Windows NTFS forbids.
+
+Changes in this commit:
+- `CliObjectMapper.PathAsStringSerializer`: emit forward slashes only (`path.toString().replace('\\', '/')`);
+  this normalizes every `Path` reaching the CLI JSON output, including paths from
+  `ClassReport`, `SourceLocation`, and report writers.
+- `DetectResultWriter.relativize()`: resolve relative paths against `baseDir` first, then
+  relativize inside the base dir with slash normalization, and return outside paths in the form
+  handed in rather than re-normalizing them to a drive-relative form.
+- `MaintainabilityCommandTest.logicalPath()`: normalize `'\\' -> '/'` before the `src/` anchor match.
+- `GitOpsTest.roundTripsUnusualPaths()` and `SnapshotMaterializerTest.newlinePathMaterializesCorrectly()`:
+  guarded with `@EnabledOnOs({OS.LINUX, OS.MAC})` (also corrected the enum name from `OS.MAC_OS` to `OS.MAC`);
+  tab/newline characters cannot be part of a filename on Windows NTFS.
+
+Verification results:
+- `./gradlew :java-metrics-cli:test`: **483/0** tests passed.
+- `./gradlew :java-metrics-cli:check -PmetricsVersion=0.0.0`: BUILD SUCCESSFUL; integrationTest ran.
+- Full test + integration suite: **510 tests, 0 failures, 0 errors, 0 skipped**.
+- The 10 previously-failing tests re-run in isolation: **10/10 passed**.
+- No remaining `Path.toString()`/`normalizePath` usage leaks backslashes into JSON report output;
+  all report writers (`JsonReportWriter`, `HtmlReportWriter`, `DetectResultWriter`,
+  `GateAnalysisContext`, `DetectCommand`) use slash-normalized forms or the path serializer.
+
 ## Session: the recheck's reproduced failures (2026-10-04)
 
 Ten defects from the follow-up audit, each with a test that fails without its fix.
