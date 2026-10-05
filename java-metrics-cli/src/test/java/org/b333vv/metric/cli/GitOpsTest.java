@@ -53,6 +53,13 @@ class GitOpsTest {
     @EnabledOnOs({OS.LINUX, OS.MAC})
     @Test
     void roundTripsUnusualPaths() throws Exception {
+        // Backstop: tab/newline filenames are invalid on Windows NTFS. @EnabledOnOs is the
+        // primary mechanism; this runtime check is a safety net in case the annotation is not
+        // honored on the runner.
+        if (System.getProperty("os.name", "").startsWith("Windows")) {
+            System.out.println("skipped: tab/newline in filenames not supported on Windows");
+            return;
+        }
         GitFixture fixture = new GitFixture(tempDir.resolve("repo")).init();
         for (int i = 0; i < AWKWARD_PATHS.size(); i++) {
             fixture.write(AWKWARD_PATHS.get(i), "package app;\nclass C" + i + " {}\n");

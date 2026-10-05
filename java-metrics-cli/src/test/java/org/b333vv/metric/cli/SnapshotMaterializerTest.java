@@ -87,6 +87,13 @@ class SnapshotMaterializerTest {
     @EnabledOnOs({OS.LINUX, OS.MAC})
     @Test
     void newlinePathMaterializesCorrectly(@TempDir Path dir) throws Exception {
+        // Backstop: a newline in a filename is invalid on Windows NTFS. @EnabledOnOs is the
+        // primary mechanism; this runtime check is a safety net in case the annotation is not
+        // honored on the runner.
+        if (System.getProperty("os.name", "").startsWith("Windows")) {
+            System.out.println("skipped: newline in filename not supported on Windows");
+            return;
+        }
         String oddName = "app/Odd\nName.java";
         GitFixture fixture = new GitFixture(dir.resolve("repo")).init();
         fixture.write(oddName, SIMPLE);
