@@ -123,7 +123,8 @@ record AnalysisCompleteness(
             GateAnalysisContext analysisContext) {
         return of(report, snapshot, subjectPaths, checkedMetrics, unparseableBaseFiles,
                 unavailableMetrics, unsupportedSources, excluded, parseErrors, contextIssues,
-                analysisContext, org.b333vv.metric.library.core.AnalysisExecution.ORDERED);
+                analysisContext, org.b333vv.metric.library.core.AnalysisExecution.ORDERED,
+                Set.of());
     }
 
     /**
@@ -150,6 +151,36 @@ record AnalysisCompleteness(
             List<CheckEvaluationIssue> contextIssues,
             GateAnalysisContext analysisContext,
             org.b333vv.metric.library.core.AnalysisExecution execution) {
+        return of(report, snapshot, subjectPaths, checkedMetrics, unparseableBaseFiles,
+                unavailableMetrics, unsupportedSources, excluded, parseErrors, contextIssues,
+                analysisContext, execution, Set.of());
+    }
+
+    /**
+     * The completeness picture, with the metrics that only advisory checks needed.
+     *
+     * <p>An unmeasurable metric is a required gap only when something that can fail a build asked
+     * for it. MT-C001 needs ATFD and TCC, which need resolved symbols, so under the default local
+     * scope they cannot be measured -- and MT-C001 is experimental and advisory, so its absence
+     * changes nothing about what the run proved. Treating that as required made an ordinary local
+     * run report INCOMPLETE over a rule that was never going to block.
+     *
+     * @param advisoryOnlyMetrics metrics no blocking check depends on
+     */
+    static AnalysisCompleteness of(
+            MetricReport report,
+            SourceSnapshot snapshot,
+            Set<String> subjectPaths,
+            Set<MetricCode> checkedMetrics,
+            Set<String> unparseableBaseFiles,
+            List<GateMetricSelection.UnavailableMetric> unavailableMetrics,
+            List<String> unsupportedSources,
+            List<String> excluded,
+            List<String> parseErrors,
+            List<CheckEvaluationIssue> contextIssues,
+            GateAnalysisContext analysisContext,
+            org.b333vv.metric.library.core.AnalysisExecution execution,
+            Set<MetricCode> advisoryOnlyMetrics) {
 
         List<CheckEvaluationIssue> issues = new ArrayList<>(contextIssues);
         List<String> parsed = new ArrayList<>();
@@ -213,7 +244,9 @@ record AnalysisCompleteness(
         //    the check must happen; a check that quietly stops happening is a weaker gate than the
         //    author believes they are running.
         for (GateMetricSelection.UnavailableMetric metric : unavailableMetrics) {
-            issues.add(CheckEvaluationIssue.metricUnavailable(metric.metric(), metric.reason()));
+            issues.add(advisoryOnlyMetrics.contains(metric.metric())
+                    ? CheckEvaluationIssue.optionalMetricUnavailable(metric.metric(), metric.reason())
+                    : CheckEvaluationIssue.metricUnavailable(metric.metric(), metric.reason()));
         }
 
         // 6. A value that exists but is not comparable. A threshold check against NaN is not a

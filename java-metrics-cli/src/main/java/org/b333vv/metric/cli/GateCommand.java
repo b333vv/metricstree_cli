@@ -452,7 +452,10 @@ final class GateCommand implements Callable<Integer> {
                     excludedFiles,
                     parseErrors.stream().map(GateFinding::file).distinct().toList(),
                     contextIssues,
-                    analysisContext);
+                    analysisContext,
+                    org.b333vv.metric.library.core.AnalysisExecution.ORDERED,
+                    advisoryOnlyMetrics(activePolicy, thresholds, growth));
+
 
             if (activePolicy.isMaintainability()) {
                 // The path translation is captured, not the snapshot: it maps by the snapshot's root
@@ -1080,6 +1083,52 @@ final class GateCommand implements Callable<Integer> {
      * ({@code gate --base origin/main}) meaningful. New-violation and crossing checks simply
      * need thresholds to exist before they can fire.
      */
+    /**
+     * The metrics that only advisory checks depend on, so their unavailability is optional.
+     *
+     * <p>Two sources are consulted, and both have to agree that nothing blocking wants the metric.
+     * A configured legacy threshold or growth budget says "enforce this", so it makes the metric
+     * required whatever the catalogue thinks. Among the maintainability rules, one that is in error
+     * mode and not experimental can block, so it also makes its metrics required -- MT-C001 is both
+     * experimental and advisory, which is why its ATFD and TCC were turning ordinary local runs
+     * INCOMPLETE over a rule that could never have failed anything.
+     *
+     * <p>Derived from the effective rules rather than the catalogue, because an override is what the
+     * run actually judges by: a project that promotes MT-C001 to error has made those metrics
+     * required, and this has to notice that.
+     */
+    private static java.util.Set<org.b333vv.metric.library.core.MetricCode> advisoryOnlyMetrics(
+            MaintainabilityPolicy activePolicy,
+            Map<String, Threshold> thresholds,
+            Map<String, Double> growth) {
+        MaintainabilitySettings settings = activePolicy.settings();
+        java.util.Set<org.b333vv.metric.library.core.MetricCode> blocking = new java.util.HashSet<>();
+        if (thresholds != null) {
+            thresholds.keySet().forEach(code ->
+                    MetricCodeNames.find(code).ifPresent(blocking::add));
+        }
+        if (growth != null) {
+            growth.keySet().forEach(code ->
+                    MetricCodeNames.find(code).ifPresent(blocking::add));
+        }
+        for (MaintainabilityRule rule : MaintainabilityRules.catalog()) {
+            if (!settings.isEnabled(rule.id())) {
+                continue;
+            }
+            MaintainabilitySettings.RuleOverride override = settings.overrides().get(rule.id());
+            RuleMode mode = override != null && override.mode() != null
+                    ? override.mode() : rule.defaultMode();
+            if (mode == RuleMode.ERROR && rule.maturity().allowsBlocking()) {
+                blocking.addAll(rule.conditions().keySet());
+            }
+        }
+        java.util.Set<org.b333vv.metric.library.core.MetricCode> requested =
+                new java.util.HashSet<>(requestedMetrics(thresholds, growth, activePolicy));
+        requested.removeAll(blocking);
+        return requested;
+    }
+
+    /** Resolves thresholds from the config or an explicit file. */
     private Map<String, Threshold> resolveThresholds(ProjectConfig config) {
         if (thresholdsFile != null) {
             return ConfigLoader.thresholds(thresholdsFile);

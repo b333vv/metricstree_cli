@@ -92,6 +92,18 @@ record CheckEvaluationIssue(
         return new CheckEvaluationIssue(metric, null, METRIC_UNAVAILABLE_LOCAL, true, message);
     }
 
+    /**
+     * A metric that only an advisory check needed could not be measured.
+     *
+     * <p>The reason code says "optional-unavailable" rather than reusing the required one, because
+     * the two are answered by a reader differently. A required gap means the verdict covers less
+     * than was asked for. This one means a check that was never going to fail anything did not run,
+     * which changes nothing about what the run proved.
+     */
+    static CheckEvaluationIssue optionalMetricUnavailable(MetricCode metric, String message) {
+        return new CheckEvaluationIssue(metric, null, OPTIONAL_UNAVAILABLE, false, message);
+    }
+
     static CheckEvaluationIssue unsupportedDeclaration(String file, String message) {
         return new CheckEvaluationIssue(null, file, UNSUPPORTED_DECLARATION, true, message);
     }

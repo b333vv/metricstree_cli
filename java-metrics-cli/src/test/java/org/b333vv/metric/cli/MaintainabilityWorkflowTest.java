@@ -433,6 +433,77 @@ class MaintainabilityWorkflowTest {
     }
 
     @Nested
+    @DisplayName("A gap only matters if something could have failed")
+    class GapRequiredness {
+
+        /**
+         * An advisory rule that cannot run does not make the run incomplete.
+         *
+         * <p>The recheck ran MT-C001 under the default local scope and got exit 2, INCOMPLETE, over
+         * ATFD and TCC being unavailable. MT-C001 is experimental and advisory: it cannot block under
+         * any enforcement, so its absence changes nothing about what the run proved. Reporting it as
+         * a required gap tells a reader their verdict is compromised when the only thing missing was
+         * a check that was never going to fail them.
+         *
+         * <p>The local scope is the default, and MT-C001's inputs need resolved symbols, so this was
+         * every ordinary local run.
+         */
+        @Test
+        @DisplayName("an unavailable advisory rule's metric is an optional gap")
+        void advisoryRuleUnavailableIsOptional() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", """
+                    maintainability:
+                      enabledRules: [MT-M001, MT-C001]
+                    """);
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(3));
+            commitLocally(git, "the change under review");
+
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gate(err, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--enforcement", "enforce");
+
+            assertNotEquals(2, exit,
+                    "the run is not incomplete because a rule that could never block did not run: "
+                            + err.toString(StandardCharsets.UTF_8));
+        }
+
+        /**
+         * The same metric is a required gap once something can fail on it.
+         *
+         * <p>Promoting MT-C001 to error makes its inputs load-bearing, and the run must say so: this
+         * is the same configuration with a different consequence, so requiredness has to be derived
+         * from the effective rules rather than the catalogue.
+         */
+        @Test
+        @DisplayName("the same metric is required once the rule is promoted to error")
+        void promotedRuleUnavailableIsRequired() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", """
+                    maintainability:
+                      enabledRules: [MT-M001, MT-C001]
+                      rules:
+                        MT-C001:
+                          mode: error
+                    """);
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(3));
+            commitLocally(git, "the change under review");
+
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gate(err, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--enforcement", "enforce");
+
+            assertEquals(2, exit,
+                    "a rule that can now fail the build has inputs whose absence the verdict depends"
+                            + " on: " + err.toString(StandardCharsets.UTF_8));
+        }
+    }
+
+    @Nested
     @DisplayName("A baseline operation is not a verdict about a diff")
     class BaselineOperations {
 
