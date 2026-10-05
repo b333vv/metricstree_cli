@@ -65,10 +65,12 @@ class PercentileMath(unittest.TestCase):
 
 class Summary(unittest.TestCase):
     def _trial(self, seconds, warm=True, index=0, exit_code=0, complete=True,
-               analysed=3, eligible=3):
+               analysed=3, eligible=3, status=None):
         return run.Trial(index=index, warm=warm, seconds=seconds, exit_code=exit_code,
                          changed_files=3, analysed_files=analysed, eligible_files=eligible,
-                         heap_after_kb=None, complete=complete, report_digest="d")
+                         heap_after_kb=None, complete=complete,
+                         status=status if status is not None else ("PASSED" if complete else "INCOMPLETE"),
+                         report_digest="d")
 
     def test_summary_keeps_every_sample(self):
         trials = [self._trial(value) for value in (1.0, 2.0, 3.0, 4.0, 99.0)]
@@ -278,3 +280,57 @@ class RecordedResults(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IncompleteRunsAreNotMeasurements(unittest.TestCase):
+    """A trial only measures what the analysis actually finished.
+
+    The recheck replayed the benchmark fixture and got exit 2, a required gap, and
+    `complete: true`. The check was "is status a string", which every report satisfies --
+    INCOMPLETE carries one -- so the fastest-looking way for the harness to be wrong was a run
+    that did not analyse. These assert the statuses that count and the ones that do not.
+    """
+
+    def _run(self, document):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "report.json").write_text(json.dumps(document), encoding="utf-8")
+            # The report is written before the run so the harness reads a document it never
+            # produced. The CLI is this interpreter, which analyses nothing, so the test is about
+            # how the harness reads what it finds rather than about producing it.
+            trial = run.run_trial(
+                cli=Path(sys.executable), args=("-c", "pass"), warm=True, index=0,
+                cwd=root, changed_files=3)
+            return trial
+
+    def test_incomplete_is_not_complete(self):
+        trial = self._run({
+            "status": "INCOMPLETE",
+            "analysis": {"eligibleFiles": 3, "analyzedFiles": 3, "requiredGaps": 1},
+        })
+        self.assertFalse(trial.complete,
+                         "a run that reported a required gap analysed less than it was asked to,"
+                         " and its timings are not a measurement of the whole job")
+        self.assertEqual("INCOMPLETE", trial.status,
+                         "and it says which, so complete: false is not a bare negative")
+
+    def test_error_is_not_complete(self):
+        trial = self._run({"status": "ERROR", "analysis": {}})
+        self.assertFalse(trial.complete,
+                         "an errored run may have died early and looked fast")
+
+    def test_passed_and_failed_are_complete(self):
+        for status in ("PASSED", "FAILED"):
+            with self.subTest(status=status):
+                trial = self._run({
+                    "status": status,
+                    "analysis": {"eligibleFiles": 3, "analyzedFiles": 3},
+                })
+                self.assertTrue(trial.complete,
+                                f"{status} is a verdict: the analysis ran and decided")
+                self.assertEqual(status, trial.status)
+
+    def test_a_document_without_a_status_is_not_a_report(self):
+        trial = self._run({"analysis": {"eligibleFiles": 3, "analyzedFiles": 3}})
+        self.assertFalse(trial.complete)
+        self.assertEqual("malformed", trial.status)

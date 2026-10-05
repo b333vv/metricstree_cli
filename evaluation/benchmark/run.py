@@ -190,6 +190,9 @@ class Trial:
     eligible_files: int
     heap_after_kb: int | None
     complete: bool
+    # The report's own status, so `complete: false` says which of INCOMPLETE and ERROR it was
+    # rather than leaving a reader to guess whether the analysis or the process gave up.
+    status: str
     report_digest: str
 
 
@@ -224,6 +227,13 @@ def _parse_heap_after(stderr: str) -> int | None:
     return None
 
 
+# The statuses that mean the analysis finished and decided. INCOMPLETE and ERROR are the two
+# that do not, and they are the two a performance harness must not silently average in: the first
+# because the work it measured may not have been done, the second because the process may have
+# died early and looked fast.
+_VERDICT_STATUSES = frozenset({"PASSED", "FAILED"})
+
+
 def run_trial(cli: Path, args: Sequence[str], warm: bool, index: int,
               cwd: Path, changed_files: int) -> Trial:
     """Run the packaged CLI once, inside the corpus, and record what it cost and what it said."""
@@ -239,6 +249,7 @@ def run_trial(cli: Path, args: Sequence[str], warm: bool, index: int,
 
     report = cwd / "report.json"
     digest = ""
+    status = "no-report"
     complete = False
     analysed = 0
     eligible = 0
@@ -246,9 +257,14 @@ def run_trial(cli: Path, args: Sequence[str], warm: bool, index: int,
         try:
             document = json.loads(report.read_text(encoding="utf-8"))
             digest = hashlib.sha256(report.read_bytes()).hexdigest()
-            # `status` is the field every report carries; a document without one is bytes that are
-            # not a report, whatever else it contains.
-            complete = isinstance(document.get("status"), str)
+            # `complete` means the analysis reached a verdict, so the statuses that are verdicts
+            # count and the ones that are not do not. The previous test was "is status a string",
+            # which every report satisfies -- INCOMPLETE carries one -- so a run that analysed
+            # nothing, exited 2 and reported a required gap was recorded as a complete
+            # measurement. The recheck saw exactly that: exit 2, requiredGaps 1, complete: true.
+            raw = document.get("status")
+            status = raw if isinstance(raw, str) else "malformed"
+            complete = status in _VERDICT_STATUSES
             # And what it actually looked at. The audit's A20 was invisible because every field the
             # harness checked was satisfied by a run that analysed nothing: it exited 0, wrote a report
             # and reported a status. These are the fields that distinguish a measurement from a fast
@@ -272,6 +288,7 @@ def run_trial(cli: Path, args: Sequence[str], warm: bool, index: int,
         eligible_files=eligible,
         heap_after_kb=_parse_heap_after(completed.stderr),
         complete=complete,
+        status=status,
         report_digest=digest,
     )
 
