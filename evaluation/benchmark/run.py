@@ -304,6 +304,7 @@ def _introduce_change(root: Path) -> str:
     The corpus checkout is disposable and created by this harness, never a caller's own working copy;
     committing into a supplied repository would be a way to destroy somebody's uncommitted work.
     """
+    _require_disposable_corpus(root)
     candidates = sorted(root.rglob("*.java"))
     if not candidates:
         raise BenchmarkError("the corpus has no Java sources to change")
@@ -321,6 +322,39 @@ def _introduce_change(root: Path) -> str:
     subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "benchmark change"],
                    check=True, capture_output=True)
     return before
+
+
+def _require_disposable_corpus(root: Path) -> None:
+    """Refuse to touch a corpus checkout this harness did not create.
+
+    The docstring has always promised that committing here cannot destroy somebody's work. Nothing
+    checked it, so a caller who pointed `--corpus` at a real repository got twenty files edited and
+    a commit made in it -- a commit they did not ask for, on a branch they were working on, on
+    top of whatever they had staged.
+
+    Two things have to hold, and both are checked rather than assumed. The working tree is clean, so
+    there is nothing uncommitted to lose. And the history is exactly the one commit this harness
+    makes, so there is nobody else's work in it to rewrite. A corpus with a real history fails the
+    second check even when it is perfectly clean, which is the intended answer: copy it somewhere
+    disposable and point at that.
+    """
+    status = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain"],
+        check=True, capture_output=True, text=True)
+    if status.stdout.strip():
+        raise BenchmarkError(
+            f"the corpus at {root} has uncommitted changes. The benchmark edits and commits it, so"
+            f" it will not start on a working copy that is not clean -- point --corpus at a"
+            f" disposable copy instead.")
+    log = subprocess.run(
+        ["git", "-C", str(root), "log", "--format=%s"],
+        check=True, capture_output=True, text=True)
+    subjects = [line for line in log.stdout.splitlines() if line.strip()]
+    if subjects != ["corpus"]:
+        raise BenchmarkError(
+            f"the corpus at {root} has history this harness did not create"
+            f" ({len(subjects)} commit(s), first: {subjects[0] if subjects else 'none'!r}). The"
+            f" benchmark commits into it, so it only does that to a checkout it made itself.")
 
 
 def _head_sha(root: Path) -> str:

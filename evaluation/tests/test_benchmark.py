@@ -334,3 +334,54 @@ class IncompleteRunsAreNotMeasurements(unittest.TestCase):
         trial = self._run({"analysis": {"eligibleFiles": 3, "analyzedFiles": 3}})
         self.assertFalse(trial.complete)
         self.assertEqual("malformed", trial.status)
+
+
+class CorpusOwnership(unittest.TestCase):
+    """The benchmark edits and commits its corpus, so it checks the corpus is its own.
+
+    The recheck recorded that the supplied-corpus benchmark still edits and commits that checkout.
+    The function's docstring has always said the corpus is disposable and created by the harness;
+    nothing checked it, so pointing --corpus at a real repository meant twenty files edited and a
+    commit made on somebody's branch, over whatever they had staged.
+    """
+
+    def _repo(self, root: Path, *, subject="corpus", dirty=False, extra_commit=False):
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        for args in (["config", "user.email", "bench@test"],
+                     ["config", "user.name", "bench"],
+                     ["config", "commit.gpgsign", "false"]):
+            subprocess.run(["git", "-C", str(root)] + args, check=True, capture_output=True)
+        source = root / "src" / "App.java"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("class App { int f(int x) { if (x>0) return 1; return 0; } }",
+                          encoding="utf-8")
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", subject],
+                       check=True, capture_output=True)
+        if extra_commit:
+            source.write_text("class App { int f(int x) { return x; } }", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "someone's work"],
+                           check=True, capture_output=True)
+        if dirty:
+            source.write_text("class App { // uncommitted edit\n }", encoding="utf-8")
+        return root
+
+    def test_a_harness_made_corpus_is_accepted(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = self._repo(Path(raw) / "corpus")
+            run._require_disposable_corpus(root)
+
+    def test_an_uncommitted_corpus_is_refused(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = self._repo(Path(raw) / "corpus", dirty=True)
+            with self.assertRaises(run.BenchmarkError) as caught:
+                run._require_disposable_corpus(root)
+            self.assertIn("uncommitted", str(caught.exception))
+
+    def test_a_corpus_with_someone_elses_history_is_refused(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = self._repo(Path(raw) / "corpus", extra_commit=True)
+            with self.assertRaises(run.BenchmarkError) as caught:
+                run._require_disposable_corpus(root)
+            self.assertIn("history this harness did not create", str(caught.exception))
