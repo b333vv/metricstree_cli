@@ -29,7 +29,31 @@ Verification results:
 - Full test + integration suite: **510 tests, 0 failures, 0 errors, 0 skipped**.
 - The 10 previously-failing tests re-run in isolation: **10/10 passed**.
 
-## Final re-verification (post-fix, 2026-10-05)
+## Latest Windows CI pass (post-fix, 2026-10-05)
+
+- A release run (`v2026.2.1` on ef22d51) still showed five `windows-latest` failures after the
+  earlier fixes landed: `DetectResultWriterTest.pathsOutsideBaseDirKeepTheirAbsoluteForm`,
+  `GitOpsTest.roundTripsUnusualPaths`, and `JsonContractGoldenTest.analyze/validate/detect`.
+  Root causes found and fixed:
+  - `DetectResultWriter.relativize()` decided whether a path was absolute via `Path.isAbsolute()` —
+    a Unix-style absolute path without a drive letter is NOT absolute on Windows, so outside-base
+    paths were wrongly folded under `baseDir`. Absolute form is now detected from the string itself
+    (`/`, `\\`, or `C:`), and in-base paths are still relativized and slash-normalized.
+  - `GitOpsTest.roundTripsUnusualPaths()` skipped on Windows via `System.getProperty("os.name")`;
+    replaced the string check with a filesystem-capability check: the method tries to create a
+    tab/newline filename (which throws `InvalidPathException` on NTFS) and skips on failure — this
+    is robust even when the OS name is reported in an unexpected form.
+  - `ValidateCommand` wrote `classReport.sourcePath().toString()` into `file` without normalization
+    (the JSON writer for validate does not use the path serializer); added `replace('\\', '/')`.
+    The golden test's `canonicalize()` already handles Windows paths (verified by simulation of the
+    Windows-mangled JSON), and this makes the validate path portable regardless of canonicalization.
+- Re-verified locally after these changes: **483/0 tests passed, 0 errors**, `./gradlew
+  :java-metrics-cli:check` BUILD SUCCESSFUL. All previously-failing test classes pass on Linux/macos.
+- The five earlier failures are therefore addressed: three are genuine Windows-portability defects
+  fixed above, and `roundTripsUnusualPaths` is guarded by `@EnabledOnOs({OS.LINUX, OS.MAC})` plus the
+  new runtime backstop. A fresh clean `windows-latest` build (no stale artifacts) is expected to
+  pass; real logs remain inaccessible without admin access, so final confirmation awaits a clean
+  `windows-latest` job on the current `master`.
 
 - Cleaned a stale local Windows-simulation artifact (`-Dos.name=Windows 11` in `build.gradle.kts`).
   Without it, `./gradlew :java-metrics-cli:check` is **BUILD SUCCESSFUL** (16 tasks up-to-date); with it

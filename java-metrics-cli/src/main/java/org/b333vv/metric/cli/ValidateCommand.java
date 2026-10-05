@@ -167,7 +167,10 @@ final class ValidateCommand implements Callable<Integer> {
         ValidationResult result = new ValidationResult();
 
         for (var classReport : report.classes()) {
-            String fileName = classReport.sourcePath().toString();
+            // The library hands back an absolute Path whose toString() uses the platform's
+            // separator; normalize to forward slashes so the JSON contract stays portable
+            // across runners (the golden contract compares against canonicalized paths).
+            String fileName = classReport.sourcePath().toString().replace('\\', '/');
 
             for (Map.Entry<MetricCode, Value> entry : classReport.metrics().entrySet()) {
                 String metricName = entry.getKey().name();

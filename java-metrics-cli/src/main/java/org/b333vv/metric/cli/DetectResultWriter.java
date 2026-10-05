@@ -268,17 +268,24 @@ final class DetectResultWriter {
 
     private static String relativize(Path baseDir, String sourcePath) {
         try {
+            // An absolute path (Unix-style "/" or Windows "C:\" or UNC "\\") that lies outside
+            // baseDir must be preserved verbatim: the caller handed us a path it can interpret
+            // (usually a class outside the analyzed project). Detect absolute form from the
+            // STRING rather than Path.isAbsolute(): on Windows a Unix-style absolute path
+            // without a drive letter is NOT absolute, so resolving it into baseDir would
+            // silently corrupt the contract's outside-base paths.
+            boolean absoluteString = sourcePath.startsWith("/")
+                    || sourcePath.startsWith("\\")
+                    || sourcePath.matches("[A-Za-z]:.*");
             Path path = Path.of(sourcePath);
-            Path resolved = path.isAbsolute()
+            Path resolved = absoluteString
                     ? path.normalize()
                     : baseDir.resolve(path).normalize();
             if (resolved.startsWith(baseDir)) {
                 return baseDir.relativize(resolved).toString().replace('\\', '/');
             }
-            // An absolute path outside baseDir (or a relative path that resolves outside it):
-            // the caller gave us a path it can interpret, so return it verbatim. Re-normalizing it
-            // on Windows would turn a portable absolute into a drive-relative one and lose the
-            // contract's expectation that outside paths keep the form they were handed.
+            // A relative path that resolves outside baseDir, or an absolute path that
+            // resolves outside baseDir on this platform: return it verbatim.
             return sourcePath;
         } catch (RuntimeException invalidPath) {
             return sourcePath;

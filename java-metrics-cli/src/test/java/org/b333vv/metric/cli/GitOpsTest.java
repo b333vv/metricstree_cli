@@ -6,6 +6,7 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -53,11 +54,17 @@ class GitOpsTest {
     @EnabledOnOs({OS.LINUX, OS.MAC})
     @Test
     void roundTripsUnusualPaths() throws Exception {
-        // Backstop: tab/newline filenames are invalid on Windows NTFS. @EnabledOnOs is the
-        // primary mechanism; this runtime check is a safety net in case the annotation is not
-        // honored on the runner.
-        if (System.getProperty("os.name", "").startsWith("Windows")) {
-            System.out.println("skipped: tab/newline in filenames not supported on Windows");
+        // Backstop: the awkward set contains control characters (tab, newline) that are illegal
+        // in Windows NTFS filenames. @EnabledOnOs is the primary skip mechanism; this runtime
+        // check is a safety net in case the annotation is not honored on the runner — and it
+        // relies on the filesystem's actual behavior (creating a tab/newline filename throws
+        // InvalidPathException on NTFS), not on the reported OS name, so it survives runners
+        // whose os.name is reported in an unexpected form.
+        try {
+            Files.writeString(tempDir.resolve("tab\thello"), "x");
+            Files.writeString(tempDir.resolve("nl\nhello"), "x");
+        } catch (java.nio.file.InvalidPathException ignored) {
+            System.out.println("skipped: tab/newline in filenames not supported on this filesystem");
             return;
         }
         GitFixture fixture = new GitFixture(tempDir.resolve("repo")).init();
