@@ -391,3 +391,48 @@ class RepositoryLeakage(unittest.TestCase):
             self._case("tuned-two", "tuning", repository,
                        "class B { void n() { while (y) {} } }"),
         ])
+
+
+class PmdDocumentShape(unittest.TestCase):
+    """The adapter reads both shapes PMD emits.
+
+    The recheck fed a valid PMD-shaped object to the adapter and got an AttributeError. Iterating
+    a JSON object yields its keys, so the comprehension called .get on a string -- the evaluation
+    died at the point where it should have counted one finding. PMD emits a bare object for a
+    single violation under some configurations, so this is a real document and not a malformed one.
+    """
+
+    def _run(self, payload):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            repo = root / "repo"
+            repo.mkdir()
+            fake = root / "pmd"
+            # A PMD that answers --version and then prints one chosen document, so the adapter is
+            # exercised on the bytes rather than on a mock of itself.
+            fake.write_text(
+                "#!/bin/sh\n"
+                'if [ "$1" = "--version" ]; then echo "PMD 7.0.0"; exit 0; fi\n'
+                "cat <<'PMD_EOF'\n" + payload + "\nPMD_EOF\n",
+                encoding="utf-8")
+            fake.chmod(0o755)
+            return runner._run_pmd(repo, fake, None)
+
+    def test_a_single_finding_object_is_one_finding(self):
+        status, findings, _, _ = self._run(
+            '{"rule": "CyclomaticComplexity", "file": "/x/y/App.java"}')
+        self.assertEqual("ok", status)
+        self.assertEqual(
+            [{"rule": "CyclomaticComplexity", "file": "App.java"}], findings)
+
+    def test_a_list_is_read_as_before(self):
+        status, findings, _, _ = self._run(
+            '[{"rule": "A", "file": "/x/App.java"}, {"rule": "B", "file": "/y/Bee.java"}]')
+        self.assertEqual("ok", status)
+        self.assertEqual(["A", "B"], [f["rule"] for f in findings])
+
+    def test_a_document_that_is_neither_is_failed_not_raised(self):
+        status, findings, _, _ = self._run('"a bare string"')
+        self.assertEqual("failed", status,
+                         "an adapter that crashes takes the evaluation with it")
+        self.assertEqual([], findings)

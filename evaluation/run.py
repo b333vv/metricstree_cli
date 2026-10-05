@@ -317,9 +317,23 @@ def _run_pmd(repo: Path, pmd: Path, ruleset: Path | None):
         findings = json.loads(completed.stdout)
     except ValueError as error:
         return ("failed", [], completed.returncode, version[0] if version else "")
+    # PMD emits a list, except when it has exactly one violation and has been configured to emit
+    # it bare, in which case it emits an object. Iterating an object yields its *keys*, so the
+    # comprehension below then called .get on a string and the whole evaluation died with an
+    # AttributeError -- on a perfectly valid PMD document, at the point where it should have been
+    # counting one finding. The recheck reproduced exactly that.
+    #
+    # Anything else is a document this cannot read, and that is reported rather than raised: an
+    # adapter that crashes takes the evaluation with it, and a harness that cannot say what PMD
+    # said is exactly the harness the comparison exists to avoid needing.
+    if isinstance(findings, dict):
+        findings = [findings]
+    if not isinstance(findings, list):
+        return ("failed", [], completed.returncode, version[0] if version else "")
     simplified = [
         {"rule": finding.get("rule"), "file": os.path.basename(str(finding.get("file", "")))}
         for finding in findings
+        if isinstance(finding, dict)
     ]
     return ("ok", simplified, completed.returncode, version[0] if version else "")
 
