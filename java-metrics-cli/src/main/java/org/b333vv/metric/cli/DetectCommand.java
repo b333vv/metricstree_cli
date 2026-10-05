@@ -486,8 +486,8 @@ final class DetectCommand implements Callable<Integer> {
     }
 
     /**
-     * The directory source paths in the report are relativized against: the source root itself, or
-     * the parent directory when a single file was analysed.
+     * The directory source paths are relativized against when the file is outside the working
+     * directory: the source root itself, or the parent directory when a single file was analysed.
      */
     private Path baseDir() {
         Path absolute = source.toAbsolutePath().normalize();
@@ -495,20 +495,34 @@ final class DetectCommand implements Callable<Integer> {
     }
 
     /**
-     * The report's source path as a repository-relative path.
+     * The report's source path as a path from the working directory, which is the repository root
+     * for every caller that matters.
      *
-     * <p>Falls back to the path's own file name when it lies outside the analysed root. Relativizing
-     * such a path throws, and a path the analysis somehow reported from outside the directory it was
-     * asked to read is not a reason to abandon the run — but it must not silently become an absolute
-     * path either, because an absolute path in a report is a path that means nothing on another
-     * machine.
+     * <p>Not relative to the analysed root, which is the obvious thing to do and is what this used
+     * to do. It means the same file is named two ways depending on how much of the tree was handed
+     * to it: {@code -s src} reports {@code main/java/Demo.java} and {@code -s src/main/java} reports
+     * {@code Demo.java}. Those are two identities for one method, and a fingerprint is built from
+     * the identity -- so the same code was new to a baseline under one invocation and familiar
+     * under the other, chosen by an argument that says nothing about the code.
+     *
+     * <p>The working directory is the one directory a report and its baseline will agree on, because
+     * it is the directory the command was run from. A file outside it falls back to the analysed
+     * root, and only then to its bare name: two weaker answers in order of how much they still
+     * identify, rather than one that identifies nothing.
      */
     private String logicalPathOf(Path physical) {
         Path absolute = physical.toAbsolutePath().normalize();
-        Path base = baseDir().toAbsolutePath().normalize();
-        if (absolute.startsWith(base)) {
-            return base.relativize(absolute).toString().replace('\\', '/');
+        for (Path candidate : new Path[] {
+                currentWorkingDirectorySupplier.get().toAbsolutePath().normalize(),
+                baseDir() }) {
+            if (candidate != null && absolute.startsWith(candidate)) {
+                return candidate.relativize(absolute).toString().replace('\\', '/');
+            }
         }
+        // An absolute path in a report means nothing on another machine, so this is a last resort
+        // and not a convenient default: a file the analysis reported from outside every root it
+        // was given is a fact worth losing the name over rather than publishing a path that only
+        // resolves here.
         return absolute.getFileName().toString();
     }
 

@@ -752,4 +752,65 @@ class DetectCommandTest {
         PackageReport pkg = new PackageReport("", Map.of(MetricCode.PLOC, Value.of(5000)), List.of(cls));
         return new MetricReport(new ProjectReport("test", Map.of(), List.of(pkg)), List.of());
     }
+
+    /**
+     * The same method has one name, whichever directory was analysed.
+     *
+     * <p>The recheck ran {@code detect -s src} and {@code detect -s src/main/java} over the same
+     * repository and got {@code main/java/Demo.java} from one and {@code Demo.java} from the other.
+     * A fingerprint is built from the entity's identity, so those are two identities for one
+     * method: the same code was new to a stored baseline under one invocation and familiar under
+     * the other, decided by an argument that says nothing about the code.
+     *
+     * <p>Asserted on the fingerprint as well as the path, because the path is only the visible half.
+     * The maintainability policy is the one that writes fingerprints, and it needs no rules file of
+     * its own -- the legacy policy refuses to run without one.
+     */
+    @Test
+    void theSourceRootDoesNotDecideHowAFileIsNamed(@TempDir Path tempDir) throws Exception {
+        Path source = tempDir.resolve("src/main/java");
+        Files.createDirectories(source);
+        // Complex enough to match a rule, because a fingerprint is read off a finding and a
+        // report with no findings has no identity to compare.
+        StringBuilder body = new StringBuilder("package app; public class Demo { public int f(int x) {");
+        for (int index = 1; index <= 25; index++) {
+            body.append(" if (x == ").append(index).append(") return ").append(index).append(";");
+        }
+        body.append(" return 0; } }");
+        Files.writeString(source.resolve("Demo.java"), body.toString());
+
+        Path wide = tempDir.resolve("wide.json");
+        Path narrow = tempDir.resolve("narrow.json");
+        for (Path root : List.of(tempDir.resolve("src"), source)) {
+            JavaMetricsCliApplication app = new JavaMetricsCliApplication(
+                    new org.b333vv.metric.library.javaparser.JavaParserJavaMetricsAnalyzer(),
+                    new MetricReportJsonWriter(), () -> tempDir);
+            // The exit code is not asserted: detect reports what it finds, and a default profile
+            // may well find something. This test is about the name the report gives the file.
+            Path target = root.equals(source) ? narrow : wide;
+            app.run(new String[]{"detect", "-s", root.toString(), "--policy", "maintainability",
+                    "--json-output", target.toString(), "-o", target.resolveSibling("out.txt")
+                            .toString()},
+                    new ByteArrayOutputStream(), new ByteArrayOutputStream());
+            assertTrue(Files.exists(target), "detect wrote no report for " + root);
+        }
+
+        JsonNode wideFinding = firstFinding(wide);
+        JsonNode narrowFinding = firstFinding(narrow);
+        assertEquals("src/main/java/Demo.java", wideFinding.get("entityKey").get("path").asText(),
+                "a path is from the directory the command was run in, not the one it was handed");
+        assertEquals(wideFinding.get("entityKey").get("path").asText(),
+                narrowFinding.get("entityKey").get("path").asText(),
+                "the same method has one name: " + wideFinding.get("entityKey") + " vs "
+                        + narrowFinding.get("entityKey"));
+        assertEquals(wideFinding.get("fingerprint").asText(), narrowFinding.get("fingerprint").asText(),
+                "and one fingerprint, since a baseline is keyed on it");
+    }
+
+    /** The first finding in a detect report, failing the test when the report has none. */
+    private JsonNode firstFinding(Path report) throws Exception {
+        JsonNode findings = mapper.readTree(Files.readString(report)).get("findings");
+        assertTrue(findings != null && findings.size() > 0, "no findings in " + report);
+        return findings.get(0);
+    }
 }
