@@ -10,6 +10,7 @@ import importlib.util
 import json
 import re
 import sys
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -327,3 +328,66 @@ class ReviewForms(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RepositoryLeakage(unittest.TestCase):
+    """Two splits may not draw from the same repository, even without shared content.
+
+    The existing check compares content digests, so two cases sharing no bytes pass -- which is
+    right and is not enough. A repository contributes its own naming, idiom and distribution of
+    shapes, so a threshold tuned on one case inside it is tuned on all of them. The recheck
+    recorded that two cases from one project were accepted across tuning and holdout.
+    """
+
+    def _case(self, case_id, split, repository, content):
+        return {
+            "id": case_id,
+            "split": split,
+            "provenance": {"origin": "synthetic", "license": "CC0-1.0"},
+            "repository": repository,
+            "changes": [{
+                "path": f"src/main/java/app/{case_id}.java",
+                "edit": "replace",
+                "content": content,
+            }],
+        }
+
+    def _load(self, cases):
+        tmp = tempfile.mkdtemp()
+        try:
+            for case in cases:
+                Path(tmp, case["id"] + ".json").write_text(json.dumps(case), encoding="utf-8")
+            runner.load_cases(Path(tmp))
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_same_repository_across_splits_is_rejected(self):
+        repository = {"files": ["src/main/java/app/Calculator.java"]}
+        with self.assertRaises(runner.EvaluationError) as caught:
+            self._load([
+                self._case("tuned-case", "tuning", repository, "class A { void m() { if (x) {} } }"),
+                self._case("held-case", "holdout", repository,
+                           "class B { void n() { while (y) {} } }"),
+            ])
+        self.assertIn("split leakage", str(caught.exception))
+
+    def test_different_repositories_across_splits_are_allowed(self):
+        # Loads without raising, which is the assertion: a rejection here would be the defect.
+        self._load([
+            self._case("tuned-case", "tuning",
+                       {"files": ["src/main/java/app/Calculator.java"]},
+                       "class A { void m() { if (x) {} } }"),
+            self._case("held-case", "holdout",
+                       {"files": ["src/main/java/app/Account.java"]},
+                       "class B { void n() { while (y) {} } }"),
+        ])
+
+    def test_one_repository_within_one_split_is_fine(self):
+        repository = {"files": ["src/main/java/app/Calculator.java"]}
+        # Same split, so a shared repository is one problem split twice -- fine, and the corpus
+        # itself relies on it.
+        self._load([
+            self._case("tuned-one", "tuning", repository, "class A { void m() { if (x) {} } }"),
+            self._case("tuned-two", "tuning", repository,
+                       "class B { void n() { while (y) {} } }"),
+        ])

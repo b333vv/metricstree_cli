@@ -98,9 +98,28 @@ def _reject_split_leakage(cases: Sequence[dict]) -> None:
     split, whatever was tuned on it is now being evaluated on it, and the holdout stops being a
     holdout. This is refused rather than warned about: the whole value of a holdout is that it is
     intact.
+
+    Identity is checked at two strengths, because content alone is the weaker test. Two cases can
+    share no bytes and still be the same problem: a repository contributes its own naming, its own
+    idiom and its own distribution of shapes, and a threshold tuned on one case in it is tuned on
+    all of them. So a repository appearing in both splits is refused even when no file is shared --
+    which is the case the content check passed, and the one it was least equipped to see.
     """
     groups: dict[str, str] = {}
+    repositories: dict[str, tuple[str, str]] = {}
     for case in cases:
+        # Canonical form, because `repository` is a structure and structures are not hashable.
+        # Sorting the keys makes two spellings of the same fixture compare equal.
+        repository = json.dumps(case["repository"], sort_keys=True)
+        previous = repositories.get(repository)
+        if previous and previous[0] != case["split"]:
+            raise EvaluationError(
+                f"split leakage: the same repository {case['repository']!r} appears in both"
+                f" '{previous[0]}'"
+                f" ({previous[1]}) and '{case['split']}' ({case['id']}). A holdout drawn from a"
+                f" repository something was tuned on is not a holdout, however different the"
+                f" individual files are.")
+        repositories.setdefault(repository, (case["split"], case["id"]))
         for change in case["changes"]:
             digest = _content_group(change["path"], change["content"])
             previous = groups.get(digest)
