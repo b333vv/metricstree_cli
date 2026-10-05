@@ -1,6 +1,8 @@
 package org.b333vv.metric.cli;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -78,8 +80,11 @@ class SnapshotMaterializerTest {
 
     /**
      * A path containing a newline is one file, not two, and it must survive to the snapshot with its
-     * exact name. Git permits it; the old newline-splitting manifest parsing did not.
+     * exact name. Git permits it; the old newline-splitting manifest parsing did not. A newline is a
+     * control character and cannot be part of a filename on Windows NTFS, so this test is Windows-
+     * impossible by OS constraint and is skipped there.
      */
+    @EnabledOnOs({OS.LINUX, OS.MAC})
     @Test
     void newlinePathMaterializesCorrectly(@TempDir Path dir) throws Exception {
         String oddName = "app/Odd\nName.java";

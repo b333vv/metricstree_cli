@@ -226,7 +226,10 @@ final class CliObjectMapper {
 
         @Override
         public void serialize(Path path, JsonGenerator generator, SerializerProvider provider) throws IOException {
-            generator.writeString(path.toString());
+            // JSON has a single portable path form: forward slashes. On Windows the platform
+            // path uses backslashes, which would poison the contract and make the goldens drift
+            // with the runner's OS instead of with the code.
+            generator.writeString(path.toString().replace('\\', '/'));
         }
     }
 

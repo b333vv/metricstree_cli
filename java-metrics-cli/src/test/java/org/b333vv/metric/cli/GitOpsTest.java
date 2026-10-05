@@ -1,6 +1,8 @@
 package org.b333vv.metric.cli;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.StandardCharsets;
@@ -43,6 +45,12 @@ class GitOpsTest {
             "app/Привет.java",
             "app/-leading-dash.java");
 
+    /**
+     * Tabs and newlines are control characters and cannot exist in a filename on Windows NTFS.
+     * Skip the whole round-trip here on Windows rather than patch around the two illegal names;
+     * the other awkward names (spaces, Cyrillic, leading dash) are covered by other tests.
+     */
+    @EnabledOnOs({OS.LINUX, OS.MAC})
     @Test
     void roundTripsUnusualPaths() throws Exception {
         GitFixture fixture = new GitFixture(tempDir.resolve("repo")).init();

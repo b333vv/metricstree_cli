@@ -268,11 +268,18 @@ final class DetectResultWriter {
 
     private static String relativize(Path baseDir, String sourcePath) {
         try {
-            Path path = Path.of(sourcePath).toAbsolutePath().normalize();
-            if (path.startsWith(baseDir)) {
-                return baseDir.relativize(path).toString().replace('\\', '/');
+            Path path = Path.of(sourcePath);
+            Path resolved = path.isAbsolute()
+                    ? path.normalize()
+                    : baseDir.resolve(path).normalize();
+            if (resolved.startsWith(baseDir)) {
+                return baseDir.relativize(resolved).toString().replace('\\', '/');
             }
-            return path.toString();
+            // An absolute path outside baseDir (or a relative path that resolves outside it):
+            // the caller gave us a path it can interpret, so return it verbatim. Re-normalizing it
+            // on Windows would turn a portable absolute into a drive-relative one and lose the
+            // contract's expectation that outside paths keep the form they were handed.
+            return sourcePath;
         } catch (RuntimeException invalidPath) {
             return sourcePath;
         }

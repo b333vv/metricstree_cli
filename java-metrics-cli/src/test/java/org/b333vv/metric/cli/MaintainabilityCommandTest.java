@@ -43,7 +43,13 @@ class MaintainabilityCommandTest {
      * a snapshot root, and every finding has to name the logical one instead.
      */
     private static java.util.function.Function<Path, String> logicalPath() {
-        return physical -> physical.toString().replaceFirst("^.*?(src/)", "$1");
+        // physical comes from the snapshot root as a real platform path; normalize it first so the
+        // anchor "src/" is found regardless of OS separator. On Windows Path.toString() yields
+        // backslashes, and without the conversion the regex never matches.
+        return physical -> physical
+                .toString()
+                .replace('\\', '/')
+                .replaceFirst("^.*?(src/)", "$1");
     }
 
     // ---------------------------------------------------------------- fixtures
