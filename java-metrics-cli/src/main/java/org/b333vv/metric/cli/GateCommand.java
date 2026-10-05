@@ -311,7 +311,20 @@ final class GateCommand implements Callable<Integer> {
             subjectPaths.add(relative);
         }
 
-        if (subjectPaths.isEmpty()) {
+        // A baseline operation is not a verdict about a diff, so the no-change fast path does not
+        // apply to it.
+        //
+        // Reading: a malformed baseline was accepted without being read, because nothing ever asked
+        // to read it -- and a run that was asked to check a baseline and did not is a run that
+        // reported success for work it skipped.
+        //
+        // Writing: the contract is explicit that export "deliberately evaluates all current
+        // applicable entities, even with an empty diff; it bypasses the normal no-change fast path".
+        // That is what makes it usable as a first step -- a team adopting a gate on a repository
+        // with existing debt usually has no diff at all in the commit where they generate it.
+        boolean baselineOperation = findingsBaselineFile != null || writeFindingsBaselineFile != null;
+
+        if (subjectPaths.isEmpty() && !baselineOperation) {
             // Nothing survived exclusion or deletion. The report still has to say so: "no changed
             // Java files" and "every changed file was excluded" are different sentences, and a reader
             // who saw the first would conclude their change was reviewed.
@@ -447,7 +460,13 @@ final class GateCommand implements Callable<Integer> {
                 // happens below so it can see the analysis-level completeness as well.
                 policyInput = new PolicyInput(baseReport, currentReport,
                         physical -> after.logicalPath(physical).orElse(physical.toString()),
-                        before, after, java.util.Set.copyOf(subjectPaths), unparseableBase);
+                        before, after,
+                        // Export is the one case that looks at the whole repository: a baseline
+                        // records the debt that exists, not the debt this change touched.
+                        writeFindingsBaselineFile == null
+                                ? java.util.Set.copyOf(subjectPaths)
+                                : null,
+                        unparseableBase);
             }
 
             // Did the working copy move while we were reading it?

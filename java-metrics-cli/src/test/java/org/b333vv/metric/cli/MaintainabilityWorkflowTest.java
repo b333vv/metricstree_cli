@@ -433,6 +433,72 @@ class MaintainabilityWorkflowTest {
     }
 
     @Nested
+    @DisplayName("A baseline operation is not a verdict about a diff")
+    class BaselineOperations {
+
+        /**
+         * A malformed baseline is rejected even when nothing changed.
+         *
+         * <p>The recheck handed the gate a baseline that could not be parsed and got a clean run: the
+         * no-change fast path returned before anything read it. Nothing was reported because nothing
+         * was checked -- and a reader who asked for their accepted debt to be verified and got a
+         * passing build has been told their configuration works.
+         */
+        @Test
+        @DisplayName("an unreadable baseline fails the run even on an empty diff")
+        void malformedBaselineIsRejectedOnAnEmptyDiff() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.commitAll("initial");
+
+            Path baseline = repo.resolve("debt.json");
+            Files.writeString(baseline, "{ this is not the baseline format");
+
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gateWithReport(repo.resolve("empty-diff.json"), err,
+                    "--base", "HEAD", "--policy", "maintainability",
+                    "--findings-baseline", baseline.toString());
+
+            assertNotEquals(0, exit,
+                    "the run was asked to read a baseline and did not, so it did not do what it was"
+                            + " asked: " + err.toString(StandardCharsets.UTF_8));
+        }
+
+        /**
+         * Generating the first baseline works with no diff at all.
+         *
+         * <p>This is the shape of the first commit in adopting a gate: a repository with existing
+         * debt and nothing changed yet. The contract says export "deliberately evaluates all current
+         * applicable entities, even with an empty diff; it bypasses the normal no-change fast path",
+         * and the option's own description says it exports every current match rather than only
+         * changed ones -- both of which were false, because the fast path returned first and wrote
+         * nothing.
+         */
+        @Test
+        @DisplayName("export on an empty diff records the existing debt")
+        void exportOnAnEmptyDiffRecordsExistingDebt() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(30));
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
+            git.commitAll("already complex");
+
+            Path baseline = repo.resolve("debt.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            gate(err, "--base", "HEAD", "--policy", "maintainability",
+                    "--write-findings-baseline", baseline.toString());
+
+            assertTrue(Files.exists(baseline),
+                    "an adoption commit has no diff, and that is exactly when the baseline is"
+                            + " generated: " + err.toString(StandardCharsets.UTF_8));
+            String written = Files.readString(baseline);
+            assertTrue(written.contains("MT-M001"),
+                    "the debt that exists is the debt being accepted: " + written);
+            assertTrue(written.contains("app.Order"),
+                    "recorded against the entity it was measured on: " + written);
+        }
+    }
+
+    @Nested
     @DisplayName("An unreadable base is not new code")
     class BaseReadability {
 
