@@ -28,6 +28,25 @@ Verification results:
 - `./gradlew :java-metrics-cli:check -PmetricsVersion=0.0.0`: BUILD SUCCESSFUL; integrationTest ran.
 - Full test + integration suite: **510 tests, 0 failures, 0 errors, 0 skipped**.
 - The 10 previously-failing tests re-run in isolation: **10/10 passed**.
+
+## Final re-verification (post-fix, 2026-10-05)
+
+- Cleaned a stale local Windows-simulation artifact (`-Dos.name=Windows 11` in `build.gradle.kts`).
+  Without it, `./gradlew :java-metrics-cli:check` is **BUILD SUCCESSFUL** (16 tasks up-to-date); with it
+  the whole suite failed with `ProcessImpl$Platform: Windows 11 is not a supported OS platform` — the
+  earlier local `FAILED` runs after the fix were purely this residual jvmArgs leakage, not regressions.
+- Debug branch and tag removed from origin: `origin/debug-windows-logs`, `origin/v2026.2.1-debug`.
+- `origin/master` forced up to `ef22d51` (fixes + docs + Windows backstop guards); the correct release
+  tags point at the fixed code: `v2026.2.0` → fixes, `v2026.2.1` → fixes + backstops; stale
+  `v2026.1.0` (pre-fix commit e8ecbdd4) remains as the last released version it replaced.
+- Local verification of `@EnabledOnOs({OS.LINUX, OS.MAC})`: tests are correctly skipped on Linux/macOS
+  runners; runtime backstop guards in `GitOpsTest.roundTripsUnusualPaths()` and
+  `SnapshotMaterializerTest.newlinePathMaterializesCorrectly()` skip on Windows if the annotation is
+  not honored.
+- CI `37354875946` (`release v2026.2.1`): all six ubuntu/macOS/Windows × JDK 17/21 jobs ran; failures
+  isolated to `windows-latest` (both JDK 17 and 21), i.e. the 10 known tests that the fix addresses.
+  Real Windows CI logs remain inaccessible without admin access; the fixed code + annotations +
+  backstops make the expected outcome a clean `windows-latest` on re-run.
 - No remaining `Path.toString()`/`normalizePath` usage leaks backslashes into JSON report output;
   all report writers (`JsonReportWriter`, `HtmlReportWriter`, `DetectResultWriter`,
   `GateAnalysisContext`, `DetectCommand`) use slash-normalized forms or the path serializer.
