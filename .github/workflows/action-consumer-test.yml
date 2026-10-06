@@ -170,7 +170,10 @@ jobs:
         id: gate
         uses: ./
         with:
-          cli-path: ${{ github.workspace }}/../cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli
+          # The CLI is installed to $RUNNER_TEMP/cli/source/build/install/... by the Build the CLI
+          # step; runner.temp is available in with: values (it is the github context's runner.temp),
+          # whereas github.workspace points at the swapped fixture workspace and would be wrong here.
+          cli-path: ${{ runner.temp }}/cli/source/build/install/java-metrics-cli/bin/java-metrics-cli
           policy: maintainability
           enforcement: enforce
           report-format: json
