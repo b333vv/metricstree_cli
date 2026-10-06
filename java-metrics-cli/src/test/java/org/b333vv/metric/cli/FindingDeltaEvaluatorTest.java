@@ -11,6 +11,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -370,6 +371,18 @@ class FindingDeltaEvaluatorTest {
         assertEquals(FindingLifecycle.RESOLVED, finding.lifecycle());
         assertEquals(FindingDeltaEvaluator.REASON_ENTITY_REMOVED, finding.dispositionReason());
         assertFalse(finding.blocks());
+
+        // The base's number is kept as the base's, and the current side is empty. Passing the base
+        // evaluation in both slots instead filled the current slot from the base's own value, which
+        // renders verbatim as "20 → 20" in the JSON, the HTML and the agent report -- a measurement
+        // claimed for code that is not there.
+        assertEquals(1, finding.evidence().size());
+        FindingEvidence evidence = finding.evidence().get(0);
+        assertEquals(MetricCode.CC, evidence.metric());
+        assertEquals(20.0, evidence.before(), "the value it had");
+        assertNull(evidence.after(), "and nothing at the current revision");
+        assertNull(evidence.delta(),
+                "a change between a measurement and an absence is not a change of zero");
     }
 }
 

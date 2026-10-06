@@ -105,6 +105,26 @@ record FindingEvidence(
                 computedDelta, unit, completenessReasons, contributions);
     }
 
+    /**
+     * The same measurement, re-expressed as a value of the base revision only.
+     *
+     * <p>For an entity that has been removed there is nothing at the current revision for a number to
+     * describe, and a report that publishes the base's value in both slots renders as "18 → 18" in the
+     * JSON, the HTML and the agent report — a statement that the code still measures 18, made about
+     * code that is not there. The delta goes with the removed side: a change between a measurement and
+     * an absence is not a change of zero, and this type already refuses to state one.
+     *
+     * <p>Nothing is recomputed. The number is the one the analysis took; only which revision it
+     * describes changes.
+     */
+    FindingEvidence atBaseRevision() {
+        if (after == null) {
+            return this;
+        }
+        return new FindingEvidence(metric, before != null ? before : after, null, minThreshold,
+                maxThreshold, null, unit, completenessReasons, contributions);
+    }
+
     /** Both sides measured and neither carrying a caveat. */
     static FindingEvidence measured(MetricCode metric, double before, double after, String unit) {
         return new FindingEvidence(metric, before, after, null, null, after - before, unit,

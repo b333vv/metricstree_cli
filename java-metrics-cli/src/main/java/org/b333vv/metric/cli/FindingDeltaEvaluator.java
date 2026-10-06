@@ -378,11 +378,16 @@ final class FindingDeltaEvaluator {
      * <p>A removal counts as resolved, and the reason says it was the <em>entity</em> that went, not
      * the code that improved. Reporting it as an improvement would be a claim nobody can support: the
      * method may have been deleted, moved somewhere unanalysed, or renamed.
+     *
+     * <p>The base evaluation is re-expressed as a base-revision measurement and handed over as the only
+     * side. Passing it in both slots instead let {@code pairedEvidence} fill the current side from the
+     * base's own value, so a removal published {@code CC 18 → 18} -- a report that the code still
+     * measures what it measured before, about code that no longer exists.
      */
     Delta reportRemovedEntity(MaintainabilityRule rule, RuleEvaluation base,
             FindingLocation baseLocation, EntityRole role) {
         return new Delta(
-                List.of(finding(rule, base, base, FindingLifecycle.RESOLVED,
+                List.of(finding(rule, base.asBaseRevision(), null, FindingLifecycle.RESOLVED,
                         FindingDisposition.RESOLVED, REASON_ENTITY_REMOVED, baseLocation, null,
                         base.entityKey(), role)),
                 List.of());

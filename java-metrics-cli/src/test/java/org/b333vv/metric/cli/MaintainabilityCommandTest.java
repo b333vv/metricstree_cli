@@ -21,6 +21,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -72,6 +73,39 @@ class MaintainabilityCommandTest {
         return new MetricReport(new ProjectReport("t", Map.of(), List.of(pkg)), List.of());
     }
 
+    /** The same file and class with its one method gone: what a removed method looks like. */
+    private static MetricReport reportWithoutTheMethod(double wmc, double nom) {
+        ClassReport cls = new ClassReport("Order", "app.Order", FILE,
+                new SourceLocation(FILE, 1, 10),
+                Map.of(MetricCode.WMC, Value.of(wmc), MetricCode.NOM, Value.of(nom),
+                        MetricCode.ATFD, Value.of(2), MetricCode.TCC, Value.of(0.9)),
+                List.of());
+        PackageReport pkg = new PackageReport("app", Map.of(), List.of(cls));
+        return new MetricReport(new ProjectReport("t", Map.of(), List.of(pkg)), List.of());
+    }
+
+    /**
+     * The same file declaring a different class: the class was removed, the file was read.
+     *
+     * <p>Not an empty report on purpose. A report with no classes in it is what a file the parser
+     * could not read contributes, and the difference between that and a deleted class is exactly what
+     * the removal pass has to tell apart.
+     */
+    private static MetricReport reportOfAnotherClass(double wmc, double nom) {
+        ClassReport cls = new ClassReport("Helper", "app.Helper", FILE,
+                new SourceLocation(FILE, 1, 10),
+                Map.of(MetricCode.WMC, Value.of(wmc), MetricCode.NOM, Value.of(nom),
+                        MetricCode.ATFD, Value.of(2), MetricCode.TCC, Value.of(0.9)),
+                List.of());
+        PackageReport pkg = new PackageReport("app", Map.of(), List.of(cls));
+        return new MetricReport(new ProjectReport("t", Map.of(), List.of(pkg)), List.of());
+    }
+
+    /** A report of nothing at all: what a file the current revision could not read contributes. */
+    private static MetricReport nothingRead() {
+        return new MetricReport(new ProjectReport("t", Map.of(), List.of()), List.of());
+    }
+
     private static MaintainabilitySettings settings(List<String> enabled) {
         return new MaintainabilitySettings(null, enabled, Map.of(), "digest", List.of(), "advisory");
     }
@@ -98,6 +132,20 @@ class MaintainabilityCommandTest {
         EntityKey methodKey = EntityKey.ofMethod(LOGICAL, "app.Order", "total(int)");
         return EntityCorrespondence.between(Set.of(classKey, methodKey),
                 Set.of(classKey, methodKey), Map.of());
+    }
+
+    /** The class survives and one of its methods does not. */
+    private static EntityCorrespondence methodRemoved() {
+        EntityKey classKey = EntityKey.ofClass(LOGICAL, "app.Order");
+        EntityKey methodKey = EntityKey.ofMethod(LOGICAL, "app.Order", "total(int)");
+        return EntityCorrespondence.between(Set.of(classKey, methodKey), Set.of(classKey), Map.of());
+    }
+
+    /** The class itself is gone, and the file now declares something else. */
+    private static EntityCorrespondence classRemoved() {
+        EntityKey classKey = EntityKey.ofClass(LOGICAL, "app.Order");
+        return EntityCorrespondence.between(Set.of(classKey),
+                Set.of(EntityKey.ofClass(LOGICAL, "app.Helper")), Map.of());
     }
 
     private MaintainabilityAnalysisService.Result run(MetricReport base, MetricReport current,
@@ -339,6 +387,163 @@ class MaintainabilityCommandTest {
 
         assertTrue(MaintainabilityAnalysisService.requiredMetrics(off).isEmpty(),
                 "a rule in mode 'off' is not evaluated, so its metrics need not be measured");
+    }
+
+    // ---------------------------------------------------------------- removed entities
+
+    /**
+     * An entity that disappeared is resolved with an explicit reason, and nothing else reports it.
+     *
+     * <p>The recheck's A08. Every loop in the service walked the current revision, so a method that had
+     * been deleted was never visited by anything: it is not in the report, no rule was asked about it,
+     * and the correspondence that had already noticed it named a list nothing read. A project that
+     * deleted a complex method was told nothing had changed, which is the one answer the contract
+     * forbids — removal counts as resolved, and it is not proof of improved design.
+     */
+    @Test
+    void aRemovedMethodResolvesWithTheEntityReason() {
+        MaintainabilityAnalysisService.Result result = service.evaluate(
+                report(20, 10, 4), reportWithoutTheMethod(10, 4), logicalPath(),
+                MetricRequirements.Scope.SYNTAX_LOCAL, settings(List.of("MT-M001")), methodRemoved(),
+                MaintainabilityAnalysisService.Enforcement.ENFORCE);
+
+        Finding resolved = result.findings().stream()
+                .filter(f -> f.lifecycle() == FindingLifecycle.RESOLVED)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "a deleted method is a resolution and has to be reported as one: "
+                                + result.findings()));
+
+        assertEquals("app.Order", resolved.entityKey().qualifiedName());
+        assertEquals("total(int)", resolved.entityKey().signature(),
+                "the finding is about the method that went: " + resolved.entityKey());
+        assertEquals(FindingDisposition.RESOLVED, resolved.disposition());
+        assertEquals(FindingDeltaEvaluator.REASON_ENTITY_REMOVED, resolved.dispositionReason(),
+                "the reason says the entity went, not that the code improved: the method may have"
+                        + " been deleted, moved somewhere unanalysed, or renamed");
+        assertFalse(resolved.blocks(), "a removal is not a regression either");
+        assertTrue(result.blocking().isEmpty());
+    }
+
+    /**
+     * The removal states the base's value as the base's, and nothing as the current revision's.
+     *
+     * <p>Handing the base evaluation over as both sides filled the current slot from the base's own
+     * number, so a removal published {@code CC 18 → 18} — and every human report renders that pair
+     * verbatim, which reads as "the code still measures 18" about code that is not there.
+     */
+    @Test
+    void aRemovalDoesNotPublishTheBasesValueAsTheCurrentOne() {
+        MaintainabilityAnalysisService.Result result = service.evaluate(
+                report(20, 10, 4), reportWithoutTheMethod(10, 4), logicalPath(),
+                MetricRequirements.Scope.SYNTAX_LOCAL, settings(List.of("MT-M001")), methodRemoved(),
+                MaintainabilityAnalysisService.Enforcement.ENFORCE);
+
+        Finding resolved = result.findings().stream()
+                .filter(f -> f.lifecycle() == FindingLifecycle.RESOLVED)
+                .findFirst().orElseThrow();
+
+        assertFalse(resolved.evidence().isEmpty(), "the measurement that made it a finding is kept");
+        for (FindingEvidence evidence : resolved.evidence()) {
+            assertEquals(20.0, evidence.before(), "the value it had");
+            assertNull(evidence.after(),
+                    "and no current value, because there is nothing at this revision to measure: "
+                            + evidence);
+            assertNull(evidence.delta(),
+                    "a change between a measurement and an absence is not a change of zero");
+        }
+    }
+
+    /** A rule that did not fire before has nothing to resolve. */
+    @Test
+    void aRuleThatDidNotMatchBeforeResolvesNothing() {
+        MaintainabilityAnalysisService.Result result = service.evaluate(
+                report(2, 10, 4), reportWithoutTheMethod(10, 4), logicalPath(),
+                MetricRequirements.Scope.SYNTAX_LOCAL, settings(List.of("MT-M001")), methodRemoved(),
+                MaintainabilityAnalysisService.Enforcement.ENFORCE);
+
+        assertTrue(result.findings().isEmpty(),
+                "MT-M001 never matched this method, so its disappearance is not a resolution: "
+                        + result.findings());
+    }
+
+    /**
+     * A file the current revision could not read is not a file whose methods were deleted.
+     *
+     * <p>The fairness rule that keeps an unreadable base from being reported as new code, read the
+     * other way. "Absent from the current report" is one observation with two causes, and only one of
+     * them is a resolution.
+     */
+    @Test
+    void aRemovalIsNotReportedWhenTheCurrentFileWasNotRead() {
+        // The control, so this asserts the guard rather than a removal pass that never runs: the same
+        // correspondence and the same base, with a current report that was read, does report it.
+        MaintainabilityAnalysisService.Result read = service.evaluate(
+                report(20, 10, 4), reportWithoutTheMethod(10, 4), logicalPath(),
+                MetricRequirements.Scope.SYNTAX_LOCAL, settings(List.of("MT-M001")), methodRemoved(),
+                MaintainabilityAnalysisService.Enforcement.ENFORCE);
+        assertTrue(read.findings().stream().anyMatch(f -> f.lifecycle() == FindingLifecycle.RESOLVED),
+                "control: the same removal from a file that was read is reported");
+
+        MaintainabilityAnalysisService.Result unread = service.evaluate(
+                report(20, 10, 4), nothingRead(), logicalPath(),
+                MetricRequirements.Scope.SYNTAX_LOCAL, settings(List.of("MT-M001")), methodRemoved(),
+                MaintainabilityAnalysisService.Enforcement.ENFORCE);
+
+        assertTrue(unread.findings().stream()
+                        .noneMatch(f -> f.lifecycle() == FindingLifecycle.RESOLVED),
+                "the file contributed no classes because it was not read, not because the method"
+                        + " was deleted: " + unread.findings());
+    }
+
+    /**
+     * An entity this change did not touch is not resolved by it.
+     *
+     * <p>Eligibility is decided by the changed path here too. Without it, any run would report every
+     * piece of debt missing from the current report as resolved — including the debt in files the
+     * comparison never looked at, which is how a tool that reviews a diff starts claiming credit for
+     * work elsewhere in the repository.
+     */
+    @Test
+    void aRemovedEntityOutsideTheChangedSetIsNotResolvedByThisChange() {
+        // The control: the identical run with the entity's own file in the changed set does resolve it.
+        MaintainabilityAnalysisService.Result inScope = service.evaluate(
+                report(20, 10, 4), reportWithoutTheMethod(10, 4), logicalPath(),
+                MetricRequirements.Scope.SYNTAX_LOCAL, settings(List.of("MT-M001")), methodRemoved(),
+                MaintainabilityAnalysisService.Enforcement.ENFORCE, java.time.Clock.systemUTC(),
+                Set.of(LOGICAL));
+        assertTrue(inScope.findings().stream()
+                        .anyMatch(f -> f.lifecycle() == FindingLifecycle.RESOLVED),
+                "control: the changed file's own removal is reported");
+
+        MaintainabilityAnalysisService.Result elsewhere = service.evaluate(
+                report(20, 10, 4), reportWithoutTheMethod(10, 4), logicalPath(),
+                MetricRequirements.Scope.SYNTAX_LOCAL, settings(List.of("MT-M001")), methodRemoved(),
+                MaintainabilityAnalysisService.Enforcement.ENFORCE, java.time.Clock.systemUTC(),
+                Set.of("src/main/java/other/Elsewhere.java"));
+
+        assertTrue(elsewhere.findings().isEmpty(),
+                "the changed file is not this one, so this change resolved nothing here: "
+                        + elsewhere.findings());
+    }
+
+    /** A removed class is the same claim as a removed method, through the class-level rules. */
+    @Test
+    void aRemovedClassResolvesThroughTheClassRules() {
+        MaintainabilityAnalysisService.Result result = service.evaluate(
+                report(2, 80, 15), reportOfAnotherClass(2, 1), logicalPath(),
+                MetricRequirements.Scope.SYNTAX_LOCAL, settings(List.of("MT-C002")), classRemoved(),
+                MaintainabilityAnalysisService.Enforcement.ENFORCE);
+
+        Finding resolved = result.findings().stream()
+                .filter(f -> f.lifecycle() == FindingLifecycle.RESOLVED)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "WMC 80 and NOM 15 matched MT-C002, and the class is gone: "
+                                + result.findings()));
+
+        assertEquals("app.Order", resolved.entityKey().qualifiedName());
+        assertEquals(FindingDeltaEvaluator.REASON_ENTITY_REMOVED, resolved.dispositionReason());
     }
 
     // ---------------------------------------------------------------- current-only

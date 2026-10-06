@@ -1,5 +1,73 @@
 # what has been done
 
+## Session: a deleted method is reported as resolved, not as nothing (2026-10-06)
+
+The recheck's A08 residual, reproduced against `45b5927` before the fix. The audit's acceptance case
+`removed-method` — base `run(int)` at CC 18, current `replacement(int)` at CC 1, `MT-M001` enabled —
+returned `PASSED`, exit 0, `resolved: 0`, no findings at all, where the case's `expected` is "resolved
+entity-removed finding for run(int)".
+
+**The defect, and why nothing caught it.** Every loop in `MaintainabilityAnalysisService` walked the
+*current* revision. A method that has been deleted is not in the current report, so no rule was ever
+asked about it — and the two pieces that had already noticed it were both dead code.
+`EntityCorrespondence.removedEntities()` computed the list correctly and had no production caller;
+`FindingDeltaEvaluator.reportRemovedEntity(...)` built exactly the right record (RESOLVED, reason
+`entity-removed`, non-blocking) and had one caller, its own unit test. So the single most direct way to
+remove complexity from a codebase — delete the complex method — produced a report indistinguishable
+from one where nothing had happened. `findings-contract.md` line 99 states the required behaviour:
+"Removal counts as resolved with reason entity-removed; it is not proof of improved design."
+
+**The pass, and its three guards.** A second pass runs over `correspondence.removedEntities()` after
+the current-revision loop, re-evaluating each enabled rule against the entity's own base evaluation and
+emitting a removal finding where that evaluation was a complete match. Three conditions keep it from
+inventing a finding:
+
+1. **The entity must be in the changed set.** Otherwise any run would report every piece of debt
+   missing from the current report as resolved, including debt in files the comparison never looked at.
+   Deleted *files* are already outside the set — `afterSnapshotPaths()` has no entry for them — so this
+   also keeps a whole-file deletion out of scope, which is the gate's existing "deletions are ignored by
+   design".
+2. **The file must have been read at the current revision.** "Absent from the current report" is one
+   observation with two causes: the entity was deleted, or the file did not parse this time. The second
+   is not a resolution, and this is the fairness rule that keeps an unreadable *base* from being reported
+   as new code, read in the other direction.
+3. **The rule must have matched at the base.** "Removal" is a statement about a finding that existed; a
+   rule that did not fire before has nothing to resolve.
+
+The entity is located by its own base key rather than through the correspondence, because a removed
+entity is precisely one the correspondence maps in the other direction. That lookup was factored out of
+`baseSideOf` into `baseEntitySide`, which also let a dead `logicalPath` parameter go — it had been
+unused since the base path started coming from the key instead of the report.
+
+**The record must not state the base's number as the current revision's.** `reportRemovedEntity` handed
+the base evaluation over as both the finding's subject and its comparison base, so `pairedEvidence`
+filled the current slot from the base's own value: the finding carried `before == after == 18`,
+`delta == 0`, and both human report writers render that pair verbatim as `CC 18 → 18`. A reader would
+take that as "the code still measures 18", about a method that is not there. `FindingEvidence` gained
+`atBaseRevision()` (and `RuleEvaluation` the matching copy) so a removal keeps the measured value as the
+base's and leaves the current side empty, which both writers already render as `18 → not measured`. No
+number is recomputed; only which revision it describes changes.
+
+**Compatibility.** A run that deletes a matching entity now reports one additional finding with
+lifecycle `RESOLVED`, disposition `RESOLVED`, reason `entity-removed` and `blocking: false`, so no
+verdict and no exit code changes. `summary.resolved` and `summary.total` count it.
+
+**Verification.** The acceptance replay shows exactly one of its 27 observations changed — `removed-method`
+from `resolved: 0`/no findings to `resolved: 1` and one RESOLVED/`entity-removed` finding for
+`run(int)`. (The `optional-semantic-local` stderr line order also differed, and is not this change: four
+replays of one unchanged binary gave `TCC, ATFD` three times and `ATFD, TCC` once — recorded as DEBT-17.)
+Stashing the four production files fails five of the new tests and only those; sabotaging just the
+evidence fix fails the three tests that assert it, and removing the two new guards fails exactly the two
+guard tests. `./gradlew check` green: 842 tests, 0 failures, 0 errors, 1 skipped (the pre-existing
+benchmark); JSON goldens untouched, and they cover no findings lifecycle to begin with — the one
+`RESOLVED` string in `analyze.json` is part of `UNRESOLVED_SYMBOL`.
+
+**Found while doing this, not fixed here.** The sibling resolution path — an entity that still exists
+and stopped matching — has the identical evidence defect, and it is worse there because the current
+value is measured and then discarded: a method that went from CC 21 to CC 1 is reported as
+`CC 21 → 21` with `evaluationStatus: COMPLETE_MATCH`, the base's status. Tracked as DEBT-16 and fixed
+in the commit that follows this one.
+
 ## Session: a change whose only file is unreadable is not an empty change (2026-10-06)
 
 The other half of the recheck's A03, found by replaying the audit's own acceptance harness against

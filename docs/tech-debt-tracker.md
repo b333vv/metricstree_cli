@@ -249,6 +249,36 @@
   both `@EnabledOnOs({OS.LINUX, OS.MAC})`), so restoring Windows also means deciding whether those
   guards become real support or stay skips.
 
+- **DEBT-16 — A `no-longer-matches` resolution publishes the base's value as the current one.** Found
+  2026-10-06 while adding the removed-entity pass (the recheck's A08). `FindingDeltaEvaluator` builds a
+  resolution for an entity that still exists but stopped matching with
+  `finding(rule, base, base, …)`, so `pairedEvidence` fills the current slot from the base evaluation's
+  own number. Reproduced: a method taken from CC 21 to CC 1 reports `before: 21.0, after: 21.0,
+  delta: 0.0` with `evaluationStatus: COMPLETE_MATCH` — the *base's* status — and both human writers
+  render the pair verbatim as `CC 21 → 21`. The current revision measured 1 and that value is discarded;
+  the report therefore states a measurement the code does not have, which is the substitution this
+  project's evidence contract exists to prevent.
+  The removed-entity path had the same shape and was fixed with it: `FindingEvidence.atBaseRevision()`
+  states a base value as the base's and leaves the current side empty (`18 → not measured`).
+  *Why this one is separate:* repairing it changes three emitted fields at once — the evidence, the
+  `evaluationStatus` (base's `COMPLETE_MATCH` → current `COMPLETE_NONMATCH`), and, for a moved entity,
+  the finding's `entityKey` (the base path → the current one) — so it is a contract change that deserves
+  its own commit and its own review, not a rider on a task about a missing record.
+  *What would close it:* pass the current evaluation as the finding's subject with the base as the
+  comparison side, and check the three fields against a fixture that moves a method and one that leaves
+  it in place. No golden covers a findings lifecycle, so nothing needs regenerating.
+
+- **DEBT-17 — The stderr warning order for unavailable metrics is not deterministic.** Found
+  2026-10-06 while diffing two replays of the audit acceptance harness. Replaying
+  `docs/plans/maintainability-linter/audits/2026-10-04/replay_acceptance.py` four times with one
+  unchanged binary, the two `WARNING:` lines of `optional-semantic-local` came out `TCC, ATFD` in three
+  runs and `ATFD, TCC` in the fourth. Nothing about the verdict, the report or the exit code varies —
+  this is the order of the lines in the warning buffer — but the tool's whole claim is reproducibility,
+  and a log that differs between two runs of the same input is the kind of difference that trains a
+  reader to ignore the log. The ordering is presumably inherited from a `HashSet` of unavailable metrics
+  on the path that builds those warnings. *What would close it:* sort the warnings by metric code where
+  they are collected, and pin the order in a test that runs the same fixture twice.
+
 ## Resolved Debt Items
 - **DEBT-14 — A one-sided threshold rejects a metric whose value is `0`.** Found 2026-09-17 in
   TASK-402, **fixed 2026-09-28 by ML-001**.

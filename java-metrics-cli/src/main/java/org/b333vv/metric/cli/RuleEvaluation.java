@@ -70,6 +70,22 @@ record RuleEvaluation(
                 List.of());
     }
 
+    /**
+     * The same conclusion, with its evidence read as the base revision's.
+     *
+     * <p>For an entity that no longer exists there is no current side to measure, so a value that
+     * belongs to the base must not be published as though it were also what the code measures now.
+     * The status, the key and the issues are untouched: this changes which revision the numbers
+     * describe, not what was concluded.
+     */
+    RuleEvaluation asBaseRevision() {
+        List<FindingEvidence> atBase = new java.util.ArrayList<>(evidence.size());
+        for (FindingEvidence entry : evidence) {
+            atBase.add(entry.atBaseRevision());
+        }
+        return new RuleEvaluation(status, ruleId, entityKey, atBase, issues);
+    }
+
     /** Whether this evaluation established an answer either way. */
     boolean isDefinitive() {
         return status.isDefinitive();

@@ -633,6 +633,60 @@ class MaintainabilityWorkflowTest {
     }
 
     @Nested
+    @DisplayName("A deleted method is a resolution")
+    class Removal {
+
+        /**
+         * A method that disappeared is reported as resolved, with the reason stated.
+         *
+         * <p>The recheck's A08. Every rule was evaluated against the current revision, so the method
+         * that had been deleted was never visited by anything: it is not in the current report, no rule
+         * was asked about it, and the correspondence that had already noticed it named a list no caller
+         * read. Deleting a complex method — the most direct way there is to remove complexity from a
+         * codebase — produced a report with no findings at all, and a reader had no way to tell that
+         * from a method that is still there.
+         *
+         * <p>The record says it was the <em>entity</em> that went, never that the design improved: a
+         * deleted method, one moved outside the analysed roots and one renamed are the same observation
+         * from here, and only one of the three is progress.
+         */
+        @Test
+        @DisplayName("removing the complex method resolves it with the entity reason")
+        void removedMethodIsReportedAsResolved() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(20));
+            // MT-M001 in error mode, so a finding misread as an introduction would fail this build.
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
+            commitLocally(git, "a complex method, at the base");
+
+            // The same file and the same class, with the method gone.
+            git.write(SOURCE, "package app;\npublic class Order {\n"
+                    + "    public int g(int x) { return x; }\n}\n");
+
+            Path report = repo.resolve("removed.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gateWithReport(report, err, "--base", "HEAD", "--policy", "maintainability",
+                    "--enforcement", "enforce");
+
+            JsonNode written = mapper.readTree(Files.readString(report));
+            JsonNode found = written.get("findings");
+            String text = err.toString(StandardCharsets.UTF_8);
+            assertEquals(1, written.get("summary").get("resolved").asInt(),
+                    "the removal is counted as a resolution: " + found + " " + text);
+            assertEquals("RESOLVED", found.get(0).get("lifecycle").asText());
+            assertEquals("entity-removed", found.get(0).get("dispositionReason").asText(),
+                    "and the reason names the entity that went rather than an improvement");
+            assertEquals("f(int)", found.get(0).get("entityKey").get("signature").asText(),
+                    "against the method that was actually removed: " + found);
+            assertTrue(found.get(0).get("evidence").get(0).get("after").isNull(),
+                    "the base's value is not republished as what the current revision measures: "
+                            + found.get(0).get("evidence"));
+            assertEquals(0, exit,
+                    "a removal is not a regression, so nothing about it fails the build: " + text);
+        }
+    }
+
+    @Nested
     @DisplayName("A finding says where it is")
     class Locations {
 

@@ -177,7 +177,22 @@ final class MaintainabilityAnalysisService {
         RoleClassifier roles = new RoleClassifier(
                 settings.hasConfiguredRoles() ? settings.roleRules() : RoleClassifier.DEFAULT_RULES);
 
-        for (MaintainabilityRule catalogued : enabledRules(settings)) {
+        // The rules this run judges by, resolved once. The removal pass below walks the same list,
+        // and a second `enabledRules` call would be a second answer to the same question.
+        List<MaintainabilityRule> cataloguedRules = enabledRules(settings);
+
+        // Which files the current revision was actually read for.
+        //
+        // "This entity is absent from the current report" is one observation with two causes: the
+        // entity was deleted, or the file declaring it was not read this time. The second is not a
+        // resolution, and it is the same fairness rule that keeps an unreadable base from being
+        // reported as new code -- read in the other direction.
+        Set<String> readAtCurrent = new LinkedHashSet<>();
+        for (ClassReport classReport : current.classes()) {
+            readAtCurrent.add(logicalPath.apply(classReport.sourcePath()));
+        }
+
+        for (MaintainabilityRule catalogued : cataloguedRules) {
             // The rule this run actually judges by: catalogue data with the project's overrides
             // applied. Evaluating the catalogue rule and merely checking OFF afterwards was the
             // defect A01 describes -- a configured limit of CC >= 100 still matched at CC 18, because
@@ -212,7 +227,7 @@ final class MaintainabilityAnalysisService {
                             classEvaluator.evaluate(rule, classKey, classReport.metrics(), scope,
                                     role, enforcement);
                     collect(rule, classEvaluation, base, classKey, false, path,
-                            location(classReport.sourceLocation(), path), null, logicalPath, scope,
+                            location(classReport.sourceLocation(), path), null, scope,
                             correspondence, findings, ineligible, issues, role, eligiblePaths,
                             comparing);
                 }
@@ -226,9 +241,60 @@ final class MaintainabilityAnalysisService {
                     RuleEvaluation methodEvaluation = methodEvaluator.evaluate(rule, methodKey,
                             method.metrics(), method, enforcement);
                     collect(rule, methodEvaluation, base, methodKey, true, path,
-                            location(method.sourceLocation(), path), null, logicalPath, scope,
+                            location(method.sourceLocation(), path), null, scope,
                             correspondence, findings, ineligible, issues, role, eligiblePaths,
                             comparing);
+                }
+            }
+        }
+
+        // An entity that no longer exists is a resolution, and this is the only place that can see it.
+        //
+        // The loop above walks the current revision, so a method that disappeared is never visited: it
+        // is not in the report, no rule is ever asked about it, and the comparison that *did* notice --
+        // the correspondence names it as removed -- was never read. A project that deleted a complex
+        // method was told nothing had changed, which is the one answer the contract forbids: "Removal
+        // counts as resolved with reason entity-removed; it is not proof of improved design."
+        //
+        // It is reported as a resolution and never as an improvement, because the tool cannot tell a
+        // deleted method from one that moved somewhere it was not asked to analyse. The reason code
+        // says which of the two claims is being made.
+        //
+        // Three things keep this from inventing a finding. The entity must be in the changed set, so an
+        // untouched file's debt is not reported as resolved by a change that never came near it. Its
+        // file must have been read at the current revision, so a file that stopped parsing is not read
+        // as a deletion. And the rule must have matched at the base, because "removal" is a statement
+        // about a finding that existed -- a rule that did not fire before has nothing to resolve.
+        if (base != null && correspondence != null) {
+            for (MaintainabilityRule catalogued : cataloguedRules) {
+                MaintainabilityRule rule = effectiveRule(catalogued, settings);
+                if (effectiveMode(catalogued, settings) == RuleMode.OFF) {
+                    continue;
+                }
+                for (EntityKey removed : correspondence.removedEntities()) {
+                    if (removed.isMethod() != (rule.level() == MaintainabilityRule.RuleLevel.METHOD)) {
+                        continue;
+                    }
+                    if (!eligible(removed.path(), eligiblePaths)
+                            || !readAtCurrent.contains(removed.path())) {
+                        continue;
+                    }
+                    EntityRole removedRole = roles.classify(removed.path());
+                    if (!effectiveRoles(catalogued, settings).contains(removedRole)) {
+                        continue;
+                    }
+                    // Located by its own base key, not through the correspondence: the correspondence
+                    // maps a current entity to its base, and this entity has no current counterpart --
+                    // that is what "removed" means.
+                    BaseSide side = baseEntitySide(rule, base, removed, removed.isMethod(), scope);
+                    if (side == null
+                            || side.evaluation().status() != EvaluationStatus.COMPLETE_MATCH) {
+                        continue;
+                    }
+                    FindingDeltaEvaluator.Delta delta = deltaEvaluator.reportRemovedEntity(
+                            rule, side.evaluation(), side.location(), removedRole);
+                    findings.addAll(delta.findings());
+                    issues.addAll(delta.issues());
                 }
             }
         }
@@ -262,7 +328,7 @@ final class MaintainabilityAnalysisService {
     private void collect(MaintainabilityRule rule, RuleEvaluation currentEvaluation,
             MetricReport base, EntityKey currentKey, boolean isMethod, String path,
             FindingLocation location, FindingLocation baseLocation,
-            Function<Path, String> logicalPath, MetricRequirements.Scope scope,
+            MetricRequirements.Scope scope,
             EntityCorrespondence correspondence, List<Finding> findings,
             List<Finding> ineligible, List<EvaluationIssue> issues, EntityRole role,
             Set<String> eligiblePaths, boolean comparing) {
@@ -295,8 +361,7 @@ final class MaintainabilityAnalysisService {
             return;
         }
 
-        BaseSide baseSide = baseSideOf(rule, base, currentKey, isMethod, logicalPath, scope,
-                correspondence);
+        BaseSide baseSide = baseSideOf(rule, base, currentKey, isMethod, scope, correspondence);
         FindingDeltaEvaluator.Delta delta = deltaEvaluator.compare(rule,
                 baseSide == null ? null : baseSide.evaluation(), currentEvaluation, correspondence,
                 location, baseSide == null ? null : baseSide.location(), role, comparing);
@@ -359,7 +424,7 @@ final class MaintainabilityAnalysisService {
      * baseline accepted it.
      */
     private BaseSide baseSideOf(MaintainabilityRule rule, MetricReport base,
-            EntityKey currentKey, boolean isMethod, Function<Path, String> logicalPath,
+            EntityKey currentKey, boolean isMethod,
             MetricRequirements.Scope scope, EntityCorrespondence correspondence) {
         if (base == null) {
             return null;
@@ -378,14 +443,40 @@ final class MaintainabilityAnalysisService {
             // observation.
             return unreadableBase(rule, currentKey);
         }
+        BaseSide side = baseEntitySide(rule, base, baseKey, isMethod, scope);
+        // The entity is absent from the base report. That is normally the new-code case, and a
+        // match is reported as NEW_ENTITY because the base supports it by not containing the
+        // entity.
+        //
+        // It is not the new-code case when the base could not be read at all: a file the parser
+        // rejected contributes no classes to the base report, and "no class here" then means "this
+        // report never saw this file". Reporting NEW_ENTITY on the strength of a base that failed
+        // to load is the gate blocking on its own blindness -- and it does it with the lifecycle
+        // that says "you added this", which is a claim about a revision the analysis never saw.
+        return side == null ? unreadableBase(rule, baseKey) : side;
+    }
+
+    /**
+     * The base revision's own evaluation of one entity, found by the entity's <em>base</em> key.
+     *
+     * <p>Looked up by the base key rather than through the correspondence because the caller that
+     * needs it most has no current counterpart to start from: a removed entity is exactly one the
+     * correspondence maps in the other direction, and asking it for the base of a current key it
+     * does not have would find nothing.
+     *
+     * <p>The path comes from the key, not from the base report: the base is analysed from a
+     * materialised snapshot under the runner's temp directory, so deriving a logical path from its
+     * own source path yields an absolute temporary one. Two modes would then disagree about a base
+     * location that names a directory neither of them has.
+     *
+     * @return the base side, or {@code null} when the base report does not contain the entity
+     */
+    private BaseSide baseEntitySide(MaintainabilityRule rule, MetricReport base,
+            EntityKey baseKey, boolean isMethod, MetricRequirements.Scope scope) {
         for (ClassReport classReport : base.classes()) {
             if (!classReport.qualifiedName().equals(baseKey.qualifiedName())) {
                 continue;
             }
-            // The path comes from the correspondence, not from the base report: the base is analysed
-            // from a materialised snapshot under the runner's temp directory, so deriving a logical
-            // path from its own source path yields an absolute temporary one. Two modes would then
-            // disagree about a base location that names a directory neither of them has.
             String basePath = baseKey.path();
             if (!isMethod) {
                 return new BaseSide(
@@ -401,16 +492,7 @@ final class MaintainabilityAnalysisService {
                 }
             }
         }
-        // The entity is absent from the base report. That is normally the new-code case, and a
-        // match is reported as NEW_ENTITY because the base supports it by not containing the
-        // entity.
-        //
-        // It is not the new-code case when the base could not be read at all: a file the parser
-        // rejected contributes no classes to the base report, and "no class here" then means "this
-        // report never saw this file". Reporting NEW_ENTITY on the strength of a base that failed
-        // to load is the gate blocking on its own blindness -- and it does it with the lifecycle
-        // that says "you added this", which is a claim about a revision the analysis never saw.
-        return unreadableBase(rule, baseKey);
+        return null;
     }
 
     /**
