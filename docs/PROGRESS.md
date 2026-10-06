@@ -1,5 +1,128 @@
 # what has been done
 
+## Session: the maintainability policy consults no legacy input (2026-10-06)
+
+The recheck's A05, whose row says the command "still unions legacy thresholds/growth and OFF rule
+inputs". Two of those three are live at HEAD; the third is already gone, and it is worth saying which is
+which before describing the fix.
+
+**Thresholds were already discharged.** A04's work refuses a configured `-t`, `-p`, `gate.growth` and
+`gate.failOn` when the policy is maintainability, and `MaintainabilityPolicy.rejectLegacyInputs` also
+refuses a `thresholds:` section in the config. Nothing that could populate the legacy table survives to
+the point where it is read, so the thresholds map is empty on every maintainability run already. The row
+was written at `70e475b`, before that refusal.
+
+**The built-in growth budget was not.** `DEFAULT_GROWTH` (`CC 5.0, WMC 20.0`) is not configuration, so
+nothing refused it, and it was applied to every maintainability run. It could not change a status — the
+policy's verdict is its own and `legacyDecides` is false — but the legacy evaluator's output is still
+printed, and every place it appears showed the budget. There are three.
+
+The warning band is the one every passing run hit. A metric that grew but stayed inside the budget
+produced a `WORSENED` warning naming a budget of 5, which no maintainability rule has:
+
+```
+before:  PASSED: 1 changed file, no violations (2 warnings)     # CC 3 -> 4, one file
+after:   PASSED: 1 changed file, no violations
+```
+
+And `failedLine` counts `violations.size()` in its parse-error message, where a *breached* budget was one
+of the violations. A file grown from CC 1 to CC 11 beside a second file that does not parse:
+
+```
+before:  FAILED: 1 file could not be parsed; 2 reported
+after:   FAILED: 1 file could not be parsed; 1 reported
+```
+
+A third surface moved for the same reason. `failedLine`'s first branch — "N maintainability findings
+blocked; no gate violation" — is taken only when the legacy evaluator produced nothing, so a phantom
+growth violation was suppressing the clause that says so; the `range-trace-and-before` replay case now
+reads `FAILED: 1 maintainability finding blocked; no gate violation` where it read `FAILED: 1
+maintainability finding blocked`.
+
+So the run reported a warning about a budget it does not consult, or counted a violation it does not
+obey, on ordinary changes rather than only on contrived ones. This is the half of A05 the recheck's row
+was right about, and it was visible in the verdict line of nearly every maintainability run.
+
+**The OFF-rule union is the one that changed the report's completeness.** `enabledRules` and a rule's
+mode are two statements and only the second decides whether the rule runs, but the metric selection read
+the first alone:
+
+```java
+activePolicy.settings().enabledRules().stream()
+        .map(MaintainabilityRules::byId)
+        .flatMap(java.util.Optional::stream)
+        .forEach(rule -> requested.addAll(rule.conditions().keySet()));
+```
+
+A rule listed and switched off still had its metrics requested — and, because a rule that is off is in no
+blocking set, classified advisory-only. MT-C001 is the experimental rule whose ATFD and TCC need
+resolved symbols, so an ordinary local run reported:
+
+```
+before:  PASSED: 1 changed file, no violations (2 warnings); 2 optional checks could not be evaluated
+         completeness: partial, optionalGaps: 2, checksUnavailable: 2
+after:   PASSED: 1 changed file, no violations
+         completeness: complete, optionalGaps: 0, checksUnavailable: 0
+```
+
+Two optional gaps, two warnings and a `partial` completeness for a rule the configuration had explicitly
+turned off — the same phantom gap the `GapRequiredness` tests above are about, arriving by the opposite
+route. Requiring a metric of a rule nobody runs is the same mistake as requiring it of a rule that
+cannot fail.
+
+**The fix is in two places.** The legacy inputs are resolved as empty when the policy is maintainability,
+which is the single expression of "this policy consults no legacy input" and fixes the metric selection,
+the advisory-only set and the legacy evaluator's input at once. And the rule set is taken from
+`MaintainabilityAnalysisService.requiredMetrics`, which already computes exactly this — "the metrics the
+enabled, non-disabled rules need, and no others" — from the same settings, and is the one place that
+resolves a rule's *effective* mode. `advisoryOnlyMetrics` now uses the service's `enabledRules` and
+`effectiveMode` too, so the two methods cannot disagree about what a listed-and-off rule contributes:
+nothing, to either.
+
+**Compatibility.** A maintainability run's verdict line changes on most runs, and in three ways: the
+legacy warning band no longer appears, a legacy growth breach is no longer counted among the run's
+reported violations, and a switched-off rule's metrics are no longer requested (so no gap, and `complete`
+rather than `partial`). Exit codes change only where a gap was the reason for an INCOMPLETE. The
+`analysis` block's `completeness` moves from `partial` to `complete` for a project that lists a rule and
+switches it off. The legacy policy is untouched, checked by hand on the same fixture: a legacy run of the
+CC 1 → CC 11 change still exits 1 with `FAILED: 1 growth budget breach — worst: CC grew 1→11 (+10),
+budget is 5 in src/main/java/Demo.java`.
+
+**Verification.** Three tests, all failing on the old code and only those three, checked by stashing
+`GateCommand.java` and running the class:
+
+- `MaintainabilityWorkflowTest$GapRequiredness.switchedOffRuleAsksForNothing` — asserts
+  `optionalGaps: 0`, `completeness: complete` and no "optional check" in the verdict line; pre-fix the
+  analysis block carried two gaps;
+- `MaintainabilityWorkflowTest$Configured.withinBudgetGrowthRaisesNoLegacyWarning` — asserts the verdict
+  line carries no "(N warnings)"; pre-fix it said `(2 warnings)`;
+- `MaintainabilityWorkflowTest$Configured.breachedBuiltInBudgetIsNotCountedAsAViolation` — asserts the
+  verdict line reads `1 file could not be parsed; 1 reported`; pre-fix it read `2 reported`.
+
+The last two are two surfaces of one fix on purpose: a change that filtered the legacy warning out of the
+line would leave the violation count still counting a budget the policy never reached. No other test in
+the class changed, which is itself part of the finding — the union was untested, and the two tests that
+came closest to it (`advisoryRuleUnavailableIsOptional` and `promotedRuleUnavailableIsRequired`) both use
+rules that are genuinely on.
+
+`./gradlew check` green: **849 tests, 0 failures, 0 errors, 1 skipped**, three more than the 846 of the
+entry below and those three are these tests. JSON goldens untouched. Replaying the audit acceptance
+harness against pre-fix and post-fix binaries changes 11 of 35 observations: 9 lose the legacy warning
+from the verdict line, `range-trace-and-before` gains the `; no gate violation` clause, and `detect-sarif`
+differs only in the SARIF `properties` key order, which is DEBT-18 and not this change. `optional-semantic-local`
+loses the warning while keeping its 6 optional gaps, which is the control: it enables MT-C001 for real, so
+those gaps are genuine and stay. Several of the nine also carry a fresh fixture SHA in their `comparison`
+block. No observation changed its exit code or its status.
+
+**Found on the way, and recorded as DEBT-20.** The switched-off-rule test first failed for a reason that
+had nothing to do with the fix: YAML resolves the bare scalar `off` to the boolean `false`, so
+`mode: off` reaches the loader as `false` and is rejected with `must be a string, got: false` — a message
+naming a value the author never wrote. Of the three documented modes exactly one is affected, and it is
+the one whose purpose is to make a rule contribute nothing. Writing `mode: "off"` works. Fixing that is
+a decision about the accepted-value contract rather than a correction, so it is recorded instead, and
+`docs/guides/migrate-to-maintainability.md` now documents the quoting and states that the new policy
+reads no legacy input at all.
+
 ## Session: one run reports one number of required checks (2026-10-06)
 
 The counts work that the two entries below deferred, twice — once as "belongs to the A06/A10 work" and

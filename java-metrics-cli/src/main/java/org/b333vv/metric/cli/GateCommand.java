@@ -250,10 +250,27 @@ final class GateCommand implements Callable<Integer> {
         analysisScopeValue = resolveAnalysisScope(config);
         scopedPolicy = activePolicy.settings().withAnalysisScope(analysisScopeValue.name());
 
-        Map<String, Threshold> thresholds = resolveThresholds(config);
-        Map<String, Double> growth = config.gateGrowth() != null
-                ? config.gateGrowth()
-                : DEFAULT_GROWTH;
+        // The legacy inputs, and under the maintainability policy there are none.
+        //
+        // Both were resolved unconditionally and then unioned into the set of metrics the run has to
+        // be able to measure: requestedMetrics added every threshold key and every growth key to the
+        // selection. A project that had migrated to the new policy therefore still paid for the legacy
+        // table's metrics, and -- worse than the cost -- still treated them as *required*:
+        // advisoryOnlyMetrics counted a configured legacy threshold or growth budget as an
+        // enforcement statement, so a metric no maintainability rule reads was held to be blocking
+        // and its unavailability was reported as a gap.
+        //
+        // The refusal above already rejects a configured -t, -p, gate.growth and gate.failOn, which is
+        // why the thresholds table is normally empty by the time it reaches here. What it did not
+        // cover was DEFAULT_GROWTH: it is not configuration, so nothing refused it, and it was
+        // applied to every maintainability run. Emptying both is what makes "the new policy consults
+        // no legacy input" true of the whole run rather than only of the inputs that were checked.
+        boolean maintainabilityPolicy = activePolicy.isMaintainability();
+        Map<String, Threshold> thresholds =
+                maintainabilityPolicy ? Map.of() : resolveThresholds(config);
+        Map<String, Double> growth = maintainabilityPolicy
+                ? Map.of()
+                : (config.gateGrowth() != null ? config.gateGrowth() : DEFAULT_GROWTH);
 
         Set<GateFinding.Type> failOn = resolveFailOn(config);
 
@@ -949,11 +966,16 @@ final class GateCommand implements Callable<Integer> {
     }
 
     /**
-     * The metrics this run has to be able to measure: every threshold key and every growth key.
+     * The metrics this run has to be able to measure: the legacy table's keys, or the running rules'.
      *
      * <p>Derived from what was actually configured rather than from the full code set, because a
      * selection is a cost statement. Asking for forty visitors because the enum has forty constants
      * would make the gate as slow as {@code analyze} while checking a fraction of what that does.
+     *
+     * <p>Which of the two sources applies is decided by the policy, and only one ever does. A run
+     * judged by thresholds needs the metrics those thresholds name; a run judged by the rule catalogue
+     * needs the metrics its rules read, and consults no legacy input at all -- the caller passes empty
+     * maps for both, so the two loops below contribute nothing there.
      */
     private static Set<org.b333vv.metric.library.core.MetricCode> requestedMetrics(
             Map<String, Threshold> thresholds, Map<String, Double> growth,
@@ -961,15 +983,17 @@ final class GateCommand implements Callable<Integer> {
         Set<org.b333vv.metric.library.core.MetricCode> requested = new java.util.LinkedHashSet<>();
         thresholds.keySet().forEach(name -> MetricCodeNames.find(name).ifPresent(requested::add));
         growth.keySet().forEach(name -> MetricCodeNames.find(name).ifPresent(requested::add));
-        // The enabled rules' own metrics. Without this the selection was derived only from thresholds,
-        // so a maintainability run measured nothing its rules read: every check reported UNAVAILABLE
-        // and the gate said "this analysis could not run" for a configuration it was perfectly able to
-        // evaluate. The rules are configured, so what they need is a cost the run has agreed to pay.
+        // The rules that will actually run, taken from the service rather than reimplemented here.
+        // The service computes this set for its own completeness from the same settings, and it is the
+        // one place that resolves a rule's *effective* mode. This method used to walk enabledRules()
+        // itself and take every listed rule's conditions, which is a different set: a rule can be
+        // listed and still be off (rules: {MT-C001: {mode: off}}), and its metrics were then requested
+        // for a rule the run had decided not to evaluate. On the local scope that is visible -- MT-C001
+        // is the experimental rule whose ATFD and TCC cannot be measured without resolved symbols, so a
+        // project that listed it and turned it off was told "2 optional checks could not be evaluated"
+        // for a rule that contributed nothing.
         if (activePolicy != null && activePolicy.isMaintainability()) {
-            activePolicy.settings().enabledRules().stream()
-                    .map(MaintainabilityRules::byId)
-                    .flatMap(java.util.Optional::stream)
-                    .forEach(rule -> requested.addAll(rule.conditions().keySet()));
+            requested.addAll(MaintainabilityAnalysisService.requiredMetrics(activePolicy.settings()));
         }
         return requested;
     }
@@ -1149,14 +1173,17 @@ final class GateCommand implements Callable<Integer> {
      *
      * <p>Two sources are consulted, and both have to agree that nothing blocking wants the metric.
      * A configured legacy threshold or growth budget says "enforce this", so it makes the metric
-     * required whatever the catalogue thinks. Among the maintainability rules, one that is in error
-     * mode and not experimental can block, so it also makes its metrics required -- MT-C001 is both
-     * experimental and advisory, which is why its ATFD and TCC were turning ordinary local runs
-     * INCOMPLETE over a rule that could never have failed anything.
+     * required whatever the catalogue thinks -- though under the maintainability policy the caller
+     * passes empty maps, because there are no legacy inputs to consult. Among the maintainability
+     * rules, one that is in error mode and not experimental can block, so it also makes its metrics
+     * required -- MT-C001 is both experimental and advisory, which is why its ATFD and TCC were
+     * turning ordinary local runs INCOMPLETE over a rule that could never have failed anything.
      *
      * <p>Derived from the effective rules rather than the catalogue, because an override is what the
      * run actually judges by: a project that promotes MT-C001 to error has made those metrics
-     * required, and this has to notice that.
+     * required, and this has to notice that. Both the enabled set and the mode come from the service,
+     * so this method and the metric selection cannot disagree about what a rule that is listed and
+     * switched off contributes -- it contributes nothing to either.
      */
     private static java.util.Set<org.b333vv.metric.library.core.MetricCode> advisoryOnlyMetrics(
             MaintainabilityPolicy activePolicy,
@@ -1172,14 +1199,9 @@ final class GateCommand implements Callable<Integer> {
             growth.keySet().forEach(code ->
                     MetricCodeNames.find(code).ifPresent(blocking::add));
         }
-        for (MaintainabilityRule rule : MaintainabilityRules.catalog()) {
-            if (!settings.isEnabled(rule.id())) {
-                continue;
-            }
-            MaintainabilitySettings.RuleOverride override = settings.overrides().get(rule.id());
-            RuleMode mode = override != null && override.mode() != null
-                    ? override.mode() : rule.defaultMode();
-            if (mode == RuleMode.ERROR && rule.maturity().allowsBlocking()) {
+        for (MaintainabilityRule rule : MaintainabilityAnalysisService.enabledRules(settings)) {
+            if (MaintainabilityAnalysisService.effectiveMode(rule, settings) == RuleMode.ERROR
+                    && rule.maturity().allowsBlocking()) {
                 blocking.addAll(rule.conditions().keySet());
             }
         }

@@ -287,6 +287,19 @@
   nouns from the same count — singular only when the reason is one item of one — and add a case for the
   singular form beside the existing plural one.
 
+- **DEBT-20 — `mode: off` cannot be written unquoted in a YAML project config.** Found 2026-10-06 while
+  writing the switched-off-rule case for A05. YAML resolves the bare scalars `off`, `on`, `yes` and `no`
+  to booleans, so `mode: off` reaches the loader as `false` and is rejected with
+  `'maintainability.rules.MT-C001.mode' in project config <path> must be a string, got: false` — a
+  message that names a value the author never wrote. Of the three documented modes (`off`, `warn`,
+  `error`) exactly one is affected, and it is the one whose whole purpose is to make a rule contribute
+  nothing, so the trap is hit precisely by the configuration A05 is about. Writing `mode: "off"` works,
+  and the JSON form is unaffected. Recorded rather than fixed here because the fix is a decision about
+  the accepted-value contract, not a correction: the loader could accept the boolean and read it as
+  `off`, or keep requiring a string and say so in the message ("write `"off"`, quoted: YAML reads the
+  bare word as a boolean"). *What would close it:* choose one of those, and document the mode values —
+  `docs/` currently never mentions `off` at all.
+
 ## Resolved Debt Items
 - **DEBT-16 — A `no-longer-matches` resolution published the base's value as the current one.** Found
   2026-10-06 while adding the removed-entity pass (the recheck's A08), **fixed 2026-10-06**.

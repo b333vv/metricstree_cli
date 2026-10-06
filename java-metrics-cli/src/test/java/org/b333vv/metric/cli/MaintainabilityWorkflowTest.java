@@ -501,6 +501,54 @@ class MaintainabilityWorkflowTest {
                     "a rule that can now fail the build has inputs whose absence the verdict depends"
                             + " on: " + err.toString(StandardCharsets.UTF_8));
         }
+
+        /**
+         * A rule that is listed and switched off asks for nothing.
+         *
+         * <p>{@code enabledRules} and a rule's mode are two different statements, and only the second
+         * decides whether the rule runs: {@code mode: off} means "not evaluated, and no applicability
+         * is claimed for it". The metric selection read the first statement alone, so a switched-off
+         * MT-C001 still had its ATFD and TCC requested — and, because a rule that is off is in no
+         * blocking set, classified as advisory-only. An ordinary local run then reported "2 optional
+         * checks could not be evaluated" for a rule the configuration had explicitly turned off: the
+         * same phantom gap as the two tests above, arriving by the opposite route. Requiring the
+         * metric of a rule nobody runs is the same mistake as requiring it of a rule that cannot fail.
+         *
+         * <p>{@code "off"} is quoted because YAML resolves the bare word to the boolean {@code false},
+         * and the loader requires a string — so the value has to be quoted to reach it as the mode it
+         * is meant to be. That trap is recorded as DEBT-20.
+         */
+        @Test
+        @DisplayName("a rule that is listed and switched off asks for nothing")
+        void switchedOffRuleAsksForNothing() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", """
+                    maintainability:
+                      enabledRules: [MT-M001, MT-C001]
+                      rules:
+                        MT-C001:
+                          mode: "off"
+                    """);
+            git.commitAll("initial");
+            git.write(SOURCE, withBranches(3));
+            commitLocally(git, "the change under review");
+
+            Path report = repo.resolve("off-rule.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gateWithReport(report, err, "--base", "HEAD~1",
+                    "--policy", "maintainability", "--enforcement", "enforce");
+
+            JsonNode written = mapper.readTree(Files.readString(report));
+            assertEquals(0, exit, err.toString(StandardCharsets.UTF_8));
+            assertEquals(0, written.get("analysis").get("optionalGaps").asInt(),
+                    "nothing asked for the switched-off rule's metrics, so their absence is not a"
+                            + " gap: " + written);
+            assertEquals("complete", written.get("analysis").get("completeness").asText(),
+                    "and the run is not partial over them: " + written);
+            assertFalse(err.toString(StandardCharsets.UTF_8).contains("optional check"),
+                    "the verdict line must not quote a gap that does not exist: " + err);
+        }
     }
 
     @Nested
@@ -1208,6 +1256,85 @@ class MaintainabilityWorkflowTest {
 
             assertEquals(2, exit, "exit=" + exit + " err=" + err);
             assertTrue(err.toString().contains("-t / --thresholds"), err.toString());
+        }
+
+        /**
+         * The built-in growth budget is a legacy input too, and nothing refused it.
+         *
+         * <p>A configured {@code gate.growth} is a migration error under this policy, which left the
+         * one growth budget that is not configuration — the built-in CC 5, WMC 20 — applied to every
+         * maintainability run. It could not change a verdict, because the policy's status is its own,
+         * but it reached both places the legacy evaluator's output is still printed, and one of them
+         * is on every passing run.
+         *
+         * <p>The warning band is the one that showed up everywhere: a metric that grew but stayed
+         * inside the budget produced a {@code WORSENED} warning naming a budget of 5, which no
+         * maintainability rule has. This is the passing case, so it is the one most runs hit.
+         *
+         * <p>Placed next to the two refusal tests because it is the same decision: the new policy
+         * consults no legacy input, and the built-in default is one.
+         */
+        @Test
+        @DisplayName("a growth inside the built-in budget raises no legacy warning")
+        void withinBudgetGrowthRaisesNoLegacyWarning() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.write(".metrics-gate.yml", config("maintainability"));
+            git.commitAll("initial");
+            // CC 3 -> 4: a change, and inside the built-in budget of 5 — which is the warning band.
+            git.write(SOURCE, withBranches(3));
+            commitLocally(git, "the change under review");
+
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gate(err, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--enforcement", "enforce");
+
+            String verdict = err.toString(StandardCharsets.UTF_8).lines().findFirst().orElse("");
+            assertEquals(0, exit, verdict);
+            assertFalse(verdict.contains("warning"),
+                    "a budget of 5 belongs to the legacy policy, so nothing in this run is within it:"
+                            + " the verdict line must not carry the legacy warning band. Verdict was ["
+                            + verdict + "]");
+        }
+
+        /**
+         * The same union, seen from the failing side, where the count is printed instead.
+         *
+         * <p>{@code failedLine} never names warnings, so a legacy budget is invisible there — but the
+         * parse-error message counts {@code violations.size()}, and a breached legacy budget was one
+         * of them. A run that could not parse a file and had also grown a method past the built-in
+         * budget said "2 reported" while obeying one of the two, and the reader has no way to tell
+         * which.
+         *
+         * <p>Stated separately from the warning case because they are two surfaces of one fix: a
+         * change that filtered the warning out would leave this one counting a violation the policy
+         * never reached.
+         */
+        @Test
+        @DisplayName("a breached built-in budget is not counted among the run's violations")
+        void breachedBuiltInBudgetIsNotCountedAsAViolation() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(0));
+            git.write("src/main/java/app/Broken.java",
+                    "package app;\npublic class Broken {\n    public void ok() {}\n}\n");
+            git.write(".metrics-gate.yml", config("maintainability"));
+            git.commitAll("initial");
+            // CC 1 -> CC 11, a growth of 10 against the built-in budget of 5, in one file; and a
+            // second file that does not parse, which is what makes the run FAILED and prints the line.
+            git.write(SOURCE, withBranches(10));
+            git.write("src/main/java/app/Broken.java",
+                    "package app;\npublic class Broken {\n    public void ok( {}\n}\n");
+            commitLocally(git, "the change under review");
+
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gate(err, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--enforcement", "enforce");
+
+            String verdict = err.toString(StandardCharsets.UTF_8).lines().findFirst().orElse("");
+            assertEquals(1, exit, verdict);
+            assertTrue(verdict.contains("1 file could not be parsed; 1 reported"),
+                    "the run reports the one violation it reached -- the parse error -- and not a"
+                            + " growth budget it never consulted. Verdict was [" + verdict + "]");
         }
     }
 }

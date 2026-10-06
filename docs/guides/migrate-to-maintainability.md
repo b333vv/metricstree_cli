@@ -40,6 +40,19 @@ maintainability:
 
 Leave MT-C001 out: it is experimental, and its thresholds are still being argued about.
 
+A rule can also be listed and switched **off**, which is not the same statement as leaving it out — the
+entry records that the rule was considered and rejected, and it contributes nothing to the run: it is not
+evaluated, no metric is requested on its behalf, and its metrics' absence is not reported as a gap. In
+YAML the value has to be quoted, because the bare word `off` is a boolean:
+
+```yaml
+maintainability:
+  enabledRules: [MT-M001, MT-C001]
+  rules:
+    MT-C001:
+      mode: "off"   # quoted: unquoted `off` is YAML for false
+```
+
 ### 3. Retune thresholds for your code
 
 ```yaml
@@ -104,6 +117,14 @@ have earned.
 
 The legacy commands — `analyze`, `validate`, `detect`, and `gate` without `--policy maintainability`
 — are unchanged. Nothing about your existing CI breaks by adopting this.
+
+**The new policy reads no legacy input at all.** Not a `-t` threshold table, not a `-p` profile, not
+`gate.growth`, not `gate.failOn`, and not the built-in growth budget. Supplying the first four alongside
+`--policy maintainability` is a usage error rather than a silent no-op, because an author who wrote a
+threshold table would otherwise get a run that had quietly stopped enforcing it — and nothing in the
+verdict would say so. The built-in budget is not configuration, so it cannot be refused; it is simply not
+consulted. Nothing a maintainability run measures, counts or reports comes from the legacy policy, so a
+threshold you leave in the file while migrating has no effect on the new run rather than a partial one.
 
 ## Determinism, and its limits
 
