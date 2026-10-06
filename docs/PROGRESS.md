@@ -56,8 +56,11 @@ Verification:
   path the workflow now uses and at no other — `build/install` at the repository root does not exist,
   which is exactly why every earlier run failed there — and the run ends `FAILED` / `exit-code=1` /
   `blocking-count=1` / `completeness=complete`, with the workflow's own assertion exiting 0.
-- Actions: the hosted run is recorded in the follow-up entry at the top of this file, once it has
-  actually run. Nothing is claimed here that a runner has not returned.
+- Actions: run `37480582791` (`action-consumer-test`, commit `555c90f`) — **success**, the workflow's
+  first green run in 26 attempts. ubuntu-latest and macos-latest each ran 13/13 steps, and there is no
+  Windows job. `release` was not re-run: it triggers on a `v*` tag and creating one is deliberately a
+  human step, so its change is verified by the YAML parse and by the fact that its `verify` job is
+  `./gradlew check` — the command the local rerun above executed.
 
 ## Session: Fix 10 failing CLI tests — Windows path-separator handling and OS-impossible filenames (2026-10-05)
 
