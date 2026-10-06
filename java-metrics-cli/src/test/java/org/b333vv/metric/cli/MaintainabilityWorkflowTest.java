@@ -687,6 +687,63 @@ class MaintainabilityWorkflowTest {
     }
 
     @Nested
+    @DisplayName("Code that stopped matching is a measured resolution")
+    class Resolution {
+
+        /**
+         * A method that is still there and no longer matches reports the value that stopped it.
+         *
+         * <p>The sibling of the removal above, and the resolution a per-commit comparison reaches with
+         * no correspondence at all: the entity is present at both revisions and the rule fired at one
+         * of them. {@code FindingDeltaEvaluator} built the finding from the base evaluation in both
+         * slots, so the report republished the base's number as the current one and carried the base's
+         * {@code COMPLETE_MATCH} — a method taken from CC 21 to CC 2 rendered as {@code CC 21 → 21},
+         * under a status asserting that the revision still matches the rule it just stopped matching.
+         *
+         * <p>The current measurement is the only reason the lifecycle changed, so discarding it leaves
+         * a reader unable to tell a simplification from a method nobody touched. This asserts the
+         * measurement, the status that belongs with it, and that the resolution does not fail the build.
+         */
+        @Test
+        @DisplayName("simplifying the method resolves it with the value it now has")
+        void simplifiedMethodResolvesWithTheCurrentMeasurement() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(20));
+            // MT-M001 in error mode: if the resolution were misread as a live match, this build fails.
+            git.write(".metrics-gate.yml", enforcingConfig("maintainability"));
+            commitLocally(git, "a complex method, at the base");
+
+            // The same file, class and method, simplified in place: CC 21 -> CC 2.
+            git.write(SOURCE, withBranches(1));
+
+            Path report = repo.resolve("stopped-matching.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gateWithReport(report, err, "--base", "HEAD", "--policy", "maintainability",
+                    "--enforcement", "enforce");
+
+            JsonNode written = mapper.readTree(Files.readString(report));
+            JsonNode found = written.get("findings");
+            String text = err.toString(StandardCharsets.UTF_8);
+            assertEquals(1, written.get("summary").get("resolved").asInt(),
+                    "the simplification is counted as a resolution: " + found + " " + text);
+            assertEquals("RESOLVED", found.get(0).get("lifecycle").asText());
+            assertEquals("no-longer-matches", found.get(0).get("dispositionReason").asText(),
+                    "and the reason names the rule that stopped firing, not a removal");
+            assertEquals("COMPLETE_NONMATCH", found.get(0).get("evaluationStatus").asText(),
+                    "the finding describes the revision that stopped matching: " + found.get(0));
+            assertEquals("f(int)", found.get(0).get("entityKey").get("signature").asText(),
+                    "against the method that was simplified, which is still present: " + found.get(0));
+            JsonNode evidence = found.get(0).get("evidence").get(0);
+            assertEquals(21.0, evidence.get("before").asDouble(), "the value it had");
+            assertEquals(2.0, evidence.get("after").asDouble(),
+                    "and the value it has now, which is what stopped the rule firing: " + evidence);
+            assertEquals(-19.0, evidence.get("delta").asDouble(), "the change between the two");
+            assertEquals(0, exit,
+                    "a resolution is not a regression, so nothing about it fails the build: " + text);
+        }
+    }
+
+    @Nested
     @DisplayName("A finding says where it is")
     class Locations {
 

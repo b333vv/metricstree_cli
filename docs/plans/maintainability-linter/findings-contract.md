@@ -102,6 +102,16 @@ default compact presentation but remain available in JSON. `detect` has lifecycl
 does not pretend to compare revisions. For maintainability detect, mode error under enforce
 blocks complete current matches; default is advisory, with the same completeness rules.
 
+A resolved finding is always a claim about the current revision, and it carries the current
+revision's measurement. The `complete match -> complete nonmatch` row is the case where the entity is
+still present and the rule stopped firing: the finding's `evaluationStatus` is the current
+`COMPLETE_NONMATCH` (not the base's `COMPLETE_MATCH`), its `entityKey` and `location` are the current
+ones, and its evidence states both sides — `before` from the base, `after` and `delta` from the
+current. A resolution that published the base's value in the current slot would read as `CC 22 -> 22`
+and assert a match the revision does not have. The removal row is the one exception, and for a
+different reason: there is no current revision to measure, so its evidence states the base value as
+the base's and leaves `after` and `delta` absent rather than zero.
+
 ## Roles, suppressions and baseline
 
 `maintainability.roles` is an ordered list of `{pathRegex, role}` using full matching against

@@ -249,25 +249,6 @@
   both `@EnabledOnOs({OS.LINUX, OS.MAC})`), so restoring Windows also means deciding whether those
   guards become real support or stay skips.
 
-- **DEBT-16 — A `no-longer-matches` resolution publishes the base's value as the current one.** Found
-  2026-10-06 while adding the removed-entity pass (the recheck's A08). `FindingDeltaEvaluator` builds a
-  resolution for an entity that still exists but stopped matching with
-  `finding(rule, base, base, …)`, so `pairedEvidence` fills the current slot from the base evaluation's
-  own number. Reproduced: a method taken from CC 21 to CC 1 reports `before: 21.0, after: 21.0,
-  delta: 0.0` with `evaluationStatus: COMPLETE_MATCH` — the *base's* status — and both human writers
-  render the pair verbatim as `CC 21 → 21`. The current revision measured 1 and that value is discarded;
-  the report therefore states a measurement the code does not have, which is the substitution this
-  project's evidence contract exists to prevent.
-  The removed-entity path had the same shape and was fixed with it: `FindingEvidence.atBaseRevision()`
-  states a base value as the base's and leaves the current side empty (`18 → not measured`).
-  *Why this one is separate:* repairing it changes three emitted fields at once — the evidence, the
-  `evaluationStatus` (base's `COMPLETE_MATCH` → current `COMPLETE_NONMATCH`), and, for a moved entity,
-  the finding's `entityKey` (the base path → the current one) — so it is a contract change that deserves
-  its own commit and its own review, not a rider on a task about a missing record.
-  *What would close it:* pass the current evaluation as the finding's subject with the base as the
-  comparison side, and check the three fields against a fixture that moves a method and one that leaves
-  it in place. No golden covers a findings lifecycle, so nothing needs regenerating.
-
 - **DEBT-17 — The stderr warning order for unavailable metrics is not deterministic.** Found
   2026-10-06 while diffing two replays of the audit acceptance harness. Replaying
   `docs/plans/maintainability-linter/audits/2026-10-04/replay_acceptance.py` four times with one
@@ -279,7 +260,45 @@
   on the path that builds those warnings. *What would close it:* sort the warnings by metric code where
   they are collected, and pin the order in a test that runs the same fixture twice.
 
+- **DEBT-18 — A SARIF rule's `properties` object has no stable key order.** Found 2026-10-06 while
+  diffing two replays of the audit acceptance harness for the DEBT-16 fix. The `detect-sarif` case's
+  `properties` came out `{"maturity":…,"level":…}` in one replay and `{"level":…,"maturity":…}` in the
+  next, from two binaries that differ nowhere near `SarifReportWriter`. The cause is not the change under
+  review: the object is built by a two-entry `Map.of(...)`, and `ImmutableCollections` salts the
+  iteration order of `MapN` per JVM run. Demonstrated directly — printing
+  `Map.of("maturity","candidate","level","method")` from seven consecutive JVMs of the same JDK gave the
+  two orders in a 5/2 split. The values are identical and every consumer reads them by key, so nothing
+  downstream is wrong; what is wrong is that two runs over the same input produce byte-different
+  artifacts, which is the property `docs/RUN.md`'s reproducibility claims rest on. DEBT-17 is the same
+  class of problem in the stderr warning buffer. *What would close it:* build the properties map in a
+  `LinkedHashMap` in a declared order, or serialise the `properties` objects as sorted, and add a
+  determinism test that renders one report twice in separate JVMs and compares bytes.
+
 ## Resolved Debt Items
+- **DEBT-16 — A `no-longer-matches` resolution published the base's value as the current one.** Found
+  2026-10-06 while adding the removed-entity pass (the recheck's A08), **fixed 2026-10-06**.
+  `FindingDeltaEvaluator` built the resolution for an entity that still exists but stopped matching with
+  `finding(rule, base, base, …)` — the base evaluation in *both* slots, where the three branches around
+  it all pass `current` as the finding's subject and `base` as the comparison side. `pairedEvidence`
+  then filled the current slot from the base evaluation's own number. Reproduced against `7acafa1`: a
+  method taken from CC 22 to CC 2 reported `before: 22.0, after: 22.0, delta: 0.0` with
+  `evaluationStatus: COMPLETE_MATCH` — the *base's* status — and both human writers rendered the pair
+  verbatim as `CC 22 → 22`. The current revision had been measured at 2 and that value was discarded, so
+  the report stated a measurement the code did not have and a status asserting it still matched a rule
+  it had just stopped matching; a reader could not tell a simplification from a method nobody touched.
+  The fix passes the current evaluation as the subject. Three emitted fields move together, which is why
+  this was its own commit rather than a rider on the removal pass: the evidence (`22 → 22` becomes
+  `22 → 2`, delta `-20`), the `evaluationStatus` (base's `COMPLETE_MATCH` → current's
+  `COMPLETE_NONMATCH`), and — for an entity that moved *and* stopped matching — the finding's
+  `entityKey` (the base path → the current one), while `previousFingerprint` still names the base
+  counterpart for correlation. Nothing is re-measured: the evaluators only emit a nonmatch when every
+  input was measured, so the current value was always in hand.
+  Coverage: `FindingDeltaEvaluatorTest.stoppedMatchingResolvesWithTheCurrentMeasurement` and
+  `.aMovedEntityThatStoppedMatchingIsKeyedByWhereItIsNow`, plus the end-to-end
+  `MaintainabilityWorkflowTest$Resolution.simplifiedMethodResolvesWithTheCurrentMeasurement`. All three
+  fail on the old code and only those three. No golden covers a findings lifecycle, so nothing needed
+  regenerating. The audit acceptance harness has **no** case for this path, which is why the defect
+  survived it — the recheck's `removed-method` case covers the sibling removal, not this one.
 - **DEBT-14 — A one-sided threshold rejects a metric whose value is `0`.** Found 2026-09-17 in
   TASK-402, **fixed 2026-09-28 by ML-001**.
   `ConfigLoader.thresholds` filled an omitted bound with `Double.MIN_VALUE` / `Double.MAX_VALUE`, and

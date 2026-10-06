@@ -1,5 +1,76 @@
 # what has been done
 
+## Session: code that stopped matching is reported with the value that stopped it (2026-10-06)
+
+The sibling of the removal pass above, and the commit that entry promised. DEBT-16, reproduced against
+`7acafa1` before the fix. A method that is **still there** and no longer matches — the resolution a
+per-commit comparison reaches with no correspondence at all — is built by a different branch of
+`FindingDeltaEvaluator`, and that branch passed the base evaluation in *both* slots:
+
+```java
+findings.add(finding(rule, base, base, FindingLifecycle.RESOLVED, …));
+```
+
+Every other lifecycle row passes `current` as the finding's subject and `base` as the comparison side.
+This one did not, and the two consequences point the same way. `pairedEvidence` filled the current slot
+from the base's own number, and `finding(...)` takes the status and the key from whatever is in the
+subject slot, so the finding also carried the base's `COMPLETE_MATCH`.
+
+**Reproduced, end to end.** A method with 21 branches (CC 22, matching MT-M001's `CC >= 16`) simplified
+in place to one branch (CC 2) reported:
+
+```
+lifecycle: RESOLVED   dispositionReason: no-longer-matches
+evaluationStatus: COMPLETE_MATCH
+evidence: before 22.0, after 22.0, delta 0.0
+```
+
+and both human writers rendered it as `- CC: 22 → 22 (min 16)`. The current revision had been measured
+at 2; that measurement was taken and then thrown away, and the report stated one the code does not have.
+`COMPLETE_MATCH` is worse than the number: it asserts the revision still matches a rule it demonstrably
+does not, so a consumer reading the status alone would file the finding under the wrong lifecycle
+entirely. A reader had no way to tell a simplification from a method nobody had touched.
+
+**The fix is one argument.** `finding(rule, current, base, …)`, which is what the `INTRODUCED`,
+`WORSENED` and `EXISTING` branches already do. The pairing then fills the before side from the base and
+computes the delta, so nothing is re-measured and nothing is invented — and the evaluators only ever
+emit a nonmatch when *every* input was measured (both `MethodRuleEvaluator` and `ClassRuleEvaluator`
+return `unavailable` the moment one is missing), so the current value was always in hand. The base's key
+stays as the last argument: it is what `previousFingerprint` is derived from, and for an entity that
+moved and stopped matching the finding's own key is now the current path while the previous fingerprint
+still names the base — two genuinely different facts, and the reason this was a separate commit. Three
+emitted fields move at once: the evidence (`22 → 22` becomes `22 → 2`, delta `-20`), the
+`evaluationStatus` (`COMPLETE_MATCH` → `COMPLETE_NONMATCH`), and, for a moved entity, the `entityKey`.
+`REASON_NO_LONGER_MATCHES` is now a constant beside `REASON_ENTITY_REMOVED`, so the reason string has
+one definition rather than two.
+
+**Verification.** Three tests, all failing on the old code and only those three (checked by reverting
+just the branch while keeping the constant, so the tests still compile):
+`FindingDeltaEvaluatorTest.stoppedMatchingResolvesWithTheCurrentMeasurement` and
+`.aMovedEntityThatStoppedMatchingIsKeyedByWhereItIsNow`, plus the end-to-end
+`MaintainabilityWorkflowTest$Resolution.simplifiedMethodResolvesWithTheCurrentMeasurement`, which runs
+the gate with MT-M001 in `error` mode so a resolution misread as a live match would fail the build.
+`./gradlew check` green; goldens untouched, and none covers a findings lifecycle anyway.
+
+**The acceptance harness has no case for this path, and that is the finding worth keeping.** Replaying
+`docs/plans/maintainability-linter/audits/2026-10-04/replay_acceptance.py` against the pre-fix binary
+(`7acafa1`, in a detached worktree) and the fixed one produced **zero substantive differences** across
+all 35 observations: the only diffs were the fresh fixture commit SHAs, the temp directory in one parse
+message, and one JSON key order (below). The recheck's `removed-method` case covers the sibling removal
+and not this one, so a defect that rewrites three fields of a published finding was invisible to a
+35-case acceptance suite. That is a gap in the harness, not in the fix — the durable coverage is in the
+project's own suite, and the audit scripts are a record of the audited revision rather than a living
+test.
+
+**Found while doing this, not fixed here.** The `detect-sarif` preview differed between the two replays
+in the key order of a rule's `properties` object. It is not caused by this change and is not in the file
+this change touches: the object is built by a two-entry `Map.of(...)`, and `ImmutableCollections` salts
+`MapN`'s iteration order per JVM run. Demonstrated directly — seven consecutive JVMs of the same JDK
+printing `Map.of("maturity","candidate","level","method")` gave the two orders in a 5/2 split. The
+values are identical and consumers read them by key, so nothing downstream is wrong; what is wrong is
+that two runs over the same input produce byte-different artifacts. Tracked as DEBT-18, alongside DEBT-17
+which is the same class of problem in the stderr warning buffer.
+
 ## Session: a deleted method is reported as resolved, not as nothing (2026-10-06)
 
 The recheck's A08 residual, reproduced against `45b5927` before the fix. The audit's acceptance case

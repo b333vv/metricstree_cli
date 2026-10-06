@@ -331,6 +331,73 @@ class FindingDeltaEvaluatorTest {
     }
 
 
+    // ---------------------------------------------------------------- resolved
+
+    /**
+     * An entity that still exists and stopped matching publishes the measurement that stopped it.
+     *
+     * <p>This is the resolution a per-commit comparison can actually see: the method is still there,
+     * and the rule no longer fires on it. The current measurement is the entire reason the lifecycle
+     * changed, so reprinting the base's value instead reports "CC 21 \u2192 21" about a method that went
+     * from 21 to 1 \u2014 the same number on both sides of an arrow \u2014 and a status of
+     * {@code COMPLETE_MATCH}, which says the current revision matches a rule it demonstrably does not.
+     * A reader has no way to tell that from a method nobody touched.
+     */
+    @Test
+    void stoppedMatchingResolvesWithTheCurrentMeasurement() {
+        RuleEvaluation base = evaluate(cc(), key, values(MetricCode.CC, 21));
+        RuleEvaluation current = evaluate(cc(), key, values(MetricCode.CC, 1));
+        assertEquals(EvaluationStatus.COMPLETE_NONMATCH, current.status(),
+                "the current revision does not match the rule, which is why this is a resolution");
+
+        Finding finding = compare(base, current).findings().get(0);
+
+        assertEquals(FindingLifecycle.RESOLVED, finding.lifecycle());
+        assertEquals(FindingDisposition.RESOLVED, finding.disposition());
+        assertEquals(FindingDeltaEvaluator.REASON_NO_LONGER_MATCHES, finding.dispositionReason(),
+                "the reason says the code stopped matching, not that the entity went away");
+        assertEquals(EvaluationStatus.COMPLETE_NONMATCH, finding.evaluationStatus(),
+                "the finding describes the revision that stopped matching, not the one that did");
+
+        assertEquals(1, finding.evidence().size());
+        FindingEvidence evidence = finding.evidence().get(0);
+        assertEquals(MetricCode.CC, evidence.metric());
+        assertEquals(21.0, evidence.before(), "the value it had at the base");
+        assertEquals(1.0, evidence.after(),
+                "the value it has now, which is what stopped it matching");
+        assertEquals(-20.0, evidence.delta(), "and the change between the two");
+    }
+
+    /**
+     * A resolution is keyed by where the entity is now, and correlated to where it was.
+     *
+     * <p>An entity can move and stop matching at once. The finding then describes the entity as it
+     * exists at the current revision \u2014 its key and its measurement are the current ones \u2014 while the
+     * previous fingerprint still names the base counterpart, which is what a consumer correlates
+     * against. Keying it by the base instead files a resolution under a path the code no longer
+     * occupies, which is the same identity error the moved-entity correspondence exists to prevent.
+     */
+    @Test
+    void aMovedEntityThatStoppedMatchingIsKeyedByWhereItIsNow() {
+        EntityKey before = keyAt("src/legacy/Order.java");
+        EntityKey after = keyAt("src/main/java/app/Order.java");
+        EntityCorrespondence correspondence = EntityCorrespondence.between(
+                Set.of(before), Set.of(after),
+                Map.of("src/legacy/Order.java", "src/main/java/app/Order.java"));
+
+        Finding finding = evaluator.compare(cc(), evaluate(cc(), before, values(MetricCode.CC, 21)),
+                evaluate(cc(), after, values(MetricCode.CC, 1)), correspondence,
+                at("src/main/java/app/Order.java"), at("src/legacy/Order.java"))
+                .findings().get(0);
+
+        assertEquals(FindingLifecycle.RESOLVED, finding.lifecycle());
+        assertEquals(after, finding.entityKey(), "the entity is reported where it is now");
+        assertEquals(FindingFingerprint.of(cc().id(), cc().version(), before),
+                finding.previousFingerprint(), "and correlated to the debt it replaces");
+        assertEquals(1.0, finding.evidence().get(0).after(),
+                "the current value travels with the current key");
+    }
+
     // ---------------------------------------------------------------- correspondence
 
     /** An exact file move keeps the lifecycle instead of splitting into removed plus new. */

@@ -32,6 +32,9 @@ final class FindingDeltaEvaluator {
     /** The reason recorded when a finding exists at the base and its entity no longer does. */
     static final String REASON_ENTITY_REMOVED = "entity-removed";
 
+    /** The reason recorded when an entity still exists but the rule no longer fires on it. */
+    static final String REASON_NO_LONGER_MATCHES = "no-longer-matches";
+
     /** One lifecycle result plus whatever had to be said about how it was reached. */
     record Delta(List<Finding> findings, List<EvaluationIssue> issues) {
 
@@ -118,8 +121,24 @@ final class FindingDeltaEvaluator {
             findings.add(finding(rule, current, base, FindingLifecycle.INTRODUCED,
                     FindingDisposition.ACTIVE, null, location, baseLocation, base.entityKey(), role));
         } else if (baseMatched && !currentMatched) {
-            findings.add(finding(rule, base, base, FindingLifecycle.RESOLVED,
-                    FindingDisposition.RESOLVED, "no-longer-matches", location, baseLocation, base.entityKey(), role));
+            // The current evaluation is the finding's subject, exactly as it is in the three branches
+            // around it. This branch used to pass the base in both slots, and the two consequences were
+            // both wrong in the same direction: the report reprinted the base's value as the current
+            // one -- a method taken from CC 22 to CC 2 rendered as "CC 22 \u2192 22" in the JSON, the HTML
+            // and the agent report -- and the finding carried the base's COMPLETE_MATCH status, which
+            // asserts that the revision now matches the rule it just stopped matching.
+            //
+            // The measurement that ended the match is the one thing a reader needs to see, and the
+            // evaluator had already taken it. Pairing current against base fills the before side from
+            // the base and computes the delta, so nothing is re-measured and nothing is invented: this
+            // is the same pairing every other lifecycle row already gets.
+            //
+            // The base's key stays the last argument. It is what the previous fingerprint is derived
+            // from, and it is the correlation a consumer needs -- for a moved entity the finding's own
+            // key is the current one, so the two are genuinely different facts.
+            findings.add(finding(rule, current, base, FindingLifecycle.RESOLVED,
+                    FindingDisposition.RESOLVED, REASON_NO_LONGER_MATCHES, location, baseLocation,
+                    base.entityKey(), role));
         } else if (baseMatched) {
             if (isSignificantlyWorse(rule, base, current)) {
                 findings.add(finding(rule, current, base, FindingLifecycle.WORSENED,
