@@ -65,7 +65,7 @@ record FindingJsonReport(
                 report.settings().enforcement(),
                 summary,
                 comparison,
-                AnalysisView.of(report.analysis(), checkedCount(report)),
+                AnalysisView.of(report.analysis(), checkedCount(report), report.issues()),
                 views,
                 report.issues().stream().map(IssueView::of).toList(),
                 report.suppressions().stream().map(SuppressionView::of).toList());
@@ -207,13 +207,20 @@ record FindingView(
 }
 
 /**
- * What the analysis established about its own coverage.
+ * What this run established about its own coverage, and what it could not.
  *
  * <p>Required by the contract's v2 schema and, before this, absent: the findings report carried a
  * verdict and a list of findings with nothing about how much was looked at. That is the gap the audit's
  * A20 found from the outside -- a benchmark harness could not tell a run that analysed a project from
  * one that compared nothing, because the report did not say -- and it is the same gap for any consumer
  * reading the JSON.
+ *
+ * <p>The counts and the {@code issues} list describe the run, not the analysis alone: they are the same
+ * set the top-level {@code issues} array and the {@code summary} count, so all three agree. The set
+ * includes what the policy recorded about the base revision -- a per-entity {@code base-unreadable}
+ * beside the file-level {@code base-parse-error} that caused it -- which the completeness record on its
+ * own does not carry. Counting this block from the completeness record while the summary counted the
+ * report's list let one run publish {@code requiredGaps: 1} beside {@code requiredIssues: 2}.
  *
  * <p>Null rather than zero-filled when the caller has no analysis to report, so "nothing was measured"
  * and "measured nothing" stay distinguishable.
@@ -234,30 +241,37 @@ record AnalysisView(
         String execution,
         List<IssueView> issues) {
 
-    static AnalysisView of(AnalysisCompleteness analysis) {
-        return of(analysis, 0);
-    }
-
     /**
+     * There is deliberately one factory and not an {@code of(analysis)} convenience overload. The
+     * counts above are only true of a run whose issue list is passed in, and a caller that supplied
+     * the completeness record alone would get the answer this block used to give: a run with a
+     * required gap published as {@code "complete"} with {@code requiredGaps: 0}, which is the same
+     * class of disagreement between two documents that the counts were reconciled to remove. A
+     * factory that cannot be called correctly is better than one that can be called wrongly.
+     *
      * @param evaluatedChecks (rule, entity) evaluations this run completed, as counted by the policy
+     * @param runIssues       every issue the report carries, which is what the gap counts describe
      */
-    static AnalysisView of(AnalysisCompleteness analysis, int evaluatedChecks) {
+    static AnalysisView of(AnalysisCompleteness analysis, int evaluatedChecks,
+            List<EvaluationIssue> runIssues) {
         if (analysis == null) {
             return null;
         }
-        List<IssueView> issues = analysis.issues().stream()
-                .map(issue -> new IssueView(null, issue.reasonCode(), issue.message(),
-                        issue.required(),
-                        issue.file() == null ? null
-                                : new EntityKeyView(issue.file(), null, null),
-                        null))
-                .toList();
+        // The counts and the list come from the same source as the report's own `issues` array and its
+        // summary, so all three agree by construction. They used to be counted from the completeness
+        // record alone while `summary.requiredIssues` counted the report's list, and the two differ:
+        // the report restates every analysis-level gap and adds the ones the policy itself recorded,
+        // such as a per-entity `base-unreadable` beside the file-level `base-parse-error` that caused
+        // it. A run could therefore publish `requiredGaps: 1` beside `requiredIssues: 2` and give a
+        // reader no way to tell which of the two the verdict line had just quoted.
+        int required = (int) runIssues.stream().filter(EvaluationIssue::required).count();
+        int optional = runIssues.size() - required;
+        List<IssueView> issues = runIssues.stream().map(IssueView::of).toList();
         return new AnalysisView(
                 // "complete" only when nothing at all was missing, optional gaps included: a partial
                 // run that reported a gap and a complete run that happened to need no gap are
                 // different, and a reader deciding whether to trust a verdict needs the distinction.
-                analysis.issues().isEmpty() ? "complete"
-                        : (analysis.hasRequiredGaps() ? "incomplete" : "partial"),
+                runIssues.isEmpty() ? "complete" : (required > 0 ? "incomplete" : "partial"),
                 analysis.eligibleFiles(),
                 analysis.parsedFiles().size(),
                 analysis.excludedFiles(),
@@ -266,9 +280,9 @@ record AnalysisView(
                 // reading that means something: a reader who wants to know how much work produced
                 // these findings, and how much of it could not be completed, has no other way to ask.
                 evaluatedChecks,
-                analysis.issues().size(),
-                analysis.requiredGapCount(),
-                analysis.optionalGapCount(),
+                runIssues.size(),
+                required,
+                optional,
                 analysis.execution().name().toLowerCase(java.util.Locale.ROOT),
                 issues);
     }

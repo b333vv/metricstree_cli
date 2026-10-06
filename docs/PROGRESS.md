@@ -1,5 +1,92 @@
 # what has been done
 
+## Session: one run reports one number of required checks (2026-10-06)
+
+The counts work that the two entries below deferred, twice — once as "belongs to the A06/A10 work" and
+once as "belonging to the counts work". Both notes described the same defect from one side of it, and
+the defect turned out to have a second side that the notes did not mention.
+
+**The verdict counted a gap twice.** `GateCommand` computed the number of required checks that could
+not be evaluated as the completeness record's required count *plus* the report's required issues:
+
+```java
+int requiredGaps = completeness.requiredGapCount() + (maintainabilityReport == null ? 0
+        : (int) maintainabilityReport.issues().stream().filter(EvaluationIssue::required).count());
+```
+
+`policyIssues(completeness)` had already copied every analysis-level gap into the report's own list, so
+the two terms overlapped completely for that subset. The same gap was counted in both.
+
+**The analysis block counted a different set.** `FindingJsonReport.AnalysisView` derived its counts and
+its `issues` array from `AnalysisCompleteness` alone — a *subset* of what the report carries. The policy
+records issues of its own, such as a per-entity `base-unreadable` beside the file-level
+`base-parse-error` that caused it, and those never reach the completeness record. So while the verdict
+over-counted, the block that a reader opens to check the verdict under-counted.
+
+**Three surfaces, three numbers.** Reproduced before the fix with three fixtures:
+
+| fixture | verdict (stderr) | `summary.requiredIssues` | `analysis.requiredGaps` |
+| --- | --- | --- | --- |
+| `java-symlink` | 2 | 1 | 1 |
+| `unavailable-base` | 3 | 2 | 1 |
+| `gate-parse-status` | parse-error sentence | 1 | 1 |
+
+`unavailable-base` is the clearest: one run, three numbers, no two of which agreed. The stderr line is
+what a CI log shows, and the sentence it ends with is an instruction to open the report; a run whose log
+and whose artifact contradict each other is worse than either number alone, because the reader has no
+way to tell which one the rest of the tooling used. Nothing about the *status* was wrong — both terms
+were positive together, so PASSED/FAILED/INCOMPLETE was decided correctly throughout — the arithmetic
+was wrong only about how many.
+
+**The fix is to count once, from the superset.** The report's issue list contains everything the
+completeness record has (under the legacy policy it is exactly the completeness issues restated) plus
+whatever the policy itself could not evaluate. Both surfaces now derive from it:
+
+```java
+int requiredGaps = maintainabilityReport == null
+        ? completeness.requiredGapCount()
+        : (int) maintainabilityReport.issues().stream().filter(EvaluationIssue::required).count();
+int optionalGaps = maintainabilityReport == null
+        ? completeness.optionalGapCount()
+        : maintainabilityReport.issues().size() - requiredGaps;
+```
+
+and `AnalysisView.of(analysis, evaluatedChecks, runIssues)` takes that same list and computes
+`completeness`, `checksUnavailable`, `requiredGaps`, `optionalGaps` and its `issues` from it. The
+completeness record still supplies what only it knows — eligible, parsed and excluded file counts, and
+the execution mode. The one-argument factory `AnalysisView.of(analysis)` is deleted rather than left
+unused: with no issue list it would publish `"complete"` with `requiredGaps: 0` for a run that had a
+gap, which is the same disagreement this commit removes. A factory that cannot be called correctly is
+better than one that can be called wrongly, and it had no callers left.
+
+**A third defect in the same block, found on the way.** The analysis block built its issue entries by
+hand and put the file path in `entityKey`, where the top-level `issues` array puts it in `location`.
+Same cause — two independent constructions of one shape — and it is fixed by routing both through
+`IssueView.of`.
+
+**Compatibility.** Verdict counts change in every incomplete run: `java-symlink` now says "1 required
+check" instead of 2, `unavailable-base` "2 required checks" instead of 3. The optional count moves too,
+and by more: an advisory run carrying 4 `metric-unavailable-local` and 2 `optional-unavailable` issues
+now says "6 optional checks" where it said 2 — the 2 it counted were the completeness subset of the 6
+the report listed. Exit codes and statuses are unchanged everywhere, and `detect` is unaffected because
+it already counted the union once. The `analysis` block's numbers and `issues` array change for the same
+reason and to the same end.
+
+**Verification.** The new test `theVerdictAndTheReportCountTheSameGaps`
+(`MaintainabilityWorkflowTest$BaseReadability`) drives a base that does not parse, asserts the verdict
+line quotes the number the report carries, and asserts the analysis block and the summary agree — both
+assertions are load-bearing, checked by reverting each half of the fix on its own:
+
+- both production files reverted → fails on the analysis assertion, `analysis.requiredGaps: 1` against
+  `summary.requiredIssues: 5`;
+- only the verdict sum reverted → the analysis assertion passes and the verdict assertion fails, the
+  line reading `INCOMPLETE: 6 required checks` against `requiredIssues: 5`.
+
+`./gradlew check` green: **846 tests, 0 failures, 0 errors, 1 skipped** (the pre-existing benchmark),
+one more than the 845 recorded for the entry below, which is this test. JSON goldens untouched. The
+three fixtures re-run after the fix report `1/1/1`, `2/2/2` and `1/1/1` across verdict, summary and
+analysis block, and the advisory fixture `6/6/6` with `completeness: partial`.
+
 ## Session: code that stopped matching is reported with the value that stopped it (2026-10-06)
 
 The sibling of the removal pass above, and the commit that entry promised. DEBT-16, reproduced against
@@ -184,6 +271,11 @@ pre-existing and shows up in every incomplete run, not only this one; it belongs
 that reconciles the `analysis` block with `summary`, and is left there deliberately rather than folded
 into this change.
 
+*Closed in the entry at the top of this file, "one run reports one number of required checks". The count
+is now taken once, from the report's issue list — the superset this note identifies. That entry also
+found the other half: the `analysis` block was counting the completeness subset rather than the report's
+list, so it under-counted by exactly the amount the verdict over-counted.*
+
 ## Session: the AST window test proves the window is full instead of observing it (2026-10-06)
 
 Found by the clean-worktree step at `5eb356e`, where `java-metrics-lib:test` failed once on
@@ -317,6 +409,8 @@ disagree about how many required checks failed. `GateCommand` counts
 `completeness.requiredGapCount()` *plus* the required issues the completeness picture contributed to the
 policy report, so the same gap is counted twice — stderr said "2 required checks" where the report said
 `requiredIssues: 1`.
+
+*Closed in the entry at the top of this file, "one run reports one number of required checks".*
 
 ## Session: Windows out of CI, and the three defects that verifying macOS and Linux found (2026-10-06)
 

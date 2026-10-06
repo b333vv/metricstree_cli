@@ -596,10 +596,28 @@ final class GateCommand implements Callable<Integer> {
         int blockingCount = maintainabilityReport == null
                 ? 0
                 : maintainabilityReport.blocking().size();
-        int requiredGaps = completeness.requiredGapCount() + (maintainabilityReport == null
-                ? 0
+        // The run's gaps are the issues the report carries, counted once.
+        //
+        // It used to be `completeness.requiredGapCount() + the report's required issues`, which counted
+        // every analysis-level gap twice: `policyIssues(completeness)` had already restated each one in
+        // the report's own list, so the two terms overlapped completely for that subset. A run whose
+        // only change was an unsupported symlink printed "INCOMPLETE: 2 required checks" above a report
+        // whose summary, analysis block and issue list all said 1 -- the same gap, counted in two
+        // places, and the one document a CI log shows disagreed with the document it told the reader
+        // to open. An unreadable base printed 3 against 2.
+        //
+        // The report's list is the authority because it is the superset: under the legacy policy it is
+        // exactly the completeness issues restated, and under the maintainability policy it is those
+        // plus whatever the policy itself could not evaluate. Taking it whole gives one number for the
+        // verdict, the summary and the analysis block, and the status decision above is unchanged --
+        // both terms were positive together, so the arithmetic was wrong only about how many.
+        int requiredGaps = maintainabilityReport == null
+                ? completeness.requiredGapCount()
                 : (int) maintainabilityReport.issues().stream()
-                        .filter(EvaluationIssue::required).count());
+                        .filter(EvaluationIssue::required).count();
+        int optionalGaps = maintainabilityReport == null
+                ? completeness.optionalGapCount()
+                : maintainabilityReport.issues().size() - requiredGaps;
         boolean legacyDecides = maintainabilityReport == null;
         if (!parseErrors.isEmpty()
                 || blockingCount > 0
@@ -625,7 +643,7 @@ final class GateCommand implements Callable<Integer> {
         // cut off, and a config warning printed above it both hides the verdict and makes a
         // passing-looking build the first thing a reviewer sees.
         String verdict = verdictLine(status, violations, result.warnings(), subjectPaths.size(),
-                requiredGaps, completeness.optionalGapCount(), maintainabilityReport == null,
+                requiredGaps, optionalGaps, maintainabilityReport == null,
                 parseErrors.size(), blockingCount);
         stderr.println(verdict);
         stderr.flush();

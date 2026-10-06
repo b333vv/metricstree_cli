@@ -274,6 +274,19 @@
   `LinkedHashMap` in a declared order, or serialise the `properties` objects as sorted, and add a
   determinism test that renders one report twice in separate JVMs and compares bytes.
 
+- **DEBT-19 — The `unsupported-declaration` message uses a plural verb for a single declaration.** Found
+  2026-10-06 while writing the `analysis` block example in `docs/RUN.md`, from the real message a
+  one-enum file produces: `app/Colour.java declares 1 enum are not analysed as classes or methods, so it
+  was not fully analyzed`. `SyntaxSupport` builds the reason correctly, choosing `1 enum` against
+  `2 enums` (line 92), and then joins it to a fixed `" are not analysed as classes or methods"` (line
+  109) — so the verb agrees with the noun it is next to rather than with the count, and every
+  single-item reason reads wrong while multi-item ones read right. The string is user-visible in the
+  JSON, HTML and agent-Markdown reports. It is wording only: the reason code, the `required` flag and
+  the counts are untouched, and the tests and the documented contract match on the reason code rather
+  than the prose, which is why this never failed anything. *What would close it:* pick the verb and the
+  nouns from the same count — singular only when the reason is one item of one — and add a case for the
+  singular form beside the existing plural one.
+
 ## Resolved Debt Items
 - **DEBT-16 — A `no-longer-matches` resolution published the base's value as the current one.** Found
   2026-10-06 while adding the removed-entity pass (the recheck's A08), **fixed 2026-10-06**.

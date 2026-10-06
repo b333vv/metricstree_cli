@@ -1081,13 +1081,32 @@ and an additive `analysis` block saying what could not be evaluated at all:
 
 ```json
 "analysis": {
+  "completeness": "incomplete",
+  "eligibleFiles": 2, "analyzedFiles": 1, "excludedFiles": [],
+  "checksEvaluated": 0, "checksUnavailable": 1, "requiredGaps": 1, "optionalGaps": 0,
+  "execution": "ordered",
   "issues": [
-    { "reasonCode": "unsupported-declaration", "file": "app/Colour.java", "required": true,
-      "message": "app/Colour.java declares 1 enum, which are not analysed as classes or methods" }
-  ],
-  "eligibleFiles": 2, "excludedFiles": [], "parsedFiles": ["app/Demo.java"]
+    { "ruleId": null, "reasonCode": "unsupported-declaration", "required": true,
+      "message": "app/Colour.java declares 1 enum are not analysed as classes or methods, so it was not fully analyzed",
+      "entityKey": null,
+      "location": { "path": "app/Colour.java", "startLine": 1, "endLine": 1, "column": null } }
+  ]
 }
 ```
+
+`eligibleFiles` is how many Java paths the run selected, `analyzedFiles` how many of them it actually
+read, and `excludedFiles` what `--exclude-file` removed. The remaining counts describe the gaps:
+`requiredGaps` and `optionalGaps` are the required and optional entries in this block's `issues`,
+`checksUnavailable` is their sum, and `checksEvaluated` is the (rule, entity) evaluations that did
+complete. `completeness` is `complete` only when `issues` is empty, `incomplete` when any gap is
+required, and `partial` when they are all optional — a run that reported an optional gap and a run that
+happened to need none are different, and a reader deciding whether to trust a verdict needs the
+difference.
+
+Every one of those numbers is counted from the same issue list the top-level `issues` array and
+`summary.requiredIssues` carry, so the verdict line on stderr, the summary and this block always state
+one number for one run. An issue names either an `entityKey` (a class or method) or a `location` (a
+file), never a file path in the entity field.
 
 The JSON, HTML and agent-Markdown reports all carry this, and all three name the stable reason code so a
 consumer can match on it rather than on prose.

@@ -630,6 +630,54 @@ class MaintainabilityWorkflowTest {
             findings.forEach(finding -> out.add(finding.get("lifecycle").asText()));
             return out;
         }
+
+        /**
+         * The verdict line, the summary and the analysis block state the same number of gaps.
+         *
+         * <p>Three surfaces answer "how many required checks could not be evaluated", and they gave
+         * three different answers for this fixture: the verdict counted the analysis-level gaps and
+         * then added the report's required issues, which already contained them, so it reported one
+         * more than the summary (3 against 2); and the analysis block counted only the analysis-level
+         * subset, so it reported fewer than both (1). Each number was defensible alone and no two of
+         * them agreed.
+         *
+         * <p>The stderr line is what a CI log shows and it tells the reader to open the report. Two
+         * documents disagreeing about the same run is worse than either one, so the count is computed
+         * once -- from the issue list the report carries, which is the superset -- and every surface
+         * states it.
+         */
+        @Test
+        @DisplayName("the verdict line and the report agree on how many checks could not run")
+        void theVerdictAndTheReportCountTheSameGaps() throws Exception {
+            GitFixture git = fixture().init();
+            git.write(SOURCE, withBranches(2));
+            git.commitAll("base that parses");
+            git.write(SOURCE, "package app;\n/* unterminated\npublic class Order {}");
+            commitLocally(git, "unparseable base");
+            git.write(SOURCE, withBranches(30));
+            commitLocally(git, "complex but the base was never readable");
+
+            Path report = repo.resolve("gap-counts.json");
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            int exit = gateWithReport(report, err, "--base", "HEAD~1", "--policy", "maintainability",
+                    "--enforcement", "enforce");
+
+            JsonNode written = mapper.readTree(Files.readString(report));
+            int required = written.get("summary").get("requiredIssues").asInt();
+            String verdict = err.toString(StandardCharsets.UTF_8).lines().findFirst().orElse("");
+
+            assertTrue(required > 0, "this fixture is chosen for having a required gap: " + written);
+            assertEquals(required, written.get("analysis").get("requiredGaps").asInt(),
+                    "the analysis block and the summary describe the same run: " + written);
+            assertTrue(verdict.contains(required + " required check"),
+                    "and the line the CI log shows quotes the same number as the report it points at."
+                            + " Verdict was [" + verdict + "] against requiredIssues " + required);
+            assertEquals(written.get("summary").get("issues").asInt(),
+                    written.get("analysis").get("checksUnavailable").asInt(),
+                    "every issue the report carries is one check that could not be evaluated: "
+                            + written);
+            assertEquals(2, exit, "and the exit code still says incomplete: " + verdict);
+        }
     }
 
     @Nested
