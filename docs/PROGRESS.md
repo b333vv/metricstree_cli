@@ -1,5 +1,58 @@
 # what has been done
 
+## Session: the recorded evaluation results describe the corpus that ships (2026-10-06)
+
+The last piece of A21's identity work, and the one that was publishing a false claim. The committed
+`evaluation/results/*.json` had not been regenerated since before the corpus was fixed, so they
+described a run over fixtures that do not parse, by a CLI revision that emitted findings the current
+tool does not.
+
+**What the committed files said.** `run.json` recorded `deep-nesting-flags` with no findings at all
+and listed `NOT_MATCHED` entries for three other cases; the current CLI emits neither. The summary
+carried the empty finding list through as a miss:
+
+```
+committed  MT-M002: 1/2 = 0.500    missed: [deep-nesting-flags]
+fresh      MT-M002: 2/2 = 1.000    missed: []
+```
+
+**And the README published the conclusion drawn from it.** Its "Recorded results" section read:
+"`deep-nesting-flags` was not flagged. Eight levels of nesting did not trip MT-M002. Either the
+threshold is wrong or the metric is not measuring what the rule assumes, and both are worth knowing."
+That is a claim about the *rule*, drawn from a fixture whose Java did not parse — the exact defect A21
+was raised for. The rule had never been asked about that case: the harness counted the refusal as a
+miss and the document read the number at face value.
+
+**The fix is a regeneration and a guard.** Both result files are regenerated against the CLI built at
+this revision, and the README's table and narrative are replaced. MT-M002 now agrees on both of its
+cases, and the case that remains interesting is `generated-dispatch-table` — the 30-case `switch`
+MT-M001 flags, which is the counterexample the corpus exists for, recorded under
+`flaggedWithoutExpectation` rather than averaged away.
+
+**The guard is a corpus digest.** A result file that does not say which corpus it is about cannot be
+checked, and cannot be seen to have gone stale — which is how this one survived. `run_corpus` now
+records a digest over the case documents it ran, the summary carries it through, and `RecordedResults`
+asserts that the committed run describes the committed cases and that the committed summary describes
+the committed run. Editing a fixture without regenerating now fails a test instead of quietly leaving
+a document that claims to be about it.
+
+**Verification.** Three tests, and two sabotages. A content-insensitive digest — hashing only the case
+ids — fails exactly `test_the_recorded_run_describes_the_committed_corpus` and
+`test_the_digest_changes_when_a_case_changes`. Drift between the two artifacts fails exactly
+`test_the_summary_describes_the_recorded_run`; that one is an invariant between two committed files
+rather than a code behaviour, so it was checked by making `summary.json` stale rather than by editing
+the code, which is the honest way to show it can fail. The evaluation suite goes from 70 tests to 73.
+
+The run is deterministic: two consecutive runs of the harness produce byte-identical `run.json`, which
+is what makes committing it safe. `./gradlew check` green at **849 tests, 0 failures, 1 skipped** —
+unchanged, this is a Python-only change.
+
+**Still open under A21.** The summarizer's agreement rate is counted before duplicate grouping, so the
+README's "Groups are deduplicated before counting" is not yet true of its headline number —
+`deduplicate` is applied to review effort only. Labels still carry `should-flag` outcomes rather than
+finding fingerprints and actionable/valid-not-actionable judgments. And the runner still discards the
+raw report when a case's temporary repository closes, retaining only the four-field summary.
+
 ## Session: a case names the project it came from (2026-10-06)
 
 The recheck's A21 row lists five things. The PMD adapter's crash was fixed in `e8ecbdd` and the

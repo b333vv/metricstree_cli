@@ -129,8 +129,10 @@ def summarize(record: dict, labels: dict) -> dict:
     """The whole summary: what was measured, what was not, and what cannot be concluded."""
     comparison = compare(record, labels)
 
-    # A corpus's own size, stated so the denominators can be read against it.
+    # A corpus's own size, stated so the denominators can be read against it -- and its identity,
+    # so a summary that no longer describes the cases that ship can be seen to be one.
     corpus = {
+        "digest": record["corpus"]["digest"],
         "casesRun": len(record["cases"]),
         "casesLabelled": len(labels),
         "splits": {

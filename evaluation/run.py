@@ -381,6 +381,24 @@ def tool_version(cli: Path) -> str:
     return first[0].removeprefix("java-metrics-cli ").strip()
 
 
+def corpus_digest(cases: Sequence[dict]) -> str:
+    """A stable identity for the exact set of cases a run was over.
+
+    The record has to say which corpus produced it, or a reader cannot tell whether the numbers
+    still describe the cases that ship. Editing one fixture leaves the old file claiming to be
+    about the new corpus, and nothing in either document says otherwise. That is how the recorded
+    MT-M002 rate came to be a measurement of an unbalanced brace: the fixture's Java did not parse,
+    the runner counted the refusal as a miss, the fixture was fixed, and the result file -- which
+    says "1 of 2" and names no corpus -- was not regenerated.
+
+    The digest covers the case documents in the order they were loaded, canonicalised, so it changes
+    when a case changes and does not change when a file merely moves.
+    """
+    import hashlib
+    canonical = json.dumps(list(cases), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def run_corpus(cli: Path, cases: Sequence[dict], pmd: Path | None, pmd_ruleset: Path | None,
                workdir: Path) -> dict:
     """Run every case and return the raw record. No conclusions live here."""
@@ -393,6 +411,12 @@ def run_corpus(cli: Path, cases: Sequence[dict], pmd: Path | None, pmd_ruleset: 
     return {
         "schemaVersion": "v1",
         "toolVersion": tool_version(cli),
+        "corpus": {
+            "digest": corpus_digest(cases),
+            "cases": len(cases),
+            "note": "Which cases this run was over. A result that does not say so cannot be checked "
+                    "against the corpus that ships, and cannot be seen to have gone stale.",
+        },
         "pmd": {
             "status": "ok" if pmd is not None and Path(pmd).exists() else "unavailable",
             "path": str(pmd) if pmd else None,

@@ -136,6 +136,7 @@ class Rates(unittest.TestCase):
         return {
             "schemaVersion": "v1",
             "toolVersion": "1.2.3",
+            "corpus": {"digest": "0" * 64, "cases": 1, "note": ""},
             "pmd": {"status": "unavailable", "path": None, "note": ""},
             "cases": [{
                 "case_id": "c1", "split": "tuning", "status": case_status,
@@ -213,6 +214,7 @@ class Pmd(unittest.TestCase):
     def test_a_missing_pmd_is_reported_as_unavailable_in_the_summary(self):
         record = {
             "schemaVersion": "v1", "toolVersion": "1.0",
+            "corpus": {"digest": "0" * 64, "cases": 0, "note": ""},
             "pmd": {"status": "unavailable", "path": None, "note": ""},
             "cases": [],
         }
@@ -346,6 +348,46 @@ class ReviewForms(unittest.TestCase):
         text = form.read_text(encoding="utf-8")
         self.assertIn("sampled", text.lower())
         self.assertIn("disagree", text.lower())
+
+
+class RecordedResults(unittest.TestCase):
+    """The committed results must describe the corpus that is committed.
+
+    A result file that does not say which corpus it is about cannot be checked, and the one that
+    shipped proved it: it recorded ``deep-nesting-flags`` as an MT-M002 miss, because the fixture's
+    Java did not parse and the runner counted the refusal as a miss. The fixture was fixed and the
+    file was not regenerated, so the README published a conclusion about the rule drawn from a typo.
+    The digest makes that state visible instead of silent.
+    """
+
+    def _committed(self, name):
+        return json.loads((_ROOT / "evaluation" / "results" / name).read_text(encoding="utf-8"))
+
+    def test_the_recorded_run_describes_the_committed_corpus(self):
+        cases = runner.load_cases(_ROOT / "evaluation" / "cases")
+        recorded = self._committed("run.json")
+        self.assertEqual(
+            runner.corpus_digest(cases), recorded["corpus"]["digest"],
+            "evaluation/results/run.json was produced from cases other than the ones that ship. "
+            "Regenerate it and the summary: python3 evaluation/run.py --cli <built launcher> "
+            "--out evaluation/results/run.json, then python3 evaluation/summarize.py --run "
+            "evaluation/results/run.json --out evaluation/results/summary.json")
+
+    def test_the_summary_describes_the_recorded_run(self):
+        run = self._committed("run.json")
+        summary = self._committed("summary.json")
+        self.assertEqual(summary["corpus"]["digest"], run["corpus"]["digest"])
+        self.assertEqual(summary["toolVersion"], run["toolVersion"])
+        self.assertEqual(summary["corpus"]["casesRun"], len(run["cases"]))
+
+    def test_the_digest_changes_when_a_case_changes(self):
+        # The guard is only worth having if it can fail: a digest that ignored the case content
+        # would pass on any corpus, which is the state it exists to detect.
+        cases = runner.load_cases(_ROOT / "evaluation" / "cases")
+        before = runner.corpus_digest(cases)
+        edited = json.loads(json.dumps(cases))
+        edited[0]["changes"][0]["content"] += "\n"
+        self.assertNotEqual(before, runner.corpus_digest(edited))
 
 
 class RepositoryLeakage(unittest.TestCase):

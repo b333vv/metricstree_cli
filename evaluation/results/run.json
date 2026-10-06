@@ -1,29 +1,14 @@
 {
   "cases": [
     {
-      "blocking": 1,
+      "blocking": 0,
       "case_id": "branchy-method-flags",
-      "exit_code": 1,
+      "exit_code": 0,
       "findings": [
         {
           "disposition": "ACTIVE",
           "ruleId": "MT-M001",
           "signature": "route(int)"
-        },
-        {
-          "disposition": "NOT_MATCHED",
-          "ruleId": "MT-M001",
-          "signature": null
-        },
-        {
-          "disposition": "NOT_MATCHED",
-          "ruleId": "MT-M002",
-          "signature": null
-        },
-        {
-          "disposition": "NOT_MATCHED",
-          "ruleId": "MT-M003",
-          "signature": null
         }
       ],
       "pmd_exit_code": null,
@@ -39,21 +24,25 @@
       "blocking": 0,
       "case_id": "clean-method-stays-quiet",
       "exit_code": 0,
+      "findings": [],
+      "pmd_exit_code": null,
+      "pmd_findings": [],
+      "pmd_status": "not-run",
+      "pmd_version": "",
+      "problems": [],
+      "split": "tuning",
+      "status": "ok",
+      "tool_version": "2026.0.0"
+    },
+    {
+      "blocking": 0,
+      "case_id": "deep-nesting-flags",
+      "exit_code": 0,
       "findings": [
         {
-          "disposition": "NOT_MATCHED",
-          "ruleId": "MT-M001",
-          "signature": null
-        },
-        {
-          "disposition": "NOT_MATCHED",
+          "disposition": "ACTIVE",
           "ruleId": "MT-M002",
-          "signature": null
-        },
-        {
-          "disposition": "NOT_MATCHED",
-          "ruleId": "MT-M003",
-          "signature": null
+          "signature": "route(int)"
         }
       ],
       "pmd_exit_code": null,
@@ -67,22 +56,8 @@
     },
     {
       "blocking": 0,
-      "case_id": "deep-nesting-flags",
-      "exit_code": 1,
-      "findings": [],
-      "pmd_exit_code": null,
-      "pmd_findings": [],
-      "pmd_status": "not-run",
-      "pmd_version": "",
-      "problems": [],
-      "split": "tuning",
-      "status": "ok",
-      "tool_version": "2026.0.0"
-    },
-    {
-      "blocking": 1,
       "case_id": "generated-dispatch-table",
-      "exit_code": 1,
+      "exit_code": 0,
       "findings": [
         {
           "disposition": "ACTIVE",
@@ -103,23 +78,7 @@
       "blocking": 0,
       "case_id": "small-branchy-method-stays-quiet",
       "exit_code": 0,
-      "findings": [
-        {
-          "disposition": "NOT_MATCHED",
-          "ruleId": "MT-M001",
-          "signature": null
-        },
-        {
-          "disposition": "NOT_MATCHED",
-          "ruleId": "MT-M002",
-          "signature": null
-        },
-        {
-          "disposition": "NOT_MATCHED",
-          "ruleId": "MT-M003",
-          "signature": null
-        }
-      ],
+      "findings": [],
       "pmd_exit_code": null,
       "pmd_findings": [],
       "pmd_status": "not-run",
@@ -130,6 +89,11 @@
       "tool_version": "2026.0.0"
     }
   ],
+  "corpus": {
+    "cases": 5,
+    "digest": "f033b619e0b0591f9779275130ab4340c406a0c5e590671284d00429236c2215",
+    "note": "Which cases this run was over. A result that does not say so cannot be checked against the corpus that ships, and cannot be seen to have gone stale."
+  },
   "pmd": {
     "note": "No PMD was supplied, so no comparison is reported. An absent comparator is recorded as absent; it is never an empty list of findings.",
     "path": null,

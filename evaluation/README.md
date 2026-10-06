@@ -28,28 +28,45 @@ Nothing is downloaded. The CLI is a path you supply; a PMD executable, if you wa
 another path you supply. There is no fetch step anywhere, so a result is a property of what was given
 rather than of what happened to be reachable.
 
+`run.json` records a digest of the exact cases it was over. Edit a fixture or a label and the
+committed result no longer describes the corpus that ships, so regenerate both files in the same
+change; a test fails if you do not.
+
 ## Recorded results
 
-From `evaluation/results/`, against tool version recorded in the file:
+From `evaluation/results/`, against the tool version recorded in the file:
 
 | Rule | Agreed | Rate |
 |---|---|---|
 | MT-M001 (complexity) | 2 of 3 | 0.667 |
-| MT-M002 (nesting) | 1 of 2 | 0.500 |
+| MT-M002 (nesting) | 2 of 2 | 1.000 |
 
-**Both of those numbers are small, and the denominators are in the summary for a reason.** Three
-labelled cases is not a measurement of anything; it is a check that the plumbing works and a place
-to start.
+**Both of those numbers are small, and the denominators are in the summary for a reason.** Five
+labelled cases is not a measurement of anything; it is a check that the plumbing works and a place to
+start. Neither rate is population recall, and no maintainer has looked at any of it.
 
-The run also found the two things the corpus was built to find:
+One case is the counterexample the corpus exists for, and it is the one thing the run found:
 
-- **`generated-dispatch-table` was flagged.** A 30-case `switch` is exactly what MT-M001 sees, and
-  it is not a defect. This is the counterexample the corpus exists for: without it, the corpus would
-  only ever have proved the tool can count branches.
-- **`deep-nesting-flags` was not flagged.** Eight levels of nesting did not trip MT-M002. Either the
-  threshold is wrong or the metric is not measuring what the rule assumes, and both are worth knowing.
+- **`generated-dispatch-table` was flagged.** A 30-case `switch` is exactly what MT-M001 sees, and it
+  is not a defect. Without it the corpus would only ever have proved the tool can count branches. It
+  is recorded under `flaggedWithoutExpectation` rather than averaged away.
 
-Neither is a defect in the harness. They are the harness working.
+### A claim this section used to make, and why it was wrong
+
+An earlier version of this section reported that `deep-nesting-flags` was **not** flagged, and
+concluded that "either the threshold is wrong or the metric is not measuring what the rule assumes".
+That conclusion was drawn from a defect in the harness, not from the tool.
+
+The fixture's Java did not parse — eight opening braces and seven closing ones — so the gate correctly
+refused to judge it and produced no findings. The runner accepted that refusal as a usable result,
+recorded the case as `ok` with no problems, and the summarizer counted the empty finding list as
+MT-M002 having missed the case. The recorded MT-M002 rate was therefore partly a measurement of the
+typo.
+
+Both halves are fixed: an unanalysable case is now missing data, excluded from every rate with its
+reason recorded, and the fixture is valid Java. MT-M002 now agrees on both of its cases. The old
+number and the conclusion built on it are withdrawn rather than reconciled, because there was nothing
+to reconcile — the rule had never been asked.
 
 ## What the numbers mean
 
