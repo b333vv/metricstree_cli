@@ -117,6 +117,11 @@ runs:
         work="$RUNNER_TEMP/metricstree-cli"
 
         if [ -n "$INPUT_CLI_PATH" ]; then
+          echo "CLI probe: path='$INPUT_CLI_PATH'" >&2
+          echo "CLI probe: exists=$([ -e "$INPUT_CLI_PATH" ] && echo yes || echo no)" >&2
+          echo "CLI probe: executable=$([ -x "$INPUT_CLI_PATH" ] && echo yes || echo no)" >&2
+          echo "CLI probe: ls='$(ls -ld "$INPUT_CLI_PATH" 2>&1)'" >&2
+          echo "CLI probe: stat='$(stat -c '%a %U:%G %s %n' "$INPUT_CLI_PATH" 2>&1)'" >&2
           if [ ! -x "$INPUT_CLI_PATH" ]; then
             echo "Error: cli-path was set to '$INPUT_CLI_PATH', which is not an executable file." >&2
             echo "Point it at a java-metrics-cli launcher or at a self-contained jar's java." >&2
