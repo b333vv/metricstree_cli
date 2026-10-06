@@ -68,6 +68,17 @@ def load_cases(directory: Path) -> list[dict]:
                 f"and a corpus whose ids only sort of match cannot be looked up in a result.")
         if case["split"] not in ("tuning", "holdout"):
             raise EvaluationError(f"{path.name}: split must be tuning or holdout")
+        project = case["project"]
+        if not isinstance(project, dict) or not str(project.get("id", "")).strip():
+            raise EvaluationError(
+                f"{path.name}: no project recorded. Split validation is project-level, so a case "
+                f"that does not say which project it came from cannot be checked against the split "
+                f"it is in -- and a holdout drawn from a project the tuning split used is not a "
+                f"holdout, however different the individual files are.")
+        if not _matches(project["id"], id_pattern):
+            raise EvaluationError(
+                f"{path.name}: project id {project['id']!r} is malformed. Split validation compares "
+                f"these ids, so they have to be equal rather than nearly equal.")
         provenance = case["provenance"]
         if not provenance.get("license", "").strip():
             raise EvaluationError(
@@ -99,15 +110,39 @@ def _reject_split_leakage(cases: Sequence[dict]) -> None:
     holdout. This is refused rather than warned about: the whole value of a holdout is that it is
     intact.
 
-    Identity is checked at two strengths, because content alone is the weaker test. Two cases can
-    share no bytes and still be the same problem: a repository contributes its own naming, its own
-    idiom and its own distribution of shapes, and a threshold tuned on one case in it is tuned on
-    all of them. So a repository appearing in both splits is refused even when no file is shared --
-    which is the case the content check passed, and the one it was least equipped to see.
+    Identity is checked at three strengths, because each one is blind to what the next can see.
+
+    *Content* is the weakest. Two cases can share no bytes and still be the same problem, so
+    passing it proves little.
+
+    *Repository* is the materialised fixture: its naming, its idiom, its distribution of shapes. A
+    threshold tuned on one case inside it is tuned on all of them. But the repository is built from
+    the case, so a project whose cases were each written down as a different repository is invisible
+    here -- which is the shape a real project takes, since a case is a change to a file and not the
+    whole tree.
+
+    *Project* is the codebase the sources came from, and it is the only identity that survives a
+    case being materialised differently. Without it, two cases from one project pass every other
+    check, and the recheck recorded exactly that: the same project accepted across tuning and
+    holdout. The field is required rather than optional, because an optional one is one nobody sets
+    and a check nobody can fail is not a check.
     """
     groups: dict[str, str] = {}
     repositories: dict[str, tuple[str, str]] = {}
+    projects: dict[str, tuple[str, str]] = {}
     for case in cases:
+        # The project is a plain string, so it needs no canonicalisation: two spellings of one
+        # project are two projects, which is the answer a required, pattern-checked id gives.
+        project = case["project"]["id"]
+        previous = projects.get(project)
+        if previous and previous[0] != case["split"]:
+            raise EvaluationError(
+                f"split leakage: the same project {project!r} appears in both '{previous[0]}'"
+                f" ({previous[1]}) and '{case['split']}' ({case['id']}). A project contributes its"
+                f" own idiom, so a threshold tuned on one case in it is tuned on all of them,"
+                f" however different the individual files and repositories are.")
+        projects.setdefault(project, (case["split"], case["id"]))
+
         # Canonical form, because `repository` is a structure and structures are not hashable.
         # Sorting the keys makes two spellings of the same fixture compare equal.
         repository = json.dumps(case["repository"], sort_keys=True)

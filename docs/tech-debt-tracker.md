@@ -300,6 +300,19 @@
   bare word as a boolean"). *What would close it:* choose one of those, and document the mode values —
   `docs/` currently never mentions `off` at all.
 
+- **DEBT-21 — An evaluation case records no roots/classpath digest and no configuration identity.**
+  Found 2026-10-06 while fixing the other half of the same sentence: the recheck's A21 said the case
+  schemas "lack project ID, roots/classpath digest and configuration identity". The project identity is
+  now required and the split check compares it; the other two are still absent. A case says which project
+  its sources came from but not what the tool was pointed at — the source roots, the classpath — or which
+  configuration the comparison ran under, so two runs of one case with different inputs would be
+  indistinguishable in the record. Nothing computes either today: `evaluation/run.py` invokes one fixed
+  `gate` command for every case, so the configuration is a property of the harness rather than of the
+  case, and a required field nothing fills would be dead weight. *What would close it:* let a case
+  declare its roots/classpath and configuration digest, and refuse a corpus in which a case's declared
+  inputs disagree with what the runner used — which only means something once the runner stops running
+  one fixed command for every case.
+
 ## Resolved Debt Items
 - **DEBT-16 — A `no-longer-matches` resolution published the base's value as the current one.** Found
   2026-10-06 while adding the removed-entity pass (the recheck's A08), **fixed 2026-10-06**.

@@ -32,10 +32,11 @@ summarizer = _load("evaluation_summarize", "evaluation/summarize.py")
 
 
 def _case(case_id, split="tuning", license_="CC0", content="class A { void f() {} }",
-          path="src/main/java/app/A.java"):
+          path="src/main/java/app/A.java", project="fixture-project"):
     return {
         "id": case_id,
         "split": split,
+        "project": {"id": project},
         "provenance": {"origin": "synthetic", "license": license_, "revision": None},
         "repository": {"files": [path]},
         "changes": [{"path": path, "edit": "replace", "content": content}],
@@ -72,14 +73,35 @@ class CorpusValidation(unittest.TestCase):
 
     def test_split_leakage_rejected(self):
         # The same code in both splits means whatever was tuned on it is now being evaluated on it,
-        # and the holdout stops being a holdout. Refused, not warned about.
+        # and the holdout stops being a holdout. Refused, not warned about. Different projects, so
+        # the content digest is the only thing that can fire -- this test is about content.
         shared = "class Shared { void f() {} }"
         with tempfile.TemporaryDirectory() as tmp:
-            _write(tmp, _case("tuned", "tuning", content=shared))
-            _write(tmp, _case("held-out", "holdout", content=shared))
+            _write(tmp, _case("tuned", "tuning", content=shared, project="project-a"))
+            _write(tmp, _case("held-out", "holdout", content=shared, project="project-b"))
             with self.assertRaises(runner.EvaluationError) as caught:
                 runner.load_cases(Path(tmp))
         self.assertIn("leakage", str(caught.exception).lower())
+
+    def test_a_case_must_name_its_project(self):
+        # Split validation is project-level, so a case that does not say which project it came from
+        # cannot be checked against the split it is in. Required rather than optional: an optional
+        # field is one nobody sets, and a check nobody can fail is not a check.
+        with tempfile.TemporaryDirectory() as tmp:
+            case = _case("anonymous-project")
+            del case["project"]
+            _write(tmp, case)
+            with self.assertRaises(runner.EvaluationError) as caught:
+                runner.load_cases(Path(tmp))
+        self.assertIn("project", str(caught.exception))
+
+    def test_a_malformed_project_id_is_refused(self):
+        # The ids are compared for equality, so they have to be equal rather than nearly equal.
+        with tempfile.TemporaryDirectory() as tmp:
+            _write(tmp, _case("odd-project", project="Not A Project Id"))
+            with self.assertRaises(runner.EvaluationError) as caught:
+                runner.load_cases(Path(tmp))
+        self.assertIn("malformed", str(caught.exception))
 
     def test_the_bundled_corpus_loads(self):
         cases = runner.load_cases(_ROOT / "evaluation" / "cases")
@@ -326,23 +348,20 @@ class ReviewForms(unittest.TestCase):
         self.assertIn("disagree", text.lower())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class RepositoryLeakage(unittest.TestCase):
     """Two splits may not draw from the same repository, even without shared content.
 
-    The existing check compares content digests, so two cases sharing no bytes pass -- which is
-    right and is not enough. A repository contributes its own naming, idiom and distribution of
-    shapes, so a threshold tuned on one case inside it is tuned on all of them. The recheck
-    recorded that two cases from one project were accepted across tuning and holdout.
+    The content check compares digests, so two cases sharing no bytes pass -- which is right and is
+    not enough. A repository contributes its own naming, idiom and distribution of shapes, so a
+    threshold tuned on one case inside it is tuned on all of them. The recheck recorded that two
+    cases from one project were accepted across tuning and holdout.
     """
 
-    def _case(self, case_id, split, repository, content):
+    def _case(self, case_id, split, repository, content, project="repo-project"):
         return {
             "id": case_id,
             "split": split,
+            "project": {"id": project},
             "provenance": {"origin": "synthetic", "license": "CC0-1.0"},
             "repository": repository,
             "changes": [{
@@ -362,24 +381,46 @@ class RepositoryLeakage(unittest.TestCase):
             shutil.rmtree(tmp)
 
     def test_same_repository_across_splits_is_rejected(self):
+        # Different projects, so the repository is the only identity that can fire here: two
+        # projects can hold identically shaped fixtures, and the fixture is what leaks.
         repository = {"files": ["src/main/java/app/Calculator.java"]}
         with self.assertRaises(runner.EvaluationError) as caught:
             self._load([
-                self._case("tuned-case", "tuning", repository, "class A { void m() { if (x) {} } }"),
+                self._case("tuned-case", "tuning", repository, "class A { void m() { if (x) {} } }",
+                           project="project-a"),
                 self._case("held-case", "holdout", repository,
-                           "class B { void n() { while (y) {} } }"),
+                           "class B { void n() { while (y) {} } }", project="project-b"),
             ])
         self.assertIn("split leakage", str(caught.exception))
+
+    def test_same_project_across_splits_is_rejected(self):
+        """One project, two cases, two repositories: only the project identity sees it.
+
+        The repository check keys on the materialised fixture, and these two materialise different
+        ones -- which is what a real project looks like, since a case is a change to a file and not
+        the whole tree. The project is the same, so the holdout is not a holdout, and this is the
+        case the recheck recorded as accepted.
+        """
+        with self.assertRaises(runner.EvaluationError) as caught:
+            self._load([
+                self._case("tuned-case", "tuning",
+                           {"files": ["src/main/java/app/Calculator.java"]},
+                           "class A { void m() { if (x) {} } }", project="upstream-x"),
+                self._case("held-case", "holdout",
+                           {"files": ["src/main/java/app/Account.java"]},
+                           "class B { void n() { while (y) {} } }", project="upstream-x"),
+            ])
+        self.assertIn("same project", str(caught.exception))
 
     def test_different_repositories_across_splits_are_allowed(self):
         # Loads without raising, which is the assertion: a rejection here would be the defect.
         self._load([
             self._case("tuned-case", "tuning",
                        {"files": ["src/main/java/app/Calculator.java"]},
-                       "class A { void m() { if (x) {} } }"),
+                       "class A { void m() { if (x) {} } }", project="project-a"),
             self._case("held-case", "holdout",
                        {"files": ["src/main/java/app/Account.java"]},
-                       "class B { void n() { while (y) {} } }"),
+                       "class B { void n() { while (y) {} } }", project="project-b"),
         ])
 
     def test_one_repository_within_one_split_is_fine(self):
@@ -436,3 +477,7 @@ class PmdDocumentShape(unittest.TestCase):
         self.assertEqual("failed", status,
                          "an adapter that crashes takes the evaluation with it")
         self.assertEqual([], findings)
+
+
+if __name__ == "__main__":
+    unittest.main()

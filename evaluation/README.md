@@ -66,12 +66,22 @@ Neither is a defect in the harness. They are the harness working.
 
 ## Tuning and holdout
 
-Every case declares `split: tuning` or `split: holdout`. The runner **refuses** a corpus where the
-same content appears in both, because whatever was tuned on it is then being evaluated on it, and a
-holdout that shares content with the tuning split is not a holdout.
+Every case declares `split: tuning` or `split: holdout` and `project.id`: the codebase its sources
+came from. The runner **refuses** a corpus in which the same project appears in both splits, because
+a project contributes its own naming and its own idiom, and a threshold tuned on one case inside it
+is tuned on all of them. A holdout drawn from a project the tuning split used is not a holdout.
+
+Two narrower identities are refused for the same reason and are checked as well: the same content in
+both splits, and the same repository in both splits, whatever the individual files are. Content is
+the weakest of the three — two cases can share no bytes and still be one problem.
+
+`project.id` is required rather than optional. An optional identity is one nobody records, and a
+check nobody can fail is not a check.
 
 The bundled corpus has **no holdout cases**. Five tuning cases and nothing held back is a harness
-check, not an evaluation, and the summary reports the split counts so that cannot be misread.
+check, not an evaluation, and the summary reports the split counts so that cannot be misread. All
+five share one `project.id`, because they were written by one author in one idiom; a holdout would
+have to come from somewhere else, which is what would make it a holdout.
 
 ## Provenance and licenses
 

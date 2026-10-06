@@ -3,7 +3,7 @@
   "title": "Evaluation case",
   "description": "One reproducible comparison unit: a disposable repository, a change to make, and what the rules are expected to say about it.",
   "type": "object",
-  "required": ["id", "split", "provenance", "repository", "changes"],
+  "required": ["id", "split", "project", "provenance", "repository", "changes"],
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -12,6 +12,19 @@
       "description": "Lower-case, hyphenated, unique across the corpus. A malformed id is rejected rather than normalised: a corpus whose ids only sort of match is a corpus whose results cannot be looked up."
     },
     "split": { "enum": ["tuning", "holdout"] },
+    "project": {
+      "type": "object",
+      "description": "Which codebase the sources belong to. Split validation is project-level, because a project contributes its own naming, its own idiom and its own distribution of shapes: a threshold tuned on one case inside it is tuned on all of them, even the ones whose files and repositories differ.",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "Stable, lower-case identity of the project. Fixtures authored in this repository share the corpus's own identity, because they were written by one author in one idiom; a holdout has to come from a project the tuning split did not draw on."
+        }
+      }
+    },
     "provenance": {
       "type": "object",
       "required": ["origin", "license"],

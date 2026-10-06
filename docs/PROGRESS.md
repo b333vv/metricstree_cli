@@ -1,5 +1,82 @@
 # what has been done
 
+## Session: a case names the project it came from (2026-10-06)
+
+The recheck's A21 row lists five things. The PMD adapter's crash was fixed in `e8ecbdd` and the
+repository-level leakage check in `f3dd8e5`; what was left on the identity axis is the one this file
+recorded when the PMD adapter was deferred — "the case schemas lack project ID, roots/classpath digest
+and configuration identity". This session adds the project identity, and the split check that needs it.
+
+**The identity the validator had was the fixture, not the project.** `_reject_split_leakage` compared
+two things: content digests, and the canonicalised `repository` object. The second was added because
+content alone is the weaker test, and it is still a property of the *case* — the repository is
+materialised from the case's own file list, so two cases from one project that were written down as
+different file lists compare as different repositories. That is not an edge case; it is what a real
+project looks like, since a case is a change to a file and not the whole tree. A holdout drawn from a
+project the tuning split used therefore passed every check, which is the recheck's "same-project
+tuning/holdout accepted".
+
+**A case could not say which project it came from at all.** Handing one a `project` field was refused
+as an unknown field, because the schema sets `additionalProperties: false` and has no such property:
+
+```
+1. a case that names its project         : refused: one.json: unknown field(s) ['project']
+2. same project across tuning and holdout: refused: held-case.json: unknown field(s) ['project']
+```
+
+Both lines are the same refusal, which is the point: the corpus had no way to express the thing the
+validator needed to compare.
+
+**The fix is a required field and a third identity.** `project.id` is a required, pattern-checked
+identity of the codebase the sources came from, and `_reject_split_leakage` now tracks it beside content
+and repository. Required rather than optional, for the reason the OFF-rule work gave about mode: an
+optional field is one nobody sets, and a check nobody can fail is not a check. The validator also
+refuses a present-but-empty or malformed id, because the ids are compared for equality and "nearly
+equal" is the failure this exists to catch.
+
+```
+1. a case that names its project         : loaded
+2. same project across tuning and holdout: refused: split leakage: the same project 'upstream-x'
+   appears in both 'holdout' (held-case) and 'tuning' (tuned-case). A project contributes its own
+   idiom, so a threshold tuned on one case in it is tuned on all of them, however different the
+   individual files and repositories are.
+```
+
+**What the bundled corpus declares, and the consequence.** All five cases name
+`metricstree-evaluation-corpus`, which is honest — they were written by one author in one idiom — and it
+has a consequence worth stating rather than discovering: a holdout drawn from this corpus would now be
+refused, so a real holdout has to come from somewhere else. That is the holdout contract rather than a
+side effect, and `evaluation/README.md` says so.
+
+**Verification.** Four tests, three of them new, and three sabotages each isolating one behaviour:
+
+- removing the project block from `_reject_split_leakage` with the schema untouched fails
+  `RepositoryLeakage.test_same_project_across_splits_is_rejected`, and nothing else;
+- removing `project` from the schema's `required` fails
+  `CorpusValidation.test_a_case_must_name_its_project`, and nothing else;
+- disabling the malformed-id check fails `CorpusValidation.test_a_malformed_project_id_is_refused`, and
+  nothing else.
+
+Two existing tests were re-pointed so they still test the rule they are named for:
+`test_split_leakage_rejected` now gives its two cases different projects, so content is the only thing
+that can fire, and `test_same_repository_across_splits_is_rejected` does the same for the repository
+check. Without that, the new project rule would have fired first in both and the two tests would have
+been asserting "some leakage check runs" rather than which one. The evaluation suite goes from 67 tests
+to 70, and the harness was re-run end-to-end against the built CLI: all five cases load, all five reach
+a verdict.
+
+A wart in the test file was fixed while editing those classes: `if __name__ == "__main__":
+unittest.main()` sat above `RepositoryLeakage` and `PmdDocumentShape`, so running the file directly
+skipped both. It is now at the end, where it runs everything.
+
+**Not fixed here.** The case schema still carries no roots/classpath digest and no configuration
+identity — the rest of that same sentence. Nothing computes them, and a required field nothing fills
+would be dead weight, so they are recorded as DEBT-21 rather than guessed at. And the committed
+`evaluation/results/*.json` were produced by a CLI revision that no longer exists: they still list
+`NOT_MATCHED` findings the current tool does not emit, and still record `deep-nesting-flags` as
+unflagged, which is the A21 typo itself. Regenerating them and replacing the README's result table is
+the next step, not this one.
+
 ## Session: the maintainability policy consults no legacy input (2026-10-06)
 
 The recheck's A05, whose row says the command "still unions legacy thresholds/growth and OFF rule

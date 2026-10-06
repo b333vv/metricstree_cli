@@ -1,6 +1,9 @@
 {
   "id": "deep-nesting-flags",
   "split": "tuning",
+  "project": {
+    "id": "metricstree-evaluation-corpus"
+  },
   "provenance": {
     "origin": "synthetic",
     "license": "generated in this repository; contains no third-party code",
