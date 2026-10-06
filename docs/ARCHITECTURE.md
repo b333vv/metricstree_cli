@@ -157,7 +157,12 @@ Two properties matter and both are load-bearing:
 - **The window is a residency bound, not a thread count.** "At most W units are reachable from the
   manager" holds whatever the pool is doing, and `peakResidentUnits()` exposes it so a test can
   assert it. The default is deliberately larger than the pool: a window narrower than the parallelism
-  would starve workers, and a much wider one would hold ASTs nobody is reading.
+  would starve workers, and a much wider one would hold ASTs nobody is reading. The bound is only
+  meaningful if the window is actually used — a manager that parsed one file at a time would satisfy
+  it trivially — so the test that asserts it *proves* the window is full rather than observing a peak
+  and hoping two workers happened to overlap: the task holds its unit until every permit is taken, so
+  a serialising manager could not complete a single file. Observing the peak instead made that test
+  fail roughly once in a full build, for a reason unrelated to what it asserted.
 - **The bound must not also be a scheduling barrier.** It used to be enforced by slicing the file list
   into batches of `windowSize` and joining each batch before starting the next. Per-file cost has a
   long tail — a file that pulls a large part of the symbol graph through the solver costs orders of

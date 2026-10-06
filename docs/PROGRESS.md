@@ -1,5 +1,38 @@
 # what has been done
 
+## Session: the AST window test proves the window is full instead of observing it (2026-10-06)
+
+Found by the clean-worktree step at `5eb356e`, where `java-metrics-lib:test` failed once on
+`AstMemoryManagerTest.neverHoldsMoreUnitsThanItsWindow` — "the window should have been filled; peak was
+1". The same test then passed 12 consecutive runs in isolation and four of the whole library suite, so
+it was not a defect in the manager. It was a defect in the test.
+
+**What it asserted, and why that was the wrong way to assert it.** The window's bound is only worth
+anything if the window is actually used: a manager that parsed one file at a time would satisfy "peak ≤
+4" trivially. The test tried to establish that by *observing* `peakResidentUnits()` after the run — and
+the peak counts units held at one instant, which exceeds 1 only if a second worker enters the parse
+before the first finishes the list. With 24 trivial fixtures and a warm JIT, the submitting thread can
+finish the whole list before any helper wakes up, so the observation was a race. A probe confirmed the
+mechanism: inside a four-thread pool, `ForkJoinPool-1-worker-1` took 12 of 24 elements while the other
+three shared the rest — work-stealing distributes the work, but not at any guaranteed instant.
+
+**What it asserts now.** The task holds its unit until the window is full: it counts down a latch of
+`windowSize` and waits, bounded, for the other permits to be taken. A serialising manager cannot get
+past the first file, so "the window was filled" is now a consequence of the construction rather than of
+scheduling, and `peakResidentUnits()` is 4 by construction. The parse runs inside a `ForkJoinPool` the
+test owns, which is a documented way to use the method — `parseInWindows` parses on the *ambient* pool,
+and the class javadoc tells a caller that wants its own lifecycle to invoke it from inside one. The
+previous version guarded its assertion with `JavaParserJavaMetricsAnalyzer.parallelism()`, which is the
+`metricstree.parallelism` measurement knob and has nothing to do with how many workers the stream gets;
+that guard could be true while the stream ran on one thread. Owning the pool makes the question moot on
+any machine, single-core included.
+
+Verified three ways: 15 consecutive runs of the class, all passing in 0.27–0.30 s each — the latch trips
+immediately, so the window really is filled, and the run-to-run time is now stable where the old version
+was inherently racy. Sabotaging the window (`new Semaphore(windowSize)` → `new Semaphore(1)`, keeping
+`windowSize()` reporting 4) fails this test and only this test, so it is not vacuous; production code
+was restored and `git diff` confirms it. `./gradlew check` green.
+
 ## Session: the declared source roots bound what is analysed (2026-10-06)
 
 The recheck's A07 residual, reproduced against `5eb356e` before the fix.

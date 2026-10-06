@@ -2,7 +2,6 @@ package org.b333vv.metric.library.javaparser;
 
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import org.b333vv.metric.library.core.AnalysisDiagnostic;
 import org.b333vv.metric.library.core.AnalysisSeverity;
 import org.b333vv.metric.library.javaparser.support.Fixtures;
@@ -16,6 +15,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -38,34 +42,83 @@ class AstMemoryManagerTest {
 
     private static final ParserConfiguration PARSER_CONFIGURATION = AnalysisParserConfiguration.create();
 
+    /**
+     * The window is a bound on how many units are alive at once, and it is actually filled.
+     *
+     * <h2>Why the window is proved full rather than observed to be</h2>
+     * <p>The two halves of this test pull in opposite directions: the bound is only meaningful if the
+     * window really holds several units, because a manager that parsed one file at a time would satisfy
+     * it trivially. The first version of this test asserted that by <em>observing</em>
+     * {@link AstMemoryManager#peakResidentUnits()} after the run, which is not the same thing. The peak
+     * counts units held at one instant, and it only exceeds 1 if a second worker enters the parse
+     * before the first finishes the list. With 24 trivial fixtures that is a race the submitting thread
+     * can win outright — measured under a full build it reported a peak of 1, and the same test then
+     * passed 16 consecutive runs in isolation. A test that fails once in a while for a reason unrelated
+     * to what it asserts is worse than no test: it teaches the reader to re-run rather than to look.
+     *
+     * <p>So the task now <em>holds</em> its unit until the window is full, which makes the claim
+     * impossible to satisfy by accident. The task cannot return until four units are resident
+     * simultaneously, so a manager that admitted one file at a time could not finish the first one, and
+     * the peak is 4 by construction rather than by scheduling. The wait is bounded, so a manager that
+     * genuinely cannot fill its window fails the assertion below instead of hanging the suite.
+     *
+     * <p>The parse runs inside a pool this test owns, because {@code parseInWindows} parses on the
+     * <em>ambient</em> pool — a documented property of the method, and the reason a caller that wants
+     * its own lifecycle is told to invoke it from inside one. The previous version guarded its
+     * assertion with {@code JavaParserJavaMetricsAnalyzer.parallelism()}, which is the
+     * {@code metricstree.parallelism} measurement knob and has nothing to do with how many workers the
+     * stream is given; the guard could be true while the stream ran on one thread. A pool of our own
+     * makes the question moot on any machine, single-core included.
+     */
     @Test
     void neverHoldsMoreUnitsThanItsWindow() throws IOException {
+        int window = 4;
         List<Path> sourceFiles = writeSources(24);
 
-        AstMemoryManager manager = new AstMemoryManager(4);
-        manager.parseInWindows(sourceFiles, PARSER_CONFIGURATION, diagnostics -> {
-        }, (sourceFile, unit) -> {
-            // A task that does enough work to keep several windows in flight at once, so a bound that
-            // only held because the work was too fast to overlap would not pass.
-            unit.findAll(ClassOrInterfaceDeclaration.class).forEach(node -> {
-                node.getNameAsString();
-                node.getMembers().size();
-            });
-            return null;
-        });
+        AstMemoryManager manager = new AstMemoryManager(window);
+        // Trips when `window` tasks are inside the task at once, which is only possible if that many
+        // units are resident. `abandoned` keeps the failure path short: once one task has given up
+        // waiting, there is nothing left to learn and the remaining files run unimpeded.
+        CountDownLatch windowFilled = new CountDownLatch(window);
+        AtomicBoolean abandoned = new AtomicBoolean();
 
-        assertEquals(4, manager.windowSize());
-        assertTrue(manager.peakResidentUnits() <= 4,
-                () -> "expected at most 4 resident units but saw " + manager.peakResidentUnits());
-        assertTrue(manager.peakResidentUnits() >= 1,
-                "the window should have been used at all; peak was " + manager.peakResidentUnits());
-        if (JavaParserJavaMetricsAnalyzer.parallelism() > 1) {
-            // On a single-core machine the window cannot overlap with itself, so only assert the
-            // bound there. Anywhere else the window must actually be filled, or the bound above would
-            // pass for a manager that simply parses one file at a time.
-            assertTrue(manager.peakResidentUnits() > 1,
-                    () -> "the window should have been filled; peak was " + manager.peakResidentUnits());
+        ForkJoinPool pool = new ForkJoinPool(window);
+        try {
+            pool.submit(() -> manager.parseInWindows(sourceFiles, PARSER_CONFIGURATION, diagnostics -> {
+            }, (sourceFile, unit) -> {
+                if (!abandoned.get()) {
+                    windowFilled.countDown();
+                    try {
+                        if (!windowFilled.await(2, TimeUnit.SECONDS)) {
+                            abandoned.set(true);
+                        }
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        abandoned.set(true);
+                    }
+                }
+                return null;
+            })).get();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while waiting for the parse", exception);
+        } catch (ExecutionException exception) {
+            throw new IllegalStateException("the windowed parse failed", exception.getCause());
+        } finally {
+            pool.shutdown();
         }
+
+        assertEquals(window, manager.windowSize());
+        assertFalse(abandoned.get(),
+                "a task gave up waiting for the window to fill, so the peak below is a coincidence"
+                        + " rather than the window being used");
+        assertTrue(manager.peakResidentUnits() <= window,
+                () -> "expected at most " + window + " resident units but saw "
+                        + manager.peakResidentUnits());
+        assertEquals(window, manager.peakResidentUnits(),
+                "the window was filled: " + window + " tasks hold their units until all " + window
+                        + " have arrived, so a manager that parsed one file at a time could not have"
+                        + " completed a single one");
     }
 
     @Test
