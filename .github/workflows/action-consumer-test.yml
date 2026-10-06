@@ -141,15 +141,12 @@ jobs:
           # A pull request's head, already committed and not pushed.
           git -C "$consumer" checkout -q -b pr-head
           git -C "$consumer" config remote.origin.url "file://$remote"
-          # The action's own source, kept outside the tree it is about to replace. A composite
-          # action is resolved by path, so `uses:` has to point at something that survives the swap.
-          # github.workspace is stable across the swap (only its contents are replaced), so we keep
-          # the action in ../action-source and expose the resolved path through GITHUB_ENV. GitHub's
-          # uses-resolver rejects runner.temp expressions, so an env-based absolute path is used.
-          ACTIONS_SOURCE="${{ github.workspace }}/../action-source"
-          mkdir -p "$ACTIONS_SOURCE"
-          cp -R action.yml scripts "$ACTIONS_SOURCE"
-          echo "ACTIONS_SOURCE=$ACTIONS_SOURCE" >> "$GITHUB_ENV"
+          # A composite action is resolved by GitHub at workflow load time (before this step runs),
+          # so `uses: ./` resolves against the checkout that still holds action.yml/scripts. This
+          # step swaps the workspace contents for the fixture; afterward the action runs in the
+          # caller's working directory and reads/writes the fixture — exactly what the consumer test
+          # needs. The earlier runner.temp / env approach failed because GitHub's uses-resolver only
+          # accepts github and actions/@ref in uses: paths.
           rm -rf ./.git
           cp -R "$consumer/." ./
           git init -q
@@ -164,7 +161,7 @@ jobs:
 
       - name: Run the action in the fixture repository
         id: gate
-        uses: ${{ env.ACTIONS_SOURCE }}/action-source
+        uses: ./
         with:
           cli-path: ${{ github.workspace }}/../cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli
           policy: maintainability
