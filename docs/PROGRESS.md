@@ -1,5 +1,64 @@
 # what has been done
 
+## Session: Windows out of CI, and the three defects that verifying macOS and Linux found (2026-10-06)
+
+Windows is deferred — deliberately, and not because it passes. `windows-latest` is out of both
+matrices in `.github/workflows/`, so the project verifies macOS and Linux only. `docs/RUN.md` now
+says so, and DEBT-15 in `docs/tech-debt-tracker.md` records what that costs and what would bring it
+back.
+
+Verifying "does this work on macOS and Linux?" is what the decision was asked to come with, and it
+turned up more than the decision did. The two workflows were in completely different states, and
+reading the Actions API rather than the colour of a badge is what showed it:
+
+- `release` run `37354875946` (`v2026.2.1`): ubuntu-latest and macos-latest passed on JDK 17 **and**
+  21; only windows-latest failed, both JDKs, at `Verify the build`. So the release gate already held
+  on macOS and Linux, and the Windows failures were the ten real portability failures recorded in the
+  2026-10-05 entries above.
+- `action-consumer-test`: **25 runs, 25 failures — never green on any platform.** Three defects, none
+  of them Windows-specific, each hidden by the one before it. Root causes and evidence are in DEBT-15;
+  in short: the launcher was addressed without the `java-metrics-cli/` module segment, so `find`
+  failed at `Build the CLI` on all three OSes; the fixture swap ended with
+  `git checkout -B pr-head FETCH_HEAD`, which reset the branch to `origin/main` and discarded the very
+  change under test; and the fixture was inverted relative to its own assertion — a 25-branch base and
+  a change that added a trivial class — so `PASSED` was the correct answer and the assertion fired on
+  a correct run. It also lacked the `.metrics-gate.yml` that makes `MT-M001` an `error`, without which
+  `--enforcement enforce` reports findings and exits 0 by design.
+
+Changes in this commit:
+- `.github/workflows/action-consumer-test.yml`: matrix `os: [ubuntu-latest, macos-latest]`; the
+  `Build the CLI` step and the `cli-path` input name
+  `java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli`, with a guard that names the
+  expected path instead of letting `find` fail; the fixture swap keeps `pr-head` and prints the diff
+  it is about to test; the fixture is rebuilt to the shape of
+  `GitHubActionConsumerTest.violationExit1HasNonzeroBlockingCount` (base 2 branches, change 25, plus
+  the consumer's own `.metrics-gate.yml`); the `sha256sum`/`shasum` comment no longer cites Windows.
+- `.github/workflows/release.yml`: matrix `os: [ubuntu-latest, macos-latest]`; the artifact-collision
+  note now says four builds rather than six; `shell: bash` is kept and re-justified — the steps are
+  bash (`set -eu`, `${VERSION#v}`) and an explicit `shell: bash` adds `-o pipefail`, which the
+  implicit default on Linux and macOS does not.
+- `action.yml`: removed a verbatim duplicate of the download/unzip/`cli-path` block in `Resolve the
+  CLI`. The second copy re-ran the same `unzip` and re-emitted the same output; it was an insert
+  accident, not a fallback. Noted honestly: the download branch is exercised by no test — the
+  consumer test passes `cli-path` — so this is a change to unverified code, made safe only by the two
+  copies being identical.
+- `docs/RUN.md`: the release matrix is described as Ubuntu and macOS; a *Supported platforms: macOS
+  and Linux* paragraph replaces the implication that Windows is covered.
+- `docs/tech-debt-tracker.md`: DEBT-15, the decision, its cost, and the three defects.
+
+Verification:
+- `./gradlew check`: **828 tests, 0 failures, 0 errors, 1 skipped** (483 `cli/test`, 27
+  `cli/integrationTest`, 318 `lib/test`), summed from `*/build/test-results/*/TEST-*.xml` rather than
+  read off the task list, which reported everything UP-TO-DATE.
+- JSON goldens untouched: `git status --short java-metrics-cli/src/test/resources/golden/` is empty.
+- The workflow replayed locally on macOS from its own step bodies, extracted verbatim from the YAML,
+  together with the composite action's steps: `Build the CLI` produces an executable launcher at the
+  path the workflow now uses and at no other — `build/install` at the repository root does not exist,
+  which is exactly why every earlier run failed there — and the run ends `FAILED` / `exit-code=1` /
+  `blocking-count=1` / `completeness=complete`, with the workflow's own assertion exiting 0.
+- Actions: the hosted run is recorded in the follow-up entry at the top of this file, once it has
+  actually run. Nothing is claimed here that a runner has not returned.
+
 ## Session: Fix 10 failing CLI tests — Windows path-separator handling and OS-impossible filenames (2026-10-05)
 
 Verified and committed. Root causes were (1) path serialization emitting platform backslashes —

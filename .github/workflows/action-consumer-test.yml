@@ -31,7 +31,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # macOS and Linux only. Windows was dropped deliberately rather than because it passed:
+        # see the DEBT-15 entry in docs/tech-debt-tracker.md. Nothing here is Unix-specific by
+        # intent -- the exclusion is a statement about what this project currently supports and
+        # verifies, not a claim that the action cannot run there.
+        os: [ubuntu-latest, macos-latest]
 
     defaults:
       run:
@@ -57,12 +61,21 @@ jobs:
           git clone -q . "$RUNNER_TEMP/cli/source"
           cd "$RUNNER_TEMP/cli/source"
           ./gradlew :java-metrics-cli:installDist -q
-          # Gradle's installDist can produce the launcher script without the executable bit on some
-          # runner filesystems (the install tasks run in Java, and on platforms whose filesystems
-          # do not cleanly map Unix execute semantics -- notably Windows -- the bit can be lost).
-          # Restore it explicitly so the gate step can execute the binary directly.
-          find "$RUNNER_TEMP/cli/source/build/install" -type f -name java-metrics-cli -print0 \
-            | xargs -0 -r chmod +x
+          # The launcher lands under the *module's* build directory. `:java-metrics-cli:installDist`
+          # is a task of that subproject, so its output is java-metrics-cli/build/install/... and
+          # never the root build/install. Addressing it without the module segment made this step
+          # fail on every runner -- ubuntu and macOS included, not just Windows -- with
+          # `find: .../build/install: No such file or directory`, so the workflow proved nothing
+          # about the action on any platform while appearing to be a platform problem.
+          launcher="$RUNNER_TEMP/cli/source/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli"
+          if [ ! -f "$launcher" ]; then
+            echo "::error::installDist produced no launcher at $launcher"
+            exit 1
+          fi
+          # A checkout on a runner does not always preserve the executable bit, and installDist
+          # writes the launcher from Java rather than by copying it. Restore the bit explicitly so
+          # the gate step can execute the binary directly.
+          chmod +x "$launcher"
 
       - name: The checksum a release publishes is readable the way the action reads it
         # The action verifies a download against `<asset>.sha256` from the release, taking the
@@ -89,7 +102,8 @@ jobs:
             exit 1
           fi
           expected=$(awk '{print $1; exit}' "$checksum")
-          # Portable SHA-256: sha256sum (Linux / Windows Git Bash) or shasum (macOS).
+          # Portable SHA-256: sha256sum (Linux) or shasum (macOS). Both runners in the matrix are
+          # covered, and neither name is assumed to exist on the other platform.
           if command -v sha256sum >/dev/null 2>&1; then
               actual=$(sha256sum "$archives" | cut -d' ' -f1)
           else
@@ -116,27 +130,51 @@ jobs:
           git -C "$consumer" config commit.gpgsign false
           git -C "$consumer" remote add origin "$remote"
           mkdir -p "$consumer/src/main/java/app"
-          {
-            echo 'package app;'
-            echo 'public class Order {'
-            echo '    public int f(int x) {'
-            for i in $(seq 1 25); do echo "        if (x == $i) return $i;"; done
-            echo '        return 0;'
-            echo '    }'
-            echo '}'
-          } > "$consumer/src/main/java/app/Order.java"
+
+          # Writes src/main/java/app/Order.java with $1 branches in f(). The base revision gets a
+          # method below the rule's threshold and the head revision one above it, so the only thing
+          # the gate can see in the diff is the complexity the change added. This is the shape
+          # GitHubActionConsumerTest.violationExit1HasNonzeroBlockingCount uses, and the hosted
+          # fixture has to agree with it: the two are meant to test the same behaviour.
+          write_order() {
+            {
+              echo 'package app;'
+              echo 'public class Order {'
+              echo '    public int f(int x) {'
+              for i in $(seq 1 "$1"); do echo "        if (x == $i) return $i;"; done
+              echo '        return 0;'
+              echo '    }'
+              echo '}'
+            } > "$consumer/src/main/java/app/Order.java"
+          }
+
+          # The base revision: a method that does not violate, plus the config that makes a
+          # violation fail the build. Every rule in the shipped catalogue is a warn candidate, so
+          # `--enforcement enforce` on its own reports findings and exits 0; a consumer that wants
+          # CI to fail has to opt the rule in, and this fixture is that consumer. Committed with the
+          # base so the config is not itself part of the diff under test.
+          write_order 2
+          cat > "$consumer/.metrics-gate.yml" <<'YAML'
+          gate:
+            policy: maintainability
+          maintainability:
+            enabledRules: [MT-M001]
+            rules:
+              MT-M001:
+                mode: error
+          YAML
           git -C "$consumer" add -A
           git -C "$consumer" commit -q -m 'initial'
           git -C "$consumer" push -q -u origin main
-          # A change that is committed but not pushed: the shape of a pull request's head.
-          {
-            echo 'package app;'
-            echo 'public class Order {'
-            echo '    public int f(int x) { return x; }'
-            echo '}'
-          } > "$consumer/src/main/java/app/Trivial.java"
+
+          # The change under test, committed but not pushed: the shape of a pull request's head. It
+          # makes the method complex, which is the one outcome the assertion below exists to see
+          # reported. An earlier version of this fixture had it backwards -- a complex base and a
+          # change that added a trivial class -- so the gate correctly reported PASSED and the
+          # assertion failed on every run, on every platform.
+          write_order 25
           git -C "$consumer" add -A
-          git -C "$consumer" commit -q -m 'added a trivial class'
+          git -C "$consumer" commit -q -m 'made it complex'
 
       # A composite action runs in the caller's working directory, so the fixture has to *be* that
       # directory. The step copies it over the checkout: `uses: ./` is resolved before this step
@@ -167,19 +205,31 @@ jobs:
           git config user.email fixture@test
           git config user.name fixture
           git fetch -q origin
-          git checkout -q -B pr-head FETCH_HEAD
+          # Stay on the fixture's own pr-head rather than resetting it to a fetched ref. The
+          # obvious-looking `checkout -B pr-head FETCH_HEAD` points the branch at origin/main,
+          # which is the *initial* commit -- the fixture's second commit is deliberately never
+          # pushed, that is what makes it a pull request's head -- so it threw away the one change
+          # this fixture exists to carry. The gate then saw an empty diff, honestly reported
+          # PASSED, and the assertion below failed with "reported PASSED on a change that made a
+          # method complex": a correct assertion firing on a broken fixture, which is why this
+          # workflow read as a Windows problem while failing on every platform.
+          git checkout -q pr-head
           echo "working tree is the fixture:"
           git log --oneline -3
+          echo "the change under test, HEAD against origin/main:"
+          git log --oneline origin/main..HEAD
           ls
 
       - name: Run the action in the fixture repository
         id: gate
         uses: ./
         with:
-          # The CLI is installed to $RUNNER_TEMP/cli/source/build/install/... by the Build the CLI
-          # step; runner.temp is available in with: values (it is the github context's runner.temp),
-          # whereas github.workspace points at the swapped fixture workspace and would be wrong here.
-          cli-path: ${{ runner.temp }}/cli/source/build/install/java-metrics-cli/bin/java-metrics-cli
+          # The CLI is installed to $RUNNER_TEMP/cli/source/java-metrics-cli/build/install/... by the
+          # Build the CLI step. The module segment is part of the path: installDist is a task of the
+          # java-metrics-cli subproject, so its output is never the root build/install. runner.temp is
+          # available in with: values (it is the github context's runner.temp), whereas
+          # github.workspace points at the swapped fixture workspace and would be wrong here.
+          cli-path: ${{ runner.temp }}/cli/source/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli
           policy: maintainability
           enforcement: enforce
           report-format: json

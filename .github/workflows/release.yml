@@ -29,8 +29,8 @@ jobs:
   # everywhere it claims to; `package` below produces the artifact that is actually published.
   #
   # The earlier single matrix job did both, and merging its artifacts published exactly one archive.
-  # All six builds wrote the same filename -- the archive carries a version but no OS -- and
-  # `merge-multiple: true` collapsed them into one directory, so five platforms' work was silently
+  # All four builds wrote the same filename -- the archive carries a version but no OS -- and
+  # `merge-multiple: true` collapsed them into one directory, so three builds' work was silently
   # overwritten by whichever finished last. Nothing failed: every path matched, so the release
   # looked complete and described one platform.
   verify:
@@ -38,11 +38,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        # Windows runs `run:` steps in PowerShell, where ${VERSION#v} is a variable name rather than
-        # a shell expansion and ./gradlew is an extensionless file PowerShell will not resolve. The
-        # matrix covers windows-latest, so this job needs bash declared rather than assumed -- and
-        # every other step below is written as bash anyway (`set -eu`, `${var#v}`), so declaring it
-        # states what was always meant rather than changing anything for Ubuntu and macOS.
+        # Declared rather than assumed. Every step below is written as bash (`set -eu`,
+        # `${var#v}`), and an explicit `shell: bash` also turns on `-o pipefail`, which the
+        # implicit default on Linux and macOS does not. Stating it keeps the requirement visible
+        # instead of resting on the runner's default shell happening to agree.
         shell: bash
     strategy:
       fail-fast: false
@@ -50,7 +49,11 @@ jobs:
         # Java 17 is the floor the tool supports, so 17 and 21 both have to work: a distribution
         # that only builds on the newest JDK is one that half its users cannot run. This matrix
         # exists to catch that, which is a question about building, not about which bytes to ship.
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        #
+        # macOS and Linux only. Windows was removed deliberately -- see DEBT-15 in
+        # docs/tech-debt-tracker.md -- so this job proves the tag builds and passes everywhere the
+        # project currently claims to support, and nowhere else.
+        os: [ubuntu-latest, macos-latest]
         java: ['17', '21']
 
     steps:

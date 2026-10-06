@@ -219,16 +219,6 @@ runs:
         fi
         echo "cli-path=$launcher" >> "$GITHUB_OUTPUT"
 
-        rm -rf "$work"
-        mkdir -p "$work"
-        unzip -q "$archive" -d "$work"
-        launcher="$work/metricstree-cli/bin/java-metrics-cli"
-        if [ ! -x "$launcher" ]; then
-          echo "Error: the archive did not contain the expected launcher." >&2
-          exit 2
-        fi
-        echo "cli-path=$launcher" >> "$GITHUB_OUTPUT"
-
     # ------------------------------------------------------------------ the gate
 
     - name: Run the metrics gate

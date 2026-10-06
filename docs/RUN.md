@@ -397,8 +397,14 @@ report that is not reproducible says so on its face.
 
 **Building the artifacts yourself.** `./gradlew :java-metrics-cli:distributionZip` produces the
 archive and the checksum manifest; `archiveChecksum` produces the archive's own checksum. Releases
-are built by `.github/workflows/release.yml` on a `v*` tag, across Ubuntu, macOS and Windows on JDK
-17 and 21. Creating and pushing the tag is deliberately a human step.
+are built by `.github/workflows/release.yml` on a `v*` tag, across Ubuntu and macOS on JDK 17 and 21.
+Creating and pushing the tag is deliberately a human step.
+
+**Supported platforms: macOS and Linux.** Windows is not supported and is not verified. It was
+removed from the CI matrix as a deliberate decision rather than because it passed — see DEBT-15 in
+[`tech-debt-tracker.md`](tech-debt-tracker.md) for what that costs and what would bring it back. The
+archive still contains Gradle's `java-metrics-cli.bat` launcher because `installDist` writes one, but
+nothing in this repository builds, tests or runs on Windows, so no claim is made about it.
 
 ### Using the GitHub Action
 

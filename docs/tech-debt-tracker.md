@@ -197,6 +197,58 @@
   `informationUri` need no mechanism, only facts the build does not currently carry — this module's Gradle
   `version` is `unspecified`, and the project has no published URL — so they close the day either exists.
 
+- **DEBT-15 — Windows is no longer built, tested or verified.** Decided 2026-10-06, deliberately.
+  `windows-latest` was removed from the `action-consumer-test` and `release` matrices, so the project
+  now verifies macOS and Linux only. This is a scope decision, not a repair: it was taken while the
+  Windows jobs were red and they are still red.
+  *What the CI actually said, before the decision.* The two workflows were in different states, and
+  the difference is the point:
+  - `release` (run `37354875946`, tag `v2026.2.1`) passed on ubuntu-latest and macos-latest for both
+    JDK 17 and 21, and failed only on windows-latest for both JDKs, at `Verify the build`. So the
+    release gate genuinely already held on macOS and Linux, and the Windows failures were real
+    Windows-specific test failures — the ten tracked in the 2026-10-05 entries in
+    [PROGRESS.md](PROGRESS.md).
+  - `action-consumer-test` had **25 runs and 25 failures — it has never once passed, on any
+    platform.** Three separate defects were behind that, none of them Windows-specific, each one
+    hidden by the one before it:
+    1. **The launcher path.** The newest run (`37471999121`, 2026-10-06) failed at `Build the CLI` on
+       ubuntu, macOS *and* windows with `find: .../build/install: No such file or directory`. The step
+       and the `cli-path` input addressed the launcher at `$RUNNER_TEMP/cli/source/build/install/...`,
+       but `:java-metrics-cli:installDist` is a task of the *subproject*, so its output is
+       `java-metrics-cli/build/install/...`. The module segment was present in the original
+       (`4fb49ab`) and was dropped in `8e0f143` — which was itself an attempt to fix the same path.
+    2. **The fixture threw away the change under test.** `Make the fixture the working repository`
+       ended with `git checkout -B pr-head FETCH_HEAD`, which points the branch at `origin/main` —
+       the *initial* commit, because the fixture's second commit is deliberately never pushed. The
+       gate then saw an empty diff and reported `PASSED`, which the assertion below correctly
+       rejected.
+    3. **The fixture contradicted its own assertion.** Even with the change preserved, the fixture's
+       base revision held a 25-branch method and the change *added a trivial class*, so `PASSED` was
+       the correct answer and `::error::The action reported PASSED on a change that made a method
+       complex` fired on a correct run. The hosted fixture had been inverted relative to
+       `GitHubActionConsumerTest.violationExit1HasNonzeroBlockingCount`, which tests the same
+       scenario: base `complexClass("Order", 2)`, change `complexClass("Order", 25)`. It also lacked
+       the `.metrics-gate.yml` that makes `MT-M001` an `error` — every rule in the shipped catalogue
+       is a `warn` candidate, so `--enforcement enforce` alone reports findings and exits 0 by design.
+    Earlier runs failed at one of these steps or the next one along, which is how "only Windows is
+    red" survived so long: each session fixed one step, and the following one failed. All three are
+    fixed in the same commit as this entry, and the workflow was then replayed locally on macOS using
+    its own step bodies (extracted verbatim from the YAML, together with the composite action's
+    steps): `FAILED`, `exit-code=1`, `blocking-count=1`, `completeness=complete`. A hosted run is the
+    remaining confirmation — confirmation, not the first evidence.
+  *What this costs.* The Windows portability defects already found and fixed — path serialization
+  emitting backslashes, `Path.isAbsolute()` misreading a drive-relative form, NTFS-impossible
+  filenames — are no longer covered by any CI job, so they can regress silently. The archive still
+  ships Gradle's `java-metrics-cli.bat` launcher, which is now unverified output. `docs/RUN.md` now
+  states macOS and Linux as the supported platforms rather than leaving it to be inferred.
+  *What would bring it back.* A Windows job that is green, which is its own task with its own
+  evidence: re-adding the matrix entry before the platform passes would restore a permanently red job
+  and train everyone to ignore the CI signal — which is the failure mode this entry is trying to
+  name, not repeat. Two of the ten previously-failing tests are guarded rather than fixed
+  (`GitOpsTest.roundTripsUnusualPaths`, `SnapshotMaterializerTest.newlinePathMaterializesCorrectly`,
+  both `@EnabledOnOs({OS.LINUX, OS.MAC})`), so restoring Windows also means deciding whether those
+  guards become real support or stay skips.
+
 ## Resolved Debt Items
 - **DEBT-14 — A one-sided threshold rejects a metric whose value is `0`.** Found 2026-09-17 in
   TASK-402, **fixed 2026-09-28 by ML-001**.
