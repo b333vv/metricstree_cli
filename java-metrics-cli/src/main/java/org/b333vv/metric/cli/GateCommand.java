@@ -342,7 +342,16 @@ final class GateCommand implements Callable<Integer> {
         // with existing debt usually has no diff at all in the commit where they generate it.
         boolean baselineOperation = findingsBaselineFile != null || writeFindingsBaselineFile != null;
 
-        if (subjectPaths.isEmpty() && !baselineOperation && contextIssues.isEmpty()) {
+        // An unsupported source keeps the run off the fast path for the same reason the context check
+        // does, and it is the same defect seen from the other side. A *.java symlink is part of the
+        // change and the run refuses to read it, so it is a file the user asked about and the tool
+        // could not measure -- and because it never reaches subjectPaths it left the set empty, so
+        // this path published "PASSED: no changed Java files" over it. A repository whose only change
+        // was a symlink was therefore gated clean while the tool had read nothing at all; the report
+        // did carry the path under `comparison.unsupported`, which is exactly the kind of evidence a
+        // reader of the verdict line never sees.
+        if (subjectPaths.isEmpty() && !baselineOperation && contextIssues.isEmpty()
+                && plan.unsupported().isEmpty()) {
             // Nothing survived exclusion or deletion. The report still has to say so: "no changed
             // Java files" and "every changed file was excluded" are different sentences, and a reader
             // who saw the first would conclude their change was reviewed.

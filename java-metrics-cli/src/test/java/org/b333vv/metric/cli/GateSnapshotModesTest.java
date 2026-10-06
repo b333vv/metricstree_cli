@@ -391,6 +391,47 @@ class GateSnapshotModesTest {
         assertTrue(Files.readString(report).contains("unsupported-source"), text);
     }
 
+    /**
+     * A symlink that is the whole change is a change, not an empty diff.
+     *
+     * <p>The other half of the same defect, and the half the first repair did not reach. A run whose
+     * only changed Java file was one it refused to read had an empty subject set, so it took the
+     * no-change fast path and printed {@code PASSED: no changed Java files} — over a change that
+     * existed, and about which the tool had read nothing at all. The path was recorded under
+     * {@code comparison.unsupported} in the report, which is precisely the evidence a reader of the
+     * verdict line never sees, and the fast path returns before anything publishes it as a gap.
+     *
+     * <p>So the symlink has to keep the run off that path, exactly as an out-of-context file does.
+     * Nothing was analysed either way; what changes is whether the run says so.
+     */
+    @Test
+    void aSymlinkThatIsTheWholeChangeIsNotAnEmptyDiff() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 2));
+        fixture().commitAll("base");
+        if (!symlink(repo.resolve("app/Link.java"), Path.of("Demo.java"))) {
+            return; // Filesystem without symlink support: the scenario cannot exist.
+        }
+
+        Path report = repo.resolve("report.json");
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD", "-o", report.toString());
+
+        String text = err.toString(StandardCharsets.UTF_8);
+        assertFalse(firstLine(err).startsWith("PASSED:"),
+                "the change was a file the run could not read, not an empty change: " + text);
+        assertEquals(2, exitCode, "and an unreadable input is an incomplete analysis: " + text);
+        assertTrue(Files.exists(report), "the report it was asked for is still written: " + text);
+
+        JsonNode written = mapper.readTree(Files.readString(report));
+        assertEquals(java.util.List.of("app/Link.java"),
+                mapper.convertValue(written.get("comparison").get("unsupported"),
+                        new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {}),
+                "the symlink is named as the input that could not be read: " + written.get("comparison"));
+        assertTrue(Files.readString(report).contains("unsupported-source"),
+                "and the reason code says it is the input, not the code: " + Files.readString(report));
+    }
+
     /** Creates a symlink, reporting whether the filesystem supports one at all. */
     private static boolean symlink(Path link, Path target) {
         try {

@@ -1106,6 +1106,13 @@ object type cannot tell it from a source file; an untracked path has no mode, so
 through the same predicate the capture uses. A repository that keeps a `*.java` symlink will therefore
 report INCOMPLETE until the symlink is removed or excluded with `--exclude-file`.
 
+An unsupported path is not a subject, so a change consisting only of one leaves the analysed set empty —
+and the no-change fast path must not read that as an empty change. It does not: an unsupported source
+keeps the run on the normal path, where it becomes the required gap it is. Without that, a change whose
+only Java file was a symlink printed `PASSED: no changed Java files` over a change the tool had read
+nothing of, and the path appeared only in the report's `comparison.unsupported` — which a reader of the
+verdict line never sees.
+
 ### Analysis scope: `local` or `project`
 
 The gate analyzes a *changed* file set but measures it in *full context*, so it always parses a whole

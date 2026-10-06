@@ -1,5 +1,50 @@
 # what has been done
 
+## Session: a change whose only file is unreadable is not an empty change (2026-10-06)
+
+The other half of the recheck's A03, found by replaying the audit's own acceptance harness against
+`8bfd8a6` and reading the observations rather than the summary. `java-symlink` still reported
+`PASSED: no changed Java files`, exit 0, with no issue at all.
+
+**Why the earlier A03 repair did not reach it.** That repair made a `*.java` symlink unsupported input
+rather than a working-tree change, and it works: the path lands in `comparison.unsupported` and, when
+there is anything else to analyse, a required `unsupported-source` gap makes the run INCOMPLETE. But
+the symlink is deliberately not a *subject* — `GateCommand` skips it before `subjectPaths` is built,
+because it is not something the analysis can read. So in a run whose only change is that symlink,
+`subjectPaths` came out empty and the run took the no-change fast path, which publishes a hardcoded
+`PASSED` and builds its own completeness record from the exclusion list alone. The unsupported path
+was named in the report and nowhere in the verdict: the one document a CI log shows said the change
+had been reviewed, and it had not.
+
+**The fix is the same move the A07 repair made.** The fast path's condition already excludes a run
+with context issues, on the argument that such a change "did not survive anything — it is a file the
+run was asked about and could not measure", and that publishing `PASSED` over it was the boundary
+defect arriving a second time. An unsupported source is that sentence with a different cause, so the
+condition now also requires `plan.unsupported()` to be empty. The run falls through to the one verdict
+computation, where `AnalysisCompleteness.of` already turns each unsupported source into a required
+`unsupported-source` issue. Nothing new decides anything; a case that was skipping the decision now
+reaches it.
+
+**Compatibility.** A repository whose only change is a `*.java` symlink now reports INCOMPLETE (exit 2)
+with a written report, instead of PASSED. A run with unsupported input *and* an analysable change is
+unchanged, as is a diff with no Java files at all and no unsupported input — the fast path still fires
+there, which the existing `noJavaDiffDoesNotInvokeTheAnalyzer` test pins.
+
+**Verification.** The new test `aSymlinkThatIsTheWholeChangeIsNotAnEmptyDiff` fails with only
+`GateCommand.java` stashed and passes with it — the failure is exactly the old verdict line,
+`PASSED: no changed Java files`, and it is the only failure in the class (19 tests, 1 failed). Replaying
+`docs/plans/maintainability-linter/audits/2026-10-04/replay_acceptance.py` before and after, 27
+observations, shows exactly one case changed: `java-symlink`, exit 0/PASSED →
+exit 2/INCOMPLETE with `reasonCode: unsupported-source`. `./gradlew check` green: 835 tests, 0 failures,
+0 errors, 1 skipped (the pre-existing benchmark); JSON goldens untouched.
+
+**Not fixed here, and known.** The verdict line reads "2 required checks" for this run while the report
+counts 1: `requiredGaps` adds the completeness record's required count to the policy report's, and
+`policyIssues` has already copied the completeness issues into that report. That double count is
+pre-existing and shows up in every incomplete run, not only this one; it belongs to the A06/A10 work
+that reconciles the `analysis` block with `summary`, and is left there deliberately rather than folded
+into this change.
+
 ## Session: the AST window test proves the window is full instead of observing it (2026-10-06)
 
 Found by the clean-worktree step at `5eb356e`, where `java-metrics-lib:test` failed once on
