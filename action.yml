@@ -119,14 +119,21 @@ runs:
         if [ -n "$INPUT_CLI_PATH" ]; then
           echo "CLI probe: path='$INPUT_CLI_PATH'" >&2
           echo "CLI probe: exists=$([ -e "$INPUT_CLI_PATH" ] && echo yes || echo no)" >&2
-          echo "CLI probe: executable=$([ -x "$INPUT_CLI_PATH" ] && echo yes || echo no)" >&2
-          echo "CLI probe: ls='$(ls -ld "$INPUT_CLI_PATH" 2>&1)'" >&2
-          echo "CLI probe: stat='$(stat -c '%a %U:%G %s %n' "$INPUT_CLI_PATH" 2>&1)'" >&2
-          if [ ! -x "$INPUT_CLI_PATH" ]; then
-            echo "Error: cli-path was set to '$INPUT_CLI_PATH', which is not an executable file." >&2
+          if [ ! -e "$INPUT_CLI_PATH" ]; then
+            echo "Error: cli-path does not exist: '$INPUT_CLI_PATH'" >&2
             echo "Point it at a java-metrics-cli launcher or at a self-contained jar's java." >&2
             exit 2
           fi
+          echo "CLI probe: executable=$([ -x "$INPUT_CLI_PATH" ] && echo yes || echo no)" >&2
+          if [ ! -x "$INPUT_CLI_PATH" ]; then
+            echo "The CLI launcher has no executable bit; attempting to restore it." >&2
+            if ! chmod +x "$INPUT_CLI_PATH" 2>/dev/null; then
+              echo "Error: cli-path was set to '$INPUT_CLI_PATH', which is not an executable file." >&2
+              echo "Point it at a java-metrics-cli launcher or at a self-contained jar's java." >&2
+              exit 2
+            fi
+          fi
+          echo "CLI probe: executable-after=$([ -x "$INPUT_CLI_PATH" ] && echo yes || echo no)" >&2
           echo "Using the CLI supplied by the workflow at $INPUT_CLI_PATH"
           echo "cli-path=$INPUT_CLI_PATH" >> "$GITHUB_OUTPUT"
           exit 0

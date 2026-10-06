@@ -57,6 +57,12 @@ jobs:
           git clone -q . "$RUNNER_TEMP/cli/source"
           cd "$RUNNER_TEMP/cli/source"
           ./gradlew :java-metrics-cli:installDist -q
+          # Gradle's installDist can produce the launcher script without the executable bit on some
+          # runner filesystems (the install tasks run in Java, and on platforms whose filesystems
+          # do not cleanly map Unix execute semantics -- notably Windows -- the bit can be lost).
+          # Restore it explicitly so the gate step can execute the binary directly.
+          find "$RUNNER_TEMP/cli/source/build/install" -type f -name java-metrics-cli -print0 \
+            | xargs -0 -r chmod +x
 
       - name: The checksum a release publishes is readable the way the action reads it
         # The action verifies a download against `<asset>.sha256` from the release, taking the
