@@ -4,7 +4,7 @@ author: 'b333vv'
 
 inputs:
   base:
-    description: 'Base git reference to compare against. Defaults to origin/${{ github.base_ref }}, or origin/main on a push.'
+    description: 'Base git reference to compare against. Defaults to origin/main; for pull requests GitHub sets GITHUB_BASE_REF, which is used as origin/<base>.'
     required: false
     default: ''
   tool-version:
