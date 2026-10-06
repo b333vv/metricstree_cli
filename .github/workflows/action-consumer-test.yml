@@ -143,7 +143,13 @@ jobs:
           git -C "$consumer" config remote.origin.url "file://$remote"
           # The action's own source, kept outside the tree it is about to replace. A composite
           # action is resolved by path, so `uses:` has to point at something that survives the swap.
-          cp -R action.yml scripts "$RUNNER_TEMP/action-source"
+          # github.workspace is stable across the swap (only its contents are replaced), so we keep
+          # the action in ../action-source and expose the resolved path through GITHUB_ENV. GitHub's
+          # uses-resolver rejects runner.temp expressions, so an env-based absolute path is used.
+          ACTIONS_SOURCE="${{ github.workspace }}/../action-source"
+          mkdir -p "$ACTIONS_SOURCE"
+          cp -R action.yml scripts "$ACTIONS_SOURCE"
+          echo "ACTIONS_SOURCE=$ACTIONS_SOURCE" >> "$GITHUB_ENV"
           rm -rf ./.git
           cp -R "$consumer/." ./
           git init -q
@@ -158,7 +164,7 @@ jobs:
 
       - name: Run the action in the fixture repository
         id: gate
-        uses: ${{ runner.temp }}/action-source
+        uses: ${{ env.ACTIONS_SOURCE }}/action-source
         with:
           cli-path: ${{ github.workspace }}/../cli/java-metrics-cli/build/install/java-metrics-cli/bin/java-metrics-cli
           policy: maintainability
