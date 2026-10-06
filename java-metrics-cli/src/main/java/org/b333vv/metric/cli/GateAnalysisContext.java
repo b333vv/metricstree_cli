@@ -175,6 +175,29 @@ record GateAnalysisContext(
         return !sourceRoots.isEmpty() || !classpathEntries.isEmpty();
     }
 
+    /**
+     * Whether a repository-relative Java path lies inside a declared source root.
+     *
+     * <p>True when no root is declared, because the contract's default source root is the snapshot
+     * root: the whole snapshot is the context, so nothing can fall outside it.
+     *
+     * <p>Asked of the <em>logical</em> roots rather than the physical ones, so the answer is the same
+     * for both revisions. A physical root lives inside a temporary snapshot whose path says nothing
+     * about the repository, and comparing a repository-relative subject against it would answer "no"
+     * for every file.
+     */
+    boolean contains(String logicalPath) {
+        if (sourceRoots.isEmpty()) {
+            return true;
+        }
+        for (String root : sourceRoots) {
+            if (logicalPath.equals(root) || logicalPath.startsWith(root + "/")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Whether a build descriptor changed, so the dependencies behind the classpath are unverified. */
     boolean classpathVersionUnverified() {
         return !classpathEntries.isEmpty() && !changedDescriptors.isEmpty();

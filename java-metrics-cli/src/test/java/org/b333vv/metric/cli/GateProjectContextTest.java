@@ -180,6 +180,133 @@ class GateProjectContextTest {
                 "an unchanged file cannot be a finding however bad it is");
     }
 
+    // ---------------------------------------------------------------- the declared root bounds the analysis
+
+    /**
+     * A changed file the declared root does not reach is reported as not checked.
+     *
+     * <p>The recheck's A07, and the defect is a boundary that does not bite. The gate handed the
+     * analyzer the declared roots <em>and</em> the snapshot's whole file inventory as explicit units, so
+     * the analysed set was their union — which is the inventory, whatever the roots say. A change
+     * outside the declared root was therefore analysed, compared and blocked like any other, and the
+     * declaration changed nothing about the run except what the report claimed about it.
+     *
+     * <p>Two halves, and both are asserted. The file must not be analysed (the analysis set is the
+     * roots), and the run must say so — a boundary that silently drops a changed file trades a wrong
+     * verdict for a missing one, which is not an improvement. This is also the case that would be
+     * swallowed by the no-change fast path, since nothing survives into the subject set.
+     */
+    @Test
+    void aChangedFileOutsideTheDeclaredRootIsReportedAsNotChecked() throws Exception {
+        fixture().init();
+        fixture().write("src/main/java/app/Demo.java", classWithIfs("Demo", 1));
+        fixture().write("other/app/Stray.java", classWithIfs("Stray", 1));
+        fixture().commitAll("base");
+        fixture().write("other/app/Stray.java", classWithIfs("Stray", 2));
+        fixture().commitAll("a change the declared root does not reach");
+
+        Path json = repo.resolve("report.json");
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD~1", "--analysis-scope", "project",
+                "--source-root", "src/main/java", "-o", json.toString());
+
+        assertEquals(2, exitCode, () -> firstLine(err));
+        assertTrue(firstLine(err).startsWith("INCOMPLETE:"), firstLine(err));
+        String written = Files.readString(json);
+        assertTrue(written.contains("outside-analysis-context"),
+                "the report has to name the reason the file was not checked: " + written);
+        assertTrue(written.contains("other/app/Stray.java"),
+                "and the file it could not check: " + written);
+        assertEquals(0, report(json).get("analysis").get("eligibleFiles").asInt(),
+                "a file outside the declared context was not analysed, so it is not an eligible file");
+    }
+
+    /**
+     * A changed file inside the declared root still blocks, so the boundary narrowed the analysis
+     * rather than disabling it.
+     *
+     * <p>Without this the test above would pass for a gate that had simply stopped analysing anything
+     * it was not handed as a unit — the failure mode being fixed is "too much was analysed", and the
+     * cheapest way to make that go away is to analyse nothing.
+     */
+    @Test
+    void aChangedFileInsideTheDeclaredRootStillBlocks() throws Exception {
+        fixture().init();
+        fixture().write("src/main/java/app/Demo.java", classWithIfs("Demo", 1));
+        fixture().commitAll("base");
+        // Well past the default CC growth budget, so a run that measured this file must fail.
+        fixture().write("src/main/java/app/Demo.java", classWithIfs("Demo", 40));
+        fixture().commitAll("a complexity jump inside the declared root");
+
+        Path json = repo.resolve("report.json");
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD~1", "--analysis-scope", "project",
+                "--source-root", "src/main/java", "-o", json.toString());
+
+        assertEquals(1, exitCode, () -> firstLine(err));
+        assertTrue(firstLine(err).startsWith("FAILED:"), firstLine(err));
+        assertEquals(1, report(json).get("analysis").get("eligibleFiles").asInt());
+    }
+
+    /**
+     * With no root declared there is no boundary, and a changed file anywhere is analysed.
+     *
+     * <p>The default source root is the snapshot root, so the declaration is the only thing that can
+     * exclude a file. A gate that guessed a layout — {@code src/main/java} being the obvious guess —
+     * would silently stop checking every project that does not use it, and the report would say the
+     * change was checked.
+     */
+    @Test
+    void withoutADeclaredRootAChangedFileAnywhereIsStillAnalysed() throws Exception {
+        fixture().init();
+        fixture().write("other/app/Stray.java", classWithIfs("Stray", 1));
+        fixture().commitAll("base");
+        fixture().write("other/app/Stray.java", classWithIfs("Stray", 40));
+        fixture().commitAll("a complexity jump outside any conventional layout");
+
+        Path json = repo.resolve("report.json");
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD~1", "-o", json.toString());
+
+        assertEquals(1, exitCode, () -> firstLine(err));
+        assertTrue(firstLine(err).startsWith("FAILED:"), firstLine(err));
+        assertEquals(1, report(json).get("analysis").get("eligibleFiles").asInt());
+    }
+
+    /**
+     * An exclusion is the remedy the out-of-context message offers, so it has to win.
+     *
+     * <p>Ordering, asserted rather than assumed: the exclusion is decided before the context, so a file
+     * the declared root does not reach can be declared out of scope on purpose and the run passes.
+     * Deciding the other way round would make the advice in the message impossible to follow — the file
+     * would be reported as a gap however the user configured it.
+     *
+     * <p>The pattern is matched against the path-derived name, not the declared package: the gate has no
+     * source root in that comparison, so {@code other/app/Stray.java} is tested as
+     * {@code other.app.Stray} even though the file declares {@code package app}. That is the audit's
+     * A09 arriving as a configuration detail, and the fixture uses the name the tool actually compares.
+     */
+    @Test
+    void anOutOfContextFileCanBeDeclaredOutOfScopeExplicitly() throws Exception {
+        fixture().init();
+        fixture().write("src/main/java/app/Demo.java", classWithIfs("Demo", 1));
+        fixture().write("other/app/Stray.java", classWithIfs("Stray", 1));
+        // Single quotes, because a YAML double-quoted scalar would read "\." as an escape sequence.
+        fixture().write("exclusions.yml",
+                "exclusions:\n  classes:\n    - 'other\\.app\\.Stray'\n");
+        fixture().commitAll("base");
+        fixture().write("other/app/Stray.java", classWithIfs("Stray", 2));
+        fixture().commitAll("a change outside the declared root, declared out of scope");
+
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD~1", "--analysis-scope", "project",
+                "--source-root", "src/main/java",
+                "--exclude-file", repo.resolve("exclusions.yml").toString());
+
+        assertEquals(0, exitCode, () -> firstLine(err));
+        assertTrue(firstLine(err).startsWith("PASSED:"), firstLine(err));
+    }
+
     // ---------------------------------------------------------------- classpath pinning
 
     /** The same classpath is used for both revisions, and an unusable entry is reported. */

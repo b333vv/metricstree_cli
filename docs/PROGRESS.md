@@ -1,5 +1,59 @@
 # what has been done
 
+## Session: the declared source roots bound what is analysed (2026-10-06)
+
+The recheck's A07 residual, reproduced against `5eb356e` before the fix.
+
+**The defect.** `--source-root src/main/java` bounded nothing. The gate handed the analyzer the declared
+roots *and* `SourceSnapshot.units()` — which is every Java file in the snapshot, not just the changed
+ones — and `AnalysisRequest` unions the two, so the analysed set was the whole inventory whatever the
+roots said. A change outside the declared root was analysed, compared and blocked like any other, and
+the declaration changed nothing about the run except what the report claimed about it. A boundary the
+tool silently ignores is worse than no boundary, because the report still asserts the analysis was made
+in the declared context.
+
+**The fix, in three parts.**
+
+1. **Exactly one of the two sets is passed.** `GateCommand` now decides from the roots themselves: with
+   roots declared, the request carries the roots and no explicit units; with none declared, the units
+   and no roots. Local scope keeps units for the reason it always had one — a root would let the
+   analyzer re-derive FQCNs from a layout the gate deliberately does not assume.
+2. **A changed file the context does not reach is named.** `GateAnalysisContext.contains(logicalPath)`
+   answers the question against the *logical* roots rather than the physical ones, so the answer is the
+   same for both revisions — a physical root lives inside a temporary snapshot whose path says nothing
+   about the repository. A file outside it becomes a required `outside-analysis-context` issue, so the
+   run is INCOMPLETE (exit 2) with a written report rather than a pass over a smaller set.
+3. **The no-change fast path no longer swallows it.** A change outside the declared root survives into
+   no other bucket, so `subjectPaths` is empty and the fast path published "PASSED: no changed Java
+   files" — the boundary could be absent and the run still looked clean. The context check is now part
+   of that condition, and such a run falls through to the one verdict computation instead.
+
+The exclusion is decided **before** the context check, deliberately: the message offers
+`--exclude-file` as a remedy, and an ordering that reported the gap first would make the advice
+impossible to follow. A test asserts that ordering, because it is the mistake this change made first.
+
+**Compatibility change.** A run that declared a narrow root and relied on a change outside it being
+analysed anyway now reports that it could not check the file: INCOMPLETE, exit 2, with the file named
+and two configuration remedies. `docs/RUN.md` states this as a fourth property of the declared context.
+
+Verification: `./gradlew check` — **834 tests, 0 failures, 0 errors, 1 skipped** (four new cases in
+`GateProjectContextTest`). Goldens untouched. The acceptance test was checked against the pre-fix
+command by stashing only `GateCommand.java`: `aChangedFileOutsideTheDeclaredRootIsReportedAsNotChecked`
+fails there and passes with the fix, so it is a test of the defect rather than of the shape the code
+happens to have. The other three are regression guards — one that a changed file *inside* the root still
+blocks, one that with no root declared a change anywhere is still analysed, one for the exclusion
+ordering — and the first two pass on both sides by design.
+
+**Found while verifying, and it is not this task's:** the clean-worktree step at `5eb356e` failed once
+in `java-metrics-lib:test`, on `AstMemoryManagerTest.neverHoldsMoreUnitsThanItsWindow`
+("the window should have been filled; peak was 1"). Twelve consecutive runs of that class in isolation
+and four of the whole library suite all passed, so it is a rare, load-sensitive assertion rather than a
+defect in the manager: `parseInWindows` uses `parallelStream()` on the ambient pool, and the peak is
+only above 1 if a second worker enters `parseFile` before the submitting thread finishes the list —
+which 24 trivial fixtures under a warm JIT can make false. The guard is also keyed to the wrong knob
+(`metricstree.parallelism`, not the pool the stream actually uses). Fixed in the following commit, as
+its own change: the verification step is only worth running if it does not fail for unrelated reasons.
+
 ## Session: A03 — a symlink is unsupported input, not a working-tree change (2026-10-06)
 
 Two halves of one defect, both reproduced against `1251995` before the fix.

@@ -52,6 +52,15 @@ record CheckEvaluationIssue(
     /** A selected Java file could not be read as source at all (a symlink, a submodule). */
     static final String UNSUPPORTED_SOURCE = "unsupported-source";
 
+    /**
+     * A changed file lies outside the declared analysis context.
+     *
+     * <p>Distinct from {@link #UNSUPPORTED_SOURCE}, which is about a file the tool cannot read, and from
+     * an exclusion, which is a file the user named. This one is a file the user's own root declaration
+     * does not reach, so the run measured part of the change and not the rest.
+     */
+    static final String OUTSIDE_ANALYSIS_CONTEXT = "outside-analysis-context";
+
     /** The current revision's copy of the file does not parse. */
     static final String CURRENT_PARSE_ERROR = "current-parse-error";
 
@@ -110,6 +119,10 @@ record CheckEvaluationIssue(
 
     static CheckEvaluationIssue unsupportedSource(String file, String message) {
         return new CheckEvaluationIssue(null, file, UNSUPPORTED_SOURCE, true, message);
+    }
+
+    static CheckEvaluationIssue outsideAnalysisContext(String file, String message) {
+        return new CheckEvaluationIssue(null, file, OUTSIDE_ANALYSIS_CONTEXT, true, message);
     }
 
     static CheckEvaluationIssue currentParseError(String file, String message) {

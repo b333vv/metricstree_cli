@@ -294,6 +294,7 @@ final class GateCommand implements Callable<Integer> {
         ExclusionConfig exclusions = loadExclusions(config);
         Set<String> subjectPaths = new java.util.LinkedHashSet<>();
         List<String> excludedPaths = new ArrayList<>();
+        List<CheckEvaluationIssue> contextIssues = new ArrayList<>();
         for (String relative : plan.afterSnapshotPaths()) {
             if (plan.unsupported().contains(relative)) {
                 // Recorded as an issue on the snapshot; not analyzed, and not silently absent either.
@@ -304,8 +305,25 @@ final class GateCommand implements Callable<Integer> {
             // source root, and the gate has none, so it would compare patterns against a file path and
             // silently match nothing. A silently ineffective exclusion is worse than no exclusion --
             // it is a rule the config file appears to express and the tool does not apply.
+            //
+            // Asked before the context check below, because --exclude-file is the remedy that message
+            // offers: a file the declared root does not reach is declared out of scope on purpose, and
+            // the exclusion has to be able to win or the advice would not work.
             if (exclusions.isExcluded(qualifiedNameOf(relative))) {
                 excludedPaths.add(relative);
+                continue;
+            }
+            // A changed file the declared context does not reach. The analysis is bounded by the
+            // declared roots, so this file cannot be measured -- and a run that cannot measure part of
+            // the change has to say so rather than pass over it. Required, because the alternative is a
+            // verdict about a smaller set than the user asked about; --exclude-file is how a file is
+            // declared out of scope on purpose.
+            if (!analysisContext.contains(relative)) {
+                contextIssues.add(CheckEvaluationIssue.outsideAnalysisContext(relative,
+                        relative + " is outside the declared analysis context ("
+                                + String.join(", ", analysisContext.sourceRoots())
+                                + "), so it was not analyzed. Add a --source-root that covers it, or"
+                                + " declare it out of scope in an exclusions file (--exclude-file)."));
                 continue;
             }
             subjectPaths.add(relative);
@@ -324,10 +342,18 @@ final class GateCommand implements Callable<Integer> {
         // with existing debt usually has no diff at all in the commit where they generate it.
         boolean baselineOperation = findingsBaselineFile != null || writeFindingsBaselineFile != null;
 
-        if (subjectPaths.isEmpty() && !baselineOperation) {
+        if (subjectPaths.isEmpty() && !baselineOperation && contextIssues.isEmpty()) {
             // Nothing survived exclusion or deletion. The report still has to say so: "no changed
             // Java files" and "every changed file was excluded" are different sentences, and a reader
             // who saw the first would conclude their change was reviewed.
+            //
+            // The context check is part of the condition because this fast path publishes PASSED, and a
+            // change that fell outside the declared context did not survive anything -- it is a file the
+            // run was asked about and could not measure. Reporting it here as "no changed Java files"
+            // was the audit's A07 arriving a second time: the same defect that let the boundary be
+            // ignored also let its only visible consequence be swallowed, so the boundary could be
+            // absent and the run still looked clean. Such a run falls through to the one verdict
+            // computation below, which turns the required gap into INCOMPLETE.
             String verdict = excludedPaths.isEmpty()
                     ? describeEmptyDiff(plan)
                     : "PASSED: " + excludedPaths.size() + " changed file"
@@ -383,7 +409,6 @@ final class GateCommand implements Callable<Integer> {
         // Null when the legacy policy ran; the new policy's findings decide the verdict instead.
         FindingReport maintainability = null;
         PolicyInput policyInput = null;
-        List<CheckEvaluationIssue> contextIssues = new ArrayList<>();
         // Digests are captured inside the try-with-resources, while the roots still exist, and used
         // after it closes -- the snapshots are the evidence, the roots are an implementation detail.
         String[] digests = new String[2];
@@ -395,14 +420,23 @@ final class GateCommand implements Callable<Integer> {
             // Project mode analyses the declared roots inside each snapshot, so both revisions are
             // measured against their own complete source context. Findings are still filtered down to
             // the changed entities afterwards: the context is what the analysis may see, never what
-            // the comparison is about. Local mode keeps passing explicit units, because a root would
-            // let the analyzer re-derive FQCNs from a layout the gate deliberately does not assume.
+            // the comparison is about.
+            //
+            // Exactly one of the two sets is handed over, and which one is decided by whether a root was
+            // declared. Passing both made the declaration decorative: `--source-root src/main/java` still
+            // analysed every Java file in the snapshot as an explicit unit, so a change outside the
+            // declared root was measured and reported and the boundary meant nothing. This is the
+            // audit's A07. Local mode keeps explicit units because a root would let the analyzer
+            // re-derive FQCNs from a layout the gate deliberately does not assume.
             List<SourceRoot> beforeRoots = analysisContext.rootsFor(before);
             List<SourceRoot> afterRoots = analysisContext.rootsFor(after);
+            boolean rooted = !beforeRoots.isEmpty() || !afterRoots.isEmpty();
             MetricReport currentReport = analyzer.analyze(new AnalysisRequest(
-                    "gate-current", afterRoots, after.units(), analysisContext.classpath(), options));
+                    "gate-current", afterRoots, rooted ? List.of() : after.units(),
+                    analysisContext.classpath(), options));
             MetricReport baseReport = analyzer.analyze(new AnalysisRequest(
-                    "gate-base", beforeRoots, before.units(), analysisContext.classpath(), options));
+                    "gate-base", beforeRoots, rooted ? List.of() : before.units(),
+                    analysisContext.classpath(), options));
 
             parseErrors = parseErrors(currentReport, after, subjectPaths);
             Set<String> unparseableBase = unparseableBaseFiles(baseReport, before);

@@ -1169,6 +1169,15 @@ Three properties are worth stating explicitly, because each of them prevents a s
   than the config declared with nothing in the output saying so, and every coupling number computed
   in it would be understated by an amount nobody could reconstruct. Both are exit 2 with a message
   naming the path.
+- **The declared roots bound what is analysed.** With no root declared the analysed set is the whole
+  snapshot; with roots declared it is exactly those roots, and a changed Java file outside them is
+  **not analysed**. Because a verdict over a smaller set than the change is not a verdict, such a file
+  is reported with the reason code `outside-analysis-context` and the run is **INCOMPLETE (exit 2)**
+  with a written report. Two remedies, and both are configuration: add a `--source-root` that covers
+  the file, or declare it out of scope in an exclusions file (`--exclude-file`). An exclusion is
+  decided first, so it can always win. This is a compatibility change: a run that declared a narrow
+  root and relied on a change outside it being analysed anyway now reports that it could not check the
+  file instead of checking it.
 
 Findings still apply **only to the changed entities**. The context is what the analysis is allowed to
 see; it is never what the comparison is about, and an untouched file cannot become a finding however
