@@ -59,7 +59,6 @@ final class ComparisonPlanner {
                 GitOps.pathChanges(repoRoot, mergeBaseSha, headSha));
         changes.addAll(localChanges(repoRoot, mode, headSha, headTree, after));
 
-        Set<String> unsupported = unsupportedPaths(repoRoot, after);
         List<String> untracked = mode.readsWorkingTree()
                 ? GitOps.untrackedPaths(repoRoot).stream()
                         .filter(GitOps::isJavaPath)
@@ -69,6 +68,7 @@ final class ComparisonPlanner {
                         .filter(path -> !headTree.containsKey(path))
                         .toList()
                 : List.of();
+        Set<String> unsupported = unsupportedPaths(repoRoot, after, untracked);
 
         return new ComparisonPlan(mode, requestedBaseRef, headSha, baseSha, mergeBaseSha,
                 changes, List.copyOf(unsupported), untracked);
@@ -128,14 +128,18 @@ final class ComparisonPlanner {
      * {@code null} and the content is read from the file on disk. That null is the whole difference
      * between the modes, so it is represented in the type rather than re-derived later.
      */
-    private record AfterSnapshot(Map<String, String> contentByObjectId, boolean readsFromDisk) {
+    private record AfterSnapshot(
+            Map<String, String> contentByObjectId,
+            Map<String, String> modesByPath,
+            boolean readsFromDisk) {
 
-        static AfterSnapshot fromObjects(Map<String, String> byObjectId) {
-            return new AfterSnapshot(byObjectId, false);
+        static AfterSnapshot fromObjects(Map<String, String> byObjectId, Map<String, String> modes) {
+            return new AfterSnapshot(byObjectId, modes, false);
         }
 
-        static AfterSnapshot fromDisk(Map<String, String> objectIdsForComparison) {
-            return new AfterSnapshot(objectIdsForComparison, true);
+        static AfterSnapshot fromDisk(Map<String, String> objectIdsForComparison,
+                Map<String, String> modes) {
+            return new AfterSnapshot(objectIdsForComparison, modes, true);
         }
     }
 
@@ -143,11 +147,12 @@ final class ComparisonPlanner {
             Path repoRoot, ComparisonMode mode, String headSha, Map<String, GitTreeEntry> headTree)
             throws GitOps.GitException {
         return switch (mode) {
-            case COMMITTED -> AfterSnapshot.fromObjects(objectIdsOf(headTree));
+            case COMMITTED -> AfterSnapshot.fromObjects(objectIdsOf(headTree), modesOf(headTree));
             case STAGED -> {
                 // Stage-0 index contents. GitOps.indexEntries throws on an unmerged entry, which is
                 // the contract's requirement for this mode.
-                yield AfterSnapshot.fromObjects(indexObjectIds(repoRoot));
+                IndexEntries staged = indexEntries(repoRoot);
+                yield AfterSnapshot.fromObjects(staged.objectIds(), staged.modes());
             }
             case WORKTREE -> {
                 // Worktree mode is HEAD's tracked paths *plus* everything the index already tracks,
@@ -162,52 +167,57 @@ final class ComparisonPlanner {
                 // what "worktree" means: unstaged edits on a tracked file must be seen too. A path the
                 // index knows about but that is not on disk is reported by the deletion pass below
                 // rather than being materialised from a stale blob.
-                yield AfterSnapshot.fromDisk(worktreePaths(repoRoot, headTree));
+                yield worktreeSnapshot(repoRoot, headTree);
             }
         };
     }
 
     /**
-     * The paths that exist in the working copy right now: everything the index tracks, plus everything
-     * HEAD tracked that is still on disk.
+     * The working tree's paths, each with the object ID it is compared against and the mode it is
+     * recorded under.
      *
-     * <p>The index is authoritative for paths it knows about, and it is the only thing that knows about
-     * a file the author has newly staged. HEAD's paths are added back only when the file is physically
-     * present, because that is the other half of "exists": a file HEAD tracked and the index no longer
-     * has was deleted or renamed away, and putting it back would make the after snapshot claim a file
-     * exists that does not \u2014 which is how the deletion and rename records below were being erased.
-     *
-     * <p>The object IDs are carried along rather than being read: the worktree snapshot compares content
-     * on disk against them, and they are how a modification is told from a file that merely exists.
+     * <p>The mode is carried rather than dropped, and that is the repair to A03's second half: a
+     * symlink's git object is a *blob*, so an object-type test cannot tell it from a source file, while
+     * the mode ({@code 120000}) can. Losing the mode here is what let a selected Java symlink be treated
+     * as readable source and never reported as unsupported input.
      */
-    private static Map<String, String> worktreePaths(Path repoRoot, Map<String, GitTreeEntry> headTree)
+    private static AfterSnapshot worktreeSnapshot(Path repoRoot, Map<String, GitTreeEntry> headTree)
             throws GitOps.GitException {
-        Map<String, String> paths = new LinkedHashMap<>(indexObjectIds(repoRoot));
+        IndexEntries staged = indexEntries(repoRoot);
+        Map<String, String> objectIds = new LinkedHashMap<>(staged.objectIds());
+        Map<String, String> modes = new LinkedHashMap<>(staged.modes());
         for (Map.Entry<String, GitTreeEntry> entry : headTree.entrySet()) {
             String path = entry.getKey();
-            paths.putIfAbsent(path, entry.getValue().objectId());
+            objectIds.putIfAbsent(path, entry.getValue().objectId());
+            modes.putIfAbsent(path, entry.getValue().mode());
             if (!Files.exists(repoRoot.resolve(path))) {
-                paths.remove(path);
+                objectIds.remove(path);
+                modes.remove(path);
             }
         }
-        return paths;
+        return AfterSnapshot.fromDisk(objectIds, modes);
+    }
+
+    /** The index's stage-0 entries, split into the two facts the comparison needs about each. */
+    private record IndexEntries(Map<String, String> objectIds, Map<String, String> modes) {
     }
 
     /**
-     * The index's stage-0 entries, as path to object ID.
+     * The index's stage-0 entries, as path to object ID and path to mode.
      *
      * <p>Stage is parsed and a nonzero stage is refused rather than skipped. Choosing one of several
      * stages would resolve a conflict by picking, and the gate's whole claim is that its verdict is a
      * fact about the code rather than an artefact of which side git listed first.
      */
-    private static Map<String, String> indexObjectIds(Path repoRoot)
-            throws GitOps.GitException {
-        Map<String, String> staged = new LinkedHashMap<>();
+    private static IndexEntries indexEntries(Path repoRoot) throws GitOps.GitException {
+        Map<String, String> objectIds = new LinkedHashMap<>();
+        Map<String, String> modes = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : GitOps.indexEntries(repoRoot).entrySet()) {
             String[] parts = entry.getValue().split(" ");
-            staged.put(entry.getKey(), parts[1]);
+            modes.put(entry.getKey(), parts[0]);
+            objectIds.put(entry.getKey(), parts[1]);
         }
-        return staged;
+        return new IndexEntries(objectIds, modes);
     }
 
     /**
@@ -271,8 +281,15 @@ final class ComparisonPlanner {
                 // The working tree has no object ID, so content is compared directly against the blob
                 // HEAD records. Existence alone is not a change: every tracked file exists, and
                 // treating that as a modification would report the entire repository as edited.
+                //
+                // NOFOLLOW_LINKS, because the question is about this path and not about whatever it
+                // points at. Following the link compared the *target's* bytes against HEAD's record of
+                // the link, which can never match, so a symlink was reported as a modification on every
+                // run -- and a modification is a subject, so the symlink became something the gate
+                // claimed to have checked. A non-regular entry is unsupported input instead, and
+                // unsupportedPaths says so.
                 Path onDisk = repoRoot.resolve(path);
-                if (Files.isRegularFile(onDisk)
+                if (Files.isRegularFile(onDisk, java.nio.file.LinkOption.NOFOLLOW_LINKS)
                         && (inHead == null || !sameContent(repoRoot, inHead, onDisk))) {
                     local.add(new GitPathChange(inHead == null ? "A" : "M", null,
                             inHead == null ? null : path, path));
@@ -362,43 +379,63 @@ final class ComparisonPlanner {
      * <p>A symlink is not followed and a gitlink has no content. Both make the analysis incomplete
      * rather than absent, because the file is genuinely part of the change and silently dropping it
      * would understate the set under review.
+     *
+     * <p>Decided from the entry's <em>mode</em>. The previous test asked git for the object's type and
+     * treated "blob" as proof of a readable file, which cannot work: a symlink's object is a blob too,
+     * and the mode is the only thing that distinguishes them. The practical effect was that a selected
+     * Java symlink was never reported as unsupported input -- in committed mode it was dropped in
+     * silence, and in worktree mode it produced a false "appeared after the snapshot was captured"
+     * error instead. Reading the mode is also cheaper: it is already in the record, and the old test
+     * spawned one {@code git cat-file} per candidate path.
+     *
+     * <p>An untracked path has no mode, because git has never seen it. The filesystem answers for those,
+     * through the same predicate the capture uses -- a second definition of "readable source" would be a
+     * second chance for the two to disagree, and a path the capture skips but the planner does not
+     * recognise is one the run reports as checked.
      */
-    private static Set<String> unsupportedPaths(Path repoRoot, AfterSnapshot after)
-            throws GitOps.GitException {
+    private static Set<String> unsupportedPaths(Path repoRoot, AfterSnapshot after,
+            List<String> untracked) {
         Set<String> unsupported = new java.util.LinkedHashSet<>();
-        for (String path : after.contentByObjectId().keySet()) {
+        for (Map.Entry<String, String> entry : after.contentByObjectId().entrySet()) {
+            String path = entry.getKey();
             if (!GitOps.isJavaPath(path)) {
                 continue;
             }
-            String objectId = after.contentByObjectId().get(path);
-            if (objectId != null && !isPlainBlob(repoRoot, objectId)) {
+            String mode = after.modesByPath().get(path);
+            if (mode != null && !isRegularFileMode(mode)) {
+                unsupported.add(path);
+            }
+        }
+        for (String path : untracked) {
+            if (!SnapshotMaterializer.isCapturable(repoRoot.resolve(path))) {
                 unsupported.add(path);
             }
         }
         return unsupported;
     }
 
-    /**
-     * Whether an object is a plain blob rather than a symlink or a commit (gitlink).
-     *
-     * <p>Read from the object type rather than inferred from the tree mode, because the index does not
-     * carry the same mode string the tree does and the two must agree on the answer.
-     */
-    private static boolean isPlainBlob(Path repoRoot, String objectId) throws GitOps.GitException {
-        return "blob".equals(GitOps.objectType(repoRoot, objectId));
+    /** Whether a git mode names a regular file — the only thing a Java source file can be. */
+    private static boolean isRegularFileMode(String mode) {
+        return "100644".equals(mode) || "100755".equals(mode);
     }
 
-    /**
-     * The tree reduced to {@code path -> object ID}.
-     *
-     * <p>Losing the mode here is deliberate for one caller and corrected for the other: the worktree
-     * mode re-reads the file from disk anyway, and the modes that do use the object ID ask
-     * {@code objectType} about it separately rather than trusting a mode string that the index does
-     * not even carry in the same form.
-     */
+    /** The tree reduced to {@code path -> object ID}. */
     private static Map<String, String> objectIdsOf(Map<String, GitTreeEntry> tree) {
         Map<String, String> byPath = new LinkedHashMap<>();
         tree.forEach((path, entry) -> byPath.put(path, entry.objectId()));
+        return byPath;
+    }
+
+    /**
+     * The tree reduced to {@code path -> mode}.
+     *
+     * <p>The mode travels beside the object ID rather than being asked for separately, because the
+     * question it answers — is this a regular file, or a symlink or gitlink — cannot be answered from
+     * the object ID at all.
+     */
+    private static Map<String, String> modesOf(Map<String, GitTreeEntry> tree) {
+        Map<String, String> byPath = new LinkedHashMap<>();
+        tree.forEach((path, entry) -> byPath.put(path, entry.mode()));
         return byPath;
     }
 

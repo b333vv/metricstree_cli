@@ -1,5 +1,52 @@
 # what has been done
 
+## Session: A03 — a symlink is unsupported input, not a working-tree change (2026-10-06)
+
+Two halves of one defect, both reproduced against `1251995` before the fix.
+
+**The false failure.** A repository with a committed `*.java` symlink could not be gated at all. The
+stability check re-read the working tree and compared it against the captured inventory, but it built
+its side from the raw candidate list while `collectFromWorkingTree` deliberately skips a symlink — so a
+file the run had refused to read was reported as having "appeared after the snapshot was captured". The
+gate exited 2 with a message about a race that never happened, and wrote no report, so the symlink was
+never named either. Reproduced with a committed `link.java` and a one-branch edit: exit 2, no report.
+
+**The silent omission.** The planner asked git for the object's *type* and treated `blob` as proof of a
+readable file. A symlink's git object **is** a blob — the mode (`120000`) is the only thing that
+distinguishes it — so a selected Java symlink was never marked unsupported. In committed mode it was
+dropped in silence; in worktree mode it produced the false error above. The comparison contract
+(line 41) says a selected Java symlink is unsupported input and yields incomplete analysis.
+
+**The fix.** One predicate, `SnapshotMaterializer.isCapturable`, now decides what a Java path has to be
+for the capture to read it, and the capture, the stability check and the planner all use it. The
+planner carries each entry's mode into `AfterSnapshot` instead of discarding it, and an untracked path
+(which git has never seen, so there is no mode) is judged from the filesystem through the same
+predicate. `GitOps.objectType` and its caller are gone: the method could not answer the question it was
+documented to answer, and it spawned one `git cat-file` per candidate path to fail at it.
+
+Two smaller corrections came with it. The worktree per-path comparison now stats with
+`NOFOLLOW_LINKS` — following the link compared the *target's* bytes against HEAD's record of the link,
+which can never match, so a symlink was reported as a modification on every run and became a subject
+the gate claimed to have checked. And `GitOps.workingTreeJavaInventory` is now derived from the same
+candidate list the capture uses, so the two cannot drift apart again.
+
+**Compatibility change.** A repository that keeps a `*.java` symlink anywhere in its analysed inventory
+now reports **INCOMPLETE (exit 2)** with a written report and an `unsupported-source` issue, instead of
+either failing with a misleading message and no report (worktree mode) or passing silently (committed
+mode). `--exclude-file` is the documented way to declare such a path out of scope.
+
+Verification: `./gradlew check` — **830 tests, 0 failures, 0 errors, 1 skipped** (two new cases in
+`GateSnapshotModesTest`). Goldens untouched. Re-run by hand on three fixtures: a pre-existing tracked
+symlink (exit 2, report written, `unsupported: ["link.java"]`, no "appeared" message), an untracked
+symlink in the change (exit 2, `unsupported-source`), and the audit's own `java-symlink` replay case,
+which now meets its stated expectation of "exit 2 and unsupported issue".
+
+Noted while fixing this, and belonging to the counts work: the stderr verdict line and the report
+disagree about how many required checks failed. `GateCommand` counts
+`completeness.requiredGapCount()` *plus* the required issues the completeness picture contributed to the
+policy report, so the same gap is counted twice — stderr said "2 required checks" where the report said
+`requiredIssues: 1`.
+
 ## Session: Windows out of CI, and the three defects that verifying macOS and Linux found (2026-10-06)
 
 Windows is deferred — deliberately, and not because it passes. `windows-latest` is out of both

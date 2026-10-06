@@ -1097,6 +1097,15 @@ so two runs against the same ref can be two different comparisons, and only the 
 say whether they were. A selected Java path that cannot be read as source — a symlink, a submodule
 pointer — appears in `unsupported` rather than being dropped from the set without saying so.
 
+"Selected" means every Java path in the analysed inventory, not only the changed ones: the snapshot is
+the context the analysis reads, so a `*.java` symlink anywhere in it is a file the run could not read.
+It is reported as an `unsupported-source` issue, and because it is required the run is **INCOMPLETE
+(exit 2)** with a written report — not a pass over a set smaller than the one under review. This is
+decided from the entry's git mode (`120000`), because a symlink's git object is an ordinary blob and the
+object type cannot tell it from a source file; an untracked path has no mode, so the filesystem answers
+through the same predicate the capture uses. A repository that keeps a `*.java` symlink will therefore
+report INCOMPLETE until the symlink is removed or excluded with `--exclude-file`.
+
 ### Analysis scope: `local` or `project`
 
 The gate analyzes a *changed* file set but measures it in *full context*, so it always parses a whole

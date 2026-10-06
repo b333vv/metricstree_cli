@@ -148,6 +148,30 @@ final class SnapshotMaterializer {
     static void collectFromWorkingTree(
             Path repoRoot, List<SourceSnapshot.SourceFile> files, List<String> issues)
             throws IOException, GitOps.GitException {
+        for (String path : workingTreeCandidates(repoRoot)) {
+            Path onDisk = repoRoot.resolve(path);
+            if (Files.isSymbolicLink(onDisk)) {
+                // Not followed, and not read: the link's target is a file the user did not edit, and
+                // a parse of it would be attributed to this path.
+                issues.add(path + ": symlink is not followed");
+                continue;
+            }
+            if (!isCapturable(onDisk)) {
+                continue;
+            }
+            files.add(new SourceSnapshot.SourceFile(path, readStable(onDisk, path)));
+        }
+    }
+
+    /**
+     * The working tree's Java candidates: everything the index tracks plus everything untracked and not
+     * ignored, restricted to {@code *.java}.
+     *
+     * <p>A candidate, not a captured file. Whether one is actually captured is decided by
+     * {@link #isCapturable}, and both halves of this class have to agree on that answer -- which is why
+     * the two definitions live here rather than being written twice.
+     */
+    private static Set<String> workingTreeCandidates(Path repoRoot) throws GitOps.GitException {
         Set<String> paths = new LinkedHashSet<>();
         for (String path : GitOps.trackedPaths(repoRoot)) {
             if (GitOps.isJavaPath(path)) {
@@ -159,19 +183,27 @@ final class SnapshotMaterializer {
                 paths.add(path);
             }
         }
-        for (String path : paths) {
-            Path onDisk = repoRoot.resolve(path);
-            if (Files.isSymbolicLink(onDisk)) {
-                // Not followed, and not read: the link's target is a file the user did not edit, and
-                // a parse of it would be attributed to this path.
-                issues.add(path + ": symlink is not followed");
-                continue;
-            }
-            if (!Files.isRegularFile(onDisk, LinkOption.NOFOLLOW_LINKS)) {
-                continue;
-            }
-            files.add(new SourceSnapshot.SourceFile(path, readStable(onDisk, path)));
-        }
+        return paths;
+    }
+
+    /**
+     * Whether the capture reads this path as source.
+     *
+     * <p>{@code NOFOLLOW_LINKS} is the whole content of the rule: a symlink is a path, not a file, and
+     * its target is content the user did not edit here. Reading through it would attribute the target's
+     * metrics to the link's path, which is why the capture skips it and reports it instead.
+     *
+     * <p>Shared with {@link #verifyUnchanged} and with {@code ComparisonPlanner}, deliberately. The
+     * verification asks "is the set of files we captured still the set the working tree holds?", and the
+     * planner asks "could this selected path be read at all?" -- and both questions have an answer only
+     * if every caller uses one predicate. Building the re-read inventory from the raw candidate list made
+     * a skipped symlink look like a file that appeared mid-run: the gate aborted with exit 2 and a
+     * message about the working tree changing, on a repository where nothing had changed at all. This is
+     * the recheck's A03.
+     */
+    static boolean isCapturable(Path onDisk) {
+        return !Files.isSymbolicLink(onDisk)
+                && Files.isRegularFile(onDisk, LinkOption.NOFOLLOW_LINKS);
     }
 
     /**
@@ -405,16 +437,21 @@ final class SnapshotMaterializer {
         return differences;
     }
 
-    /** Every Java path git currently reports as tracked or as untracked-and-not-ignored. */
+    /**
+     * Every Java path git currently reports as tracked or as untracked-and-not-ignored, restricted to
+     * the ones the capture would actually read.
+     *
+     * <p>The filter is not decoration. Comparing the captured set against the raw candidate list asked
+     * whether a file the capture deliberately refused had "appeared", which is the recheck's A03: a
+     * pre-existing {@code *.java} symlink was reported as a change to the working tree, the run exited 2
+     * with a message about content that never moved, and no report was written at all. Both sides of
+     * this comparison are the capture's own notion of a readable source, so a path the capture skips is
+     * absent from both and is not a difference.
+     */
     private static Set<String> workingTreeJavaInventory(Path repoRoot) throws GitOps.GitException {
         Set<String> paths = new LinkedHashSet<>();
-        for (String path : GitOps.trackedPaths(repoRoot)) {
-            if (GitOps.isJavaPath(path)) {
-                paths.add(path);
-            }
-        }
-        for (String path : GitOps.untrackedPaths(repoRoot)) {
-            if (GitOps.isJavaPath(path)) {
+        for (String path : workingTreeCandidates(repoRoot)) {
+            if (isCapturable(repoRoot.resolve(path))) {
                 paths.add(path);
             }
         }

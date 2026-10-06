@@ -310,6 +310,97 @@ class GateSnapshotModesTest {
         assertTrue(firstLine(worktreeErr).startsWith("FAILED:"), firstLine(worktreeErr));
     }
 
+    // ---------------------------------------------------------------- unsupported input
+
+    /**
+     * A pre-existing {@code *.java} symlink is unsupported input, not a working-tree change.
+     *
+     * <p>The recheck's A03, and the two halves of it are one defect seen twice. The stability check
+     * re-read the working tree and compared it against the captured inventory, but it built its side of
+     * that comparison from the raw candidate list while the capture skips a symlink — so a file the run
+     * had deliberately refused to read was reported as having "appeared after the snapshot was
+     * captured". Nothing had moved. The run exited 2 with a message about a race that never happened,
+     * and wrote no report at all, so the symlink itself was never named either.
+     *
+     * <p>The planner was wrong in the same direction and for the same reason: it asked git for the
+     * object's <em>type</em> and treated "blob" as proof of a readable file, but a symlink's object is a
+     * blob too. The mode is what distinguishes them, and the mode was being thrown away.
+     */
+    @Test
+    void aPreExistingSymlinkIsUnsupportedInputNotAWorkingTreeChange() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 2));
+        fixture().commitAll("base");
+        if (!symlink(repo.resolve("app/Link.java"), Path.of("Demo.java"))) {
+            return; // Filesystem without symlink support: the scenario cannot exist.
+        }
+        fixture().commitAll("a committed symlink, part of the repository, not of the change");
+        // A real change, below the growth budget, so the verdict itself is a pass.
+        fixture().write("app/Demo.java", classWithIfs("Demo", 3));
+
+        Path report = repo.resolve("report.json");
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD", "-o", report.toString());
+
+        String text = err.toString(StandardCharsets.UTF_8);
+        assertFalse(text.contains("appeared after the snapshot"),
+                "a symlink the capture skips is not a file that appeared: " + text);
+        assertTrue(Files.exists(report),
+                "and the run has to produce the report it was asked for, rather than aborting: " + text);
+        assertEquals(2, exitCode, "unsupported input is an incomplete analysis: " + text);
+
+        JsonNode written = mapper.readTree(Files.readString(report));
+        assertEquals(java.util.List.of("app/Link.java"),
+                mapper.convertValue(written.get("comparison").get("unsupported"),
+                        new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {}),
+                "the symlink is named as an input that could not be read: " + written.get("comparison"));
+        assertTrue(Files.readString(report).contains("unsupported-source"),
+                "and the reason code says it is the input, not the code: " + Files.readString(report));
+    }
+
+    /**
+     * The same rule for a symlink the author has just created and not yet tracked.
+     *
+     * <p>An untracked path has no git mode to read, so the filesystem answers instead — through the
+     * capture's own predicate, because a second definition of "readable source" is a second chance for
+     * the two to disagree. A path the capture skips while the planner believes it readable is a file the
+     * run reports as checked.
+     */
+    @Test
+    void anUntrackedSymlinkIsUnsupportedInputRatherThanASilentSubject() throws Exception {
+        fixture().init();
+        fixture().write("app/Demo.java", classWithIfs("Demo", 2));
+        fixture().commitAll("base");
+        fixture().write("app/Demo.java", classWithIfs("Demo", 3));
+        if (!symlink(repo.resolve("app/Link.java"), Path.of("Demo.java"))) {
+            return;
+        }
+
+        Path report = repo.resolve("report.json");
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exitCode = runGate(err, "--base", "HEAD", "-o", report.toString());
+
+        String text = err.toString(StandardCharsets.UTF_8);
+        assertEquals(2, exitCode, text);
+        JsonNode written = mapper.readTree(Files.readString(report));
+        assertEquals(java.util.List.of("app/Link.java"),
+                mapper.convertValue(written.get("comparison").get("unsupported"),
+                        new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {}),
+                "the untracked symlink is unsupported input, not a subject with no report entry: "
+                        + written.get("comparison"));
+        assertTrue(Files.readString(report).contains("unsupported-source"), text);
+    }
+
+    /** Creates a symlink, reporting whether the filesystem supports one at all. */
+    private static boolean symlink(Path link, Path target) {
+        try {
+            Files.createSymbolicLink(link, target);
+            return true;
+        } catch (UnsupportedOperationException | java.io.IOException exception) {
+            return false;
+        }
+    }
+
     // ---------------------------------------------------------------- mode selection
 
     /**
