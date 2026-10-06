@@ -83,7 +83,12 @@ jobs:
             exit 1
           fi
           expected=$(awk '{print $1; exit}' "$checksum")
-          actual=$(shasum -a 256 "$archives" | cut -d' ' -f1)
+          # Portable SHA-256: sha256sum (Linux / Windows Git Bash) or shasum (macOS).
+          if command -v sha256sum >/dev/null 2>&1; then
+              actual=$(sha256sum "$archives" | cut -d' ' -f1)
+          else
+              actual=$(shasum -a 256 "$archives" | cut -d' ' -f1)
+          fi
           if [ "$expected" != "$actual" ]; then
             echo "::error::The published checksum does not describe the published archive."
             echo "  expected $expected"
@@ -150,7 +155,9 @@ jobs:
           rm -rf ./.git
           cp -R "$consumer/." ./
           git init -q
-          git remote add origin "file://$remote"
+          # Origin is already at $remote (copied from the fixture's .git), so this just re-confirms
+          # the URL; add is a no-op fallback if the tree was freshly init'd instead.
+          git remote set-url origin "file://$remote" || git remote add origin "file://$remote"
           git config user.email fixture@test
           git config user.name fixture
           git fetch -q origin
