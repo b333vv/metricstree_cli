@@ -1,5 +1,66 @@
 # what has been done
 
+## Session: the action's download path is exercised against a real release (2026-10-07)
+
+Two acceptance rows met in one place. A18 asked whether the version a tag carries reaches a
+downloadable artifact; A19 asked whether the action a consumer is given can actually fetch it. The
+tag pushed at the end of the previous session answers the first, and this session makes the second
+answerable.
+
+**A18: the release landed, and it is what it claims to be.** `release` run #5 published `v2026.3.0`
+-- the first release this repository has published; every earlier tag-triggered run of the workflow
+failed before reaching `publish`, and `v2026.1.0`, `v2026.2.0` and `v2026.2.1` still have none.
+Checked against the published assets rather than the run's own report:
+
+- both assets are named the way the action addresses them: `metricstree-cli-2026.3.0.zip` and the
+  `.sha256` beside it;
+- the published checksum file reads
+  `ff43dbb741a5b0f3874db9004bb408afc988a2b1d109a5f859779c73f79caf35`, which is what `shasum -a 256`
+  computes over the downloaded archive **and** what GitHub's own asset digest records;
+- `shasum -a 256 -c SHA256SUMS` inside the unpacked archive passes on every entry;
+- the packaged launcher answers `java-metrics-cli 2026.3.0` -- the tag with its `v` stripped, which
+  is precisely the stamp A18's remaining gap was about.
+
+**A19: the consumer workflow now reaches the download.** Every step of `action-consumer-test.yml`
+ran with `cli-path` set, and that input short-circuits the download, the checksum verification and
+the unzip before any of the three is looked at -- so the wiring a consumer actually gets had never
+executed. A step now runs the action a second time without `cli-path`.
+
+It runs against the *same fixture* deliberately. Two CLIs -- one built from the commit under test,
+one downloaded from the release -- analysing one repository have to reach one verdict, and the
+assertion compares `status`, `exit-code`, `blocking-count`, `total-count` and `completeness` between
+them. Asserting only that the download succeeded would not notice a released archive that behaves
+unlike the code it was built from, which is the defect worth catching.
+
+**`release: published` cannot be the trigger, and the reason is worth writing down.** The release
+workflow publishes with the default `GITHUB_TOKEN`, and GitHub does not start a run from an event a
+`GITHUB_TOKEN` produced -- that is how it prevents recursion. The release event is therefore silent
+for exactly the release this step wants to test. The workflow asks instead: a version named by hand
+is taken as given, and otherwise the API is asked whether a release exists. Only existence is read,
+so the probe cannot disagree with the action about which release `latest` means.
+
+**A probe that cannot tell "nothing is there" from "I could not look" is worse than no probe.** The
+first draft treated every non-200 as "no release", and the local replay produced the counterexample
+immediately: with an empty token the API answers 401, so that draft would have reported "no release"
+and quietly removed the only coverage the download path has. 404 is now the one answer that means
+there is nothing to test, and anything else fails the step. The probe is authenticated for the same
+reason -- the unauthenticated rate limit is per IP address and hosted runners share theirs.
+
+**Verification.** actionlint 1.7.12 is clean over all four workflows, and it runs shellcheck over
+every `run:` block -- proved by sabotaging it with an out-of-function `local`. Both new steps were
+then replayed locally by extracting their `run:` text from the YAML and substituting the step
+outputs: sixteen cases. The probe's five (named by hand; 200; 404; and 401 and 403 each failing the
+step rather than being read as "no release") and the agreement step's eleven (agreement; a
+disagreement in each of the five compared fields; a download that never reached the CLI; an
+`unknown` tool version; a resolved release that is not the one named; and a version named without
+its `v`).
+
+**What is left.** The hosted run is the remaining evidence, and committing this is what produces it:
+the workflow triggers on changes to its own file, so the first run after this lands executes the
+download step against `v2026.3.0`. Local replay proves the assertions fire; only a runner can prove
+the download does. The `softprops/action-gh-release` pin stays at v2.2.1 -- moving to v3.0.3 is a
+major bump whose inputs and outputs have not been read, and it is a separate decision.
+
 ## Session: a tag that failed can be released again without a second tag (2026-10-07)
 
 The release workflow could only be started by pushing a tag, which made a failed run cost a tag.

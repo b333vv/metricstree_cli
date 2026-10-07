@@ -8,10 +8,21 @@
 #
 # It runs on a schedule and on workflow_dispatch as well as on changes to the action, so a
 # regression in the runner environment is caught rather than discovered by a consumer.
+#
+# One step at the end downloads a real release instead of using a locally built CLI. That is the
+# half the rest of the job cannot reach: `cli-path` short-circuits the action's download, so every
+# step above proves the gate's logic and nothing about the wiring a consumer actually gets.
 name: action-consumer-test
 
 on:
   workflow_dispatch:
+    inputs:
+      release-version:
+        description: >-
+          Release to download in the download-path step, e.g. v2026.3.0. Leave empty to use the
+          latest published release.
+        required: false
+        type: string
   schedule:
     # Early on a Monday UTC: a weekly check that lands when someone is around to read it.
     - cron: '37 6 * * 1'
@@ -23,6 +34,11 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # Names the release the download-path step should use. Empty means "whatever `latest` resolves
+  # to", which is left to the action rather than decided here.
+  RELEASE_VERSION: ${{ inputs.release-version }}
 
 jobs:
   consumer:
@@ -52,9 +68,11 @@ jobs:
           java-version: '17'
 
       - name: Build the CLI
-        # Outside the workspace, because the fixture replaces the workspace below. The action is
-        # exercised against a locally built CLI so this workflow needs no published release to exist
-        # yet; the download-and-verify path is covered by the action's own step, not here.
+        # Outside the workspace, because the fixture replaces the workspace below. Most of this job
+        # runs against a locally built CLI, so it needs no published release to exist. The one step
+        # that does is at the end, and it is the only one that reaches the download path -- the
+        # comment here used to claim that path was "covered by the action's own step", which was
+        # true of the step existing and false of it ever running.
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/cli"
@@ -285,6 +303,115 @@ jobs:
             exit 1
           fi
 
+      - name: Is there a release to download?
+        id: release
+        # Not `release: published`. The release workflow publishes with the default GITHUB_TOKEN, and
+        # GitHub does not start a run from an event a GITHUB_TOKEN produced -- that is how it
+        # prevents recursion, and it makes the release event silent for exactly the release this step
+        # wants to test. So the question is asked instead: a version named by hand is taken as given,
+        # and otherwise the API is asked whether any release exists.
+        #
+        # Only existence is read here. Which release `latest` means is left to the action, so this
+        # step cannot disagree with it about that.
+        env:
+          # Authenticated. The unauthenticated rate limit is per IP address and hosted runners share
+          # theirs, so an unauthenticated probe would report "no release" under load -- a wrong
+          # answer in the direction that silently removes coverage.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -n "${RELEASE_VERSION:-}" ]; then
+            echo "Release named by the caller: $RELEASE_VERSION"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                 -H "Accept: application/vnd.github+json" \
+                 -H "Authorization: Bearer $GH_TOKEN" \
+                 "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+          # 404 is the one answer that means "there is nothing to test". Every other non-200 means
+          # the question could not be asked -- an absent or rejected token, a rate limit, an outage
+          # -- and reporting that as "no release" would quietly drop the only coverage the download
+          # path has. A probe that cannot tell "nothing is there" from "I could not look" is worse
+          # than no probe, so it fails instead.
+          case "$code" in
+            200)
+              echo "found=true" >> "$GITHUB_OUTPUT"
+              ;;
+            404)
+              echo "No published release to download (the API answered 404)."
+              echo "The download path is not exercised by this run, and that is not a failure."
+              echo "found=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Could not ask whether a release exists; the API answered $code."
+              exit 1
+              ;;
+          esac
+
+      - name: Run the action again, letting it download the release
+        id: download
+        # The one thing the run above cannot prove. Nothing else in this job reaches the download,
+        # the checksum verification or the unzip: `cli-path` is set there, and it short-circuits all
+        # three before either of them is looked at.
+        #
+        # It runs against the same fixture deliberately. Two CLIs -- one built from this commit, one
+        # downloaded from a release -- analysing one repository have to reach one verdict, and a
+        # disagreement between them is the defect this step exists to catch. Asserting only that the
+        # download succeeded would not notice a released archive that behaves unlike the code it was
+        # built from.
+        if: ${{ steps.release.outputs.found == 'true' }}
+        uses: ./
+        with:
+          tool-version: ${{ env.RELEASE_VERSION || 'latest' }}
+          policy: maintainability
+          enforcement: enforce
+          report-format: json
+          report-path: metrics-gate-report-downloaded.json
+        continue-on-error: true
+
+      - name: The downloaded release and the local build agree
+        if: ${{ steps.release.outputs.found == 'true' }}
+        run: |
+          set -euo pipefail
+          echo "downloaded tool-version: ${{ steps.download.outputs.tool-version }}"
+          echo "local tool-version:      ${{ steps.gate.outputs.tool-version }}"
+
+          # A run that never reached the CLI publishes nothing. Reading that as "no findings" is the
+          # confusion this whole workflow exists to prevent.
+          if [ -z "${{ steps.download.outputs.status }}" ]; then
+            echo "::error::The download run published no status, so the downloaded CLI never ran."
+            exit 1
+          fi
+          if [ -z "${{ steps.download.outputs.tool-version }}" ] \
+             || [ "${{ steps.download.outputs.tool-version }}" = "unknown" ]; then
+            echo "::error::The download run published no tool version, so it read no report."
+            exit 1
+          fi
+
+          # The released archive reports the version it was stamped with. Anything else means the
+          # download resolved a release other than the one the caller named.
+          if [ -n "${RELEASE_VERSION:-}" ]; then
+            expected="${RELEASE_VERSION#v}"
+            if [ "${{ steps.download.outputs.tool-version }}" != "$expected" ]; then
+              echo "::error::Asked for $RELEASE_VERSION, and the report was written by ${{ steps.download.outputs.tool-version }}."
+              exit 1
+            fi
+          fi
+
+          compare() {
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1: the released CLI reported '$2' where the locally built CLI reported '$3', on the same fixture."
+              exit 1
+            fi
+          }
+          compare status         "${{ steps.download.outputs.status }}"         "${{ steps.gate.outputs.status }}"
+          compare exit-code      "${{ steps.download.outputs.exit-code }}"      "${{ steps.gate.outputs.exit-code }}"
+          compare blocking-count "${{ steps.download.outputs.blocking-count }}" "${{ steps.gate.outputs.blocking-count }}"
+          compare total-count    "${{ steps.download.outputs.total-count }}"    "${{ steps.gate.outputs.total-count }}"
+          compare completeness   "${{ steps.download.outputs.completeness }}"   "${{ steps.gate.outputs.completeness }}"
+          echo "The released archive and the locally built CLI agree on the same fixture."
+
       - name: Upload the consumer run's reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -292,5 +419,6 @@ jobs:
           name: action-consumer-${{ matrix.os }}
           path: |
             metrics-gate-report.json
+            metrics-gate-report-downloaded.json
             ${{ runner.temp }}/metrics-findings.json
           if-no-files-found: warn
