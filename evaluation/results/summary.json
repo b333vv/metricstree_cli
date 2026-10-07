@@ -6,11 +6,21 @@
         "numerator": 2,
         "value": 0.6667
       },
+      "perExpectation": {
+        "denominator": 3,
+        "numerator": 2,
+        "value": 0.6667
+      },
       "uncertainLabels": 0,
       "uncertainNote": "counted separately and folded into neither side of the rate"
     },
     "MT-M002": {
       "agreement": {
+        "denominator": 2,
+        "numerator": 2,
+        "value": 1.0
+      },
+      "perExpectation": {
         "denominator": 2,
         "numerator": 2,
         "value": 1.0
@@ -32,6 +42,11 @@
       "holdout": 0,
       "tuning": 5
     }
+  },
+  "deduplication": {
+    "note": "agreement counts each problem once; perExpectation counts each way it was written down",
+    "problems": 5,
+    "writtenDownInstances": 5
   },
   "excludedFromRates": [],
   "flaggedWithoutExpectation": [

@@ -9,6 +9,8 @@ The rules this file follows are the reason the numbers can be quoted at all:
     and folding it into either side would convert a question into an answer.
   * **Groups are deduplicated before counting.** Several cases can describe one underlying problem;
     counted individually they would inflate agreement by however many ways somebody wrote it down.
+    A group is agreed only when every instance in it agreed, which makes the rule one-way:
+    deduplicating can lower a rate but never raise it, and leaves it alone when nothing repeats.
   * **A failed run is missing data.** It is excluded from the rates and reported in its own section,
     because it is not an observation of the tool's judgement.
   * **This says nothing about population recall.** The corpus is a set of cases somebody wrote. What
@@ -45,13 +47,31 @@ def _rate(numerator: int, denominator: int) -> dict:
             "denominator": denominator}
 
 
+def _agreed_problems(outcomes: dict[str, bool]) -> int:
+    """How many of a rule's problems every written-down instance agreed on."""
+    return sum(1 for agreed in outcomes.values() if agreed)
+
+
 def compare(record: dict, labels: dict) -> dict:
-    """Compare each labelled expectation against what the run produced."""
+    """Compare each labelled expectation against what the run produced.
+
+    Agreement is counted once per *problem*, not once per way the problem was written down. A
+    label's ``group`` names that problem and a label without one is its own, keyed exactly as
+    :func:`deduplicate` keys it so that review effort and agreement collapse the same set.
+
+    A group is agreed only when **every** decided instance agreed. A problem the tool missed in one
+    of the ways it appears was not reliably found, and calling the group agreed because its other
+    spellings were caught is the same inflation pointing the other way. That choice makes the rule
+    one-way -- deduplicating can only lower a rate, never raise it -- and it is why the bundled
+    corpus reads identically before and after, since no group in it repeats.
+    """
     by_case = {case["case_id"]: case for case in record["cases"]}
 
     agreed = defaultdict(int)
     expected_total = defaultdict(int)
     uncertain = defaultdict(int)
+    # Per rule, the decided outcome of each problem: {rule: {group key: did every instance agree}}.
+    problems: dict[str, dict[str, bool]] = defaultdict(dict)
     missed = []
     unexplained_flag = []
     excluded = []
@@ -82,7 +102,8 @@ def compare(record: dict, labels: dict) -> dict:
             expected_total[rule] += 1
             did_flag = rule in flagged
             should_flag = outcome == "should-flag"
-            if did_flag == should_flag:
+            this_agreed = did_flag == should_flag
+            if this_agreed:
                 agreed[rule] += 1
             elif should_flag:
                 missed.append({"caseId": case_id, "ruleId": rule, "group": group,
@@ -90,17 +111,31 @@ def compare(record: dict, labels: dict) -> dict:
             else:
                 unexplained_flag.append({"caseId": case_id, "ruleId": rule, "group": group})
 
+            key = group or f"case:{case_id}:{rule}"
+            problems[rule][key] = problems[rule].get(key, True) and this_agreed
+
     # Every rule anybody labelled, including one whose only labels are uncertain: a rule with
     # nothing decided about it still has an answer, and that answer is "insufficient evidence".
     labelled = sorted(set(expected_total) | set(uncertain))
     return {
         "byRule": {
             rule: {
-                "agreement": _rate(agreed[rule], expected_total[rule]),
+                "agreement": _rate(_agreed_problems(problems.get(rule, {})),
+                                   len(problems.get(rule, {}))),
+                # Kept beside the rate rather than dropped: the difference between the two numbers
+                # *is* the deduplication, so a reader sees the effect instead of taking the
+                # contract's word for it. They coincide when no group repeats.
+                "perExpectation": _rate(agreed[rule], expected_total[rule]),
                 "uncertainLabels": uncertain[rule],
                 "uncertainNote": "counted separately and folded into neither side of the rate",
             }
             for rule in labelled
+        },
+        "deduplication": {
+            "problems": sum(len(outcomes) for outcomes in problems.values()),
+            "writtenDownInstances": sum(expected_total.values()),
+            "note": "agreement counts each problem once; perExpectation counts each way it was "
+                    "written down",
         },
         "missed": missed,
         "flaggedWithoutExpectation": unexplained_flag,
@@ -149,7 +184,6 @@ def summarize(record: dict, labels: dict) -> dict:
         "note": "unique problems a reviewer must adjudicate; instances are how many ways the same "
                 "problem was written down",
     }
-
     # Missed-issue coverage: how much of the missed set was actually sampled for review. Without a
     # sampling step this is 0 of N, and saying so is more useful than implying all of it was seen.
     sampling = {
@@ -171,6 +205,10 @@ def summarize(record: dict, labels: dict) -> dict:
         "toolVersion": record["toolVersion"],
         "corpus": corpus,
         "agreement": comparison["byRule"],
+        # How much the deduplication actually removed. A corpus where nothing repeats reports the
+        # same two counts, and saying so is how a reader tells that case from one whose headline
+        # number would move if the groups were collapsed differently.
+        "deduplication": comparison["deduplication"],
         # The detail behind the rates, kept rather than reduced away: a reader who wants to know
         # *which* cases were missed, or which flags nobody expected, has to be able to see them.
         "missed": comparison["missed"],

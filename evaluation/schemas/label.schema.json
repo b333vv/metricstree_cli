@@ -29,7 +29,7 @@
           "group": {
             "type": "string",
             "minLength": 1,
-            "description": "Cases sharing a group describe the same underlying problem. Deduplicated by group, so one problem cannot be counted three times by being written down three ways."
+            "description": "Cases sharing a group describe the same underlying problem. The agreement rate counts each group once, so one problem cannot be counted three times by being written down three ways. A group is agreed only when every instance in it agreed: a problem the tool missed in one of the ways it appears was not reliably found. Deduplicating therefore lowers a rate or leaves it alone, never raises it."
           },
           "reason": { "type": "string" }
         }

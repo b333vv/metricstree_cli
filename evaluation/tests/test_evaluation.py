@@ -199,6 +199,103 @@ class Rates(unittest.TestCase):
         self.assertIn("missing data", joined)
 
 
+class GroupDeduplication(unittest.TestCase):
+    """One problem written down several ways is one problem in the rate, not several.
+
+    The module docstring, the label schema and the README each stated that groups are deduplicated
+    before counting, and none of the three was true of the headline number: ``compare`` counted per
+    expectation and never read ``group`` at all, beyond copying it into the miss list. It survived
+    because no group in the bundled corpus repeats, so the two figures coincided -- a contract that
+    is stated, unimplemented, and currently indistinguishable from implemented. Adding a second case
+    for an existing group is all it would have taken to publish a rate that meant something else.
+    """
+
+    #: Three spellings of one problem, plus a fourth case that is a problem of its own.
+    CASES = ("way-one", "way-two", "way-three", "other")
+
+    def _record(self, *flagged):
+        flagged = set(flagged)
+        return {
+            "schemaVersion": "v1", "toolVersion": "1.2.3",
+            "corpus": {"digest": "0" * 64, "cases": len(self.CASES), "note": ""},
+            "pmd": {"status": "unavailable", "path": None, "note": ""},
+            "cases": [
+                {"case_id": case_id, "split": "tuning", "status": "ok",
+                 "findings": ([{"ruleId": "MT-M001", "disposition": "ACTIVE", "signature": "f()"}]
+                              if case_id in flagged else []),
+                 "blocking": 1 if case_id in flagged else 0, "exit_code": 0,
+                 "tool_version": "1.2.3", "pmd_status": "not-run", "pmd_findings": [],
+                 "pmd_exit_code": None, "pmd_version": "", "problems": []}
+                for case_id in self.CASES
+            ],
+        }
+
+    def _labels(self, *grouped, group="group:one-problem", other_outcome="should-flag"):
+        """Three cases in one group; ``other`` labelled on its own unless its outcome is None."""
+        expectations = {
+            case_id: {"ruleId": "MT-M001", "outcome": "should-flag", "group": group}
+            for case_id in grouped
+        }
+        labels = {}
+        for case_id in self.CASES:
+            if case_id in expectations:
+                items = [expectations[case_id]]
+            elif case_id == "other" and other_outcome is not None:
+                items = [{"ruleId": "MT-M001", "outcome": other_outcome}]
+            else:
+                continue
+            labels[case_id] = {"caseId": case_id, "reviewer": "r",
+                               "reviewKind": "synthetic-author", "expectations": items}
+        return labels
+
+    def test_agreement_counts_a_repeated_problem_once(self):
+        summary = summarizer.summarize(
+            self._record("way-one", "way-two", "way-three"), self._labels(*self.CASES[:3]))
+        stats = summary["agreement"]["MT-M001"]
+        self.assertEqual(stats["agreement"]["numerator"], 1)
+        self.assertEqual(stats["agreement"]["denominator"], 2,
+                         "three ways of one problem and one other problem are two problems")
+        self.assertEqual(stats["agreement"]["value"], 0.5)
+        self.assertEqual(stats["perExpectation"]["numerator"], 3)
+        self.assertEqual(stats["perExpectation"]["denominator"], 4)
+
+    def test_deduplicating_never_raises_the_rate(self):
+        # The group agreed in two of its three spellings. Counting the group as agreed because
+        # most of it was caught is the same inflation pointing the other way, so the group is not
+        # agreed -- and that is what makes the rule one-way.
+        summary = summarizer.summarize(
+            self._record("way-one", "way-two"), self._labels(*self.CASES[:3]))
+        stats = summary["agreement"]["MT-M001"]
+        self.assertEqual(stats["agreement"]["value"], 0.0)
+        self.assertLessEqual(stats["agreement"]["value"], stats["perExpectation"]["value"])
+
+    def test_a_repeated_problem_that_always_agrees_leaves_the_rate_alone(self):
+        summary = summarizer.summarize(
+            self._record(*self.CASES), self._labels(*self.CASES[:3]))
+        stats = summary["agreement"]["MT-M001"]
+        self.assertEqual(stats["agreement"]["value"], 1.0)
+        # The *rate* is what collapsing cannot move when nothing was missed; the denominators
+        # still differ, because one problem written down three ways is one problem and three
+        # expectations. Reporting both is what keeps that visible.
+        self.assertEqual(stats["agreement"]["value"], stats["perExpectation"]["value"])
+        self.assertEqual(stats["agreement"]["denominator"], 2)
+        self.assertEqual(stats["perExpectation"]["denominator"], 4)
+
+    def test_ungrouped_labels_are_separate_problems(self):
+        # No group anywhere: every expectation is its own problem, so the two figures must agree.
+        summary = summarizer.summarize(
+            self._record("way-one"), self._labels("way-one", other_outcome=None))
+        stats = summary["agreement"]["MT-M001"]
+        self.assertEqual(stats["agreement"]["denominator"], 1)
+        self.assertEqual(stats["agreement"], stats["perExpectation"])
+
+    def test_the_summary_states_what_deduplication_removed(self):
+        summary = summarizer.summarize(
+            self._record("way-one", "way-two", "way-three"), self._labels(*self.CASES[:3]))
+        self.assertEqual(summary["deduplication"]["problems"], 2)
+        self.assertEqual(summary["deduplication"]["writtenDownInstances"], 4)
+
+
 class Pmd(unittest.TestCase):
 
     def test_missing_pmd_is_explicit_not_an_invented_comparison(self):
@@ -379,6 +476,20 @@ class RecordedResults(unittest.TestCase):
         self.assertEqual(summary["corpus"]["digest"], run["corpus"]["digest"])
         self.assertEqual(summary["toolVersion"], run["toolVersion"])
         self.assertEqual(summary["corpus"]["casesRun"], len(run["cases"]))
+        # Recomputed, not spot-checked. Three matching scalar fields would survive any change to
+        # what the summarizer emits, which is how a committed summary goes stale against the code
+        # that writes it -- the same failure the corpus digest above exists to catch, one level
+        # down. Changing the summary's shape is allowed; leaving the file behind is not.
+        labels = {}
+        for path in sorted((_ROOT / "evaluation" / "labels").glob("*.json")):
+            label = json.loads(path.read_text(encoding="utf-8"))
+            labels[label["caseId"]] = label
+        self.assertEqual(
+            summarizer.summarize(run, labels), summary,
+            "evaluation/results/summary.json is not what this summarizer produces from "
+            "evaluation/results/run.json and the committed labels. Regenerate it: python3 "
+            "evaluation/summarize.py --run evaluation/results/run.json "
+            "--out evaluation/results/summary.json")
 
     def test_the_digest_changes_when_a_case_changes(self):
         # The guard is only worth having if it can fail: a digest that ignored the case content

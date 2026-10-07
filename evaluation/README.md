@@ -74,7 +74,10 @@ to reconcile — the rule had never been asked.
 - **Uncertain labels are their own bucket.** A label nobody is sure of is evidence about the label.
   Folding it into either side converts a question into an answer.
 - **Groups are deduplicated before counting.** Several cases can describe one problem; counted
-  individually they inflate agreement by however many ways somebody wrote it down.
+  individually they inflate agreement by however many ways somebody wrote it down. A group counts as
+  agreed only when every instance in it agreed, so deduplicating lowers a rate or leaves it alone and
+  never raises it. The summary carries both figures — `agreement` and `perExpectation` — so the
+  difference the collapsing makes is visible rather than asserted.
 - **A failed run is missing data.** It is excluded from the rates and listed with its reason. A run
   that produced no report observed nothing about the tool's judgement, and counting it as "correctly
   did not flag" would be a fabricated agreement.

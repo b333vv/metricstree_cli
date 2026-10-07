@@ -1,5 +1,68 @@
 # what has been done
 
+## Session: the agreement rate counts a problem once, as its contract says (2026-10-07)
+
+The remaining item on A21's rate contract, and the third false claim this audit has caught in a
+document that was never checked against the code it describes. `evaluation/summarize.py`'s docstring
+said **"Groups are deduplicated before counting. Several cases can describe one underlying problem;
+counted individually they would inflate agreement by however many ways somebody wrote it down."**
+`evaluation/schemas/label.schema.json` said the same about `group`, and `evaluation/README.md`
+repeated it.
+
+**It was not true of the headline number.** `deduplicate` was called on exactly one thing — the miss
+list, to compute `reviewEffort`. `compare()` counted the agreement rate per *expectation* and never
+read `group` at all, beyond copying it into the miss entry. One problem written down three ways and
+found each time contributed three agreements:
+
+```
+written down : 4 expectations, 3 agreed
+reported     : 3/4 = 0.75     <- per expectation, what the code did
+contract     : 1/2 = 0.50     <- per problem, what three documents promised
+```
+
+**Why it survived.** No group in the bundled corpus repeats. The regenerated summary now says so in
+its first block — `deduplication: {problems: 5, writtenDownInstances: 5}` — which is the point of
+reporting it. The two figures coincided, and a contract that is stated, unimplemented and currently
+indistinguishable from implemented reads exactly like one that is implemented. Adding a second case
+to an existing group was all it would have taken to publish a number that meant something else.
+
+**The fix counts once per problem.** Agreement is keyed by `group`, falling back to
+`case:{caseId}:{rule}` — the same key `deduplicate` uses, so review effort and agreement collapse
+the same set. A group is agreed only when **every** instance agreed: a problem the tool missed in
+one of the ways it appears was not reliably found, and calling the group agreed because its other
+spellings were caught is the same inflation pointing the other way. That choice makes the rule
+one-way — deduplicating can lower a rate, never raise it — which is the property the docstring
+claimed and the property the tests assert.
+
+The per-expectation figure is kept beside the rate as `perExpectation` rather than dropped. The
+difference between the two numbers *is* the deduplication, so a reader sees the effect instead of
+taking the contract's word for it.
+
+**The committed summary is now recomputed, not spot-checked.** `RecordedResults` compared three
+scalar fields, so a change to what the summarizer emits would leave `evaluation/results/summary.json`
+stale against the code that writes it — the same failure the corpus digest exists to catch, one
+level down. It now recomputes the summary from the committed run and the committed labels and
+asserts equality. Changing the shape is allowed; leaving the file behind is not.
+
+**Verification.** Five tests and four sabotages, each isolating its target: counting per expectation
+fails the three dedup tests; agreeing a group when *any* instance agreed fails exactly
+`test_deduplicating_never_raises_the_rate`, the one-way property; keying on the case rather than the
+group fails four; and deleting `deduplication` from the committed summary — the shape change without
+the regeneration — fails exactly `test_the_summary_describes_the_recorded_run`. The evaluation suite
+goes from 73 tests to 78.
+
+The regeneration is a pure shape change for this corpus: the rates stay `2/3` and `2/2` and
+`run.json` is untouched. That is the honest result — nothing about the tool's agreement changed,
+because nothing in the corpus repeats. What changed is that the number can no longer mean something
+else the moment something does.
+
+`./gradlew check` green at **849 tests, 0 failures, 1 skipped** — unchanged, this is Python-only.
+
+**Still open under A21.** Labels carry `should-flag` outcomes rather than finding fingerprints and
+actionable/valid-not-actionable judgements, so a label cannot say *which* finding was meant. And the
+runner discards the raw report when a case's temporary repository closes, retaining only the
+four-field summary.
+
 ## Session: the recorded evaluation results describe the corpus that ships (2026-10-06)
 
 The last piece of A21's identity work, and the one that was publishing a false claim. The committed
