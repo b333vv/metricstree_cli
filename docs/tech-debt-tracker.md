@@ -327,25 +327,6 @@
   the status, which changes the record's shape and therefore forces a regeneration of
   `evaluation/results/*.json` in the same change.
 
-- **DEBT-23 — The action resolves `latest` with an unauthenticated releases API call.** Found
-  2026-10-07 while fixing the download path. `action.yml`'s "Resolve the CLI" step asks
-  `api.github.com/repos/$MG_REPO/releases/latest` with no credential, and falls back to
-  "could not determine the latest release" (exit 2) on any failure — including a rate limit.
-  Unauthenticated limits are per IP address and hosted runners share theirs, so the default value of
-  `tool-version` can fail for a reason that has nothing to do with the release existing. The
-  consumer workflow's own release probe authenticates for exactly this reason and documents it; the
-  action does not, which is the inconsistency. It is not what broke run #28 — the step was replayed
-  locally without a token and resolved `v2026.3.0` — so it was left alone rather than changed on
-  suspicion. *What would close it:* send `Authorization: Bearer $GITHUB_TOKEN` from
-  `${{ github.token }}`, and distinguish "the API refused me" from "there is no release" in the
-  error, which is the same 404-only discipline the workflow's probe already applies.
-
-  *Update (2026-10-07, after run #31):* the step now reports a lookup it could not complete instead of
-  dying with curl's status, and retries a transport failure three times. Neither closes this: an
-  unauthenticated request that is refused with a 403 or 429 is not a transport failure and is not
-  retried, and the message still cannot tell "no release is published" from "the API would not answer
-  me". The authentication is still the fix.
-
 - **DEBT-25 — A baseline entry that matched nothing is never reported, and the check for it is wrong
   anyway.** Found 2026-10-07 while closing the recheck's A13 compound-predicate item.
   `FindingBaselineFilter.staleEntries` is called from its tests and from nowhere else, so the promise
@@ -364,6 +345,29 @@
   derives from the accepted values, so there is nothing to store that is not already derivable.
 
 ## Resolved Debt Items
+- **DEBT-23 — The action resolved `latest` with an unauthenticated releases API call.** Found
+  2026-10-07 while fixing the download path, **fixed the same day** once the hosted runs stopped
+  leaving it to inference. `action.yml`'s "Resolve the CLI" step asked
+  `api.github.com/repos/$MG_REPO/releases/latest` with no credential and ended in exit 2 on any
+  failure — a 404 and a rate limit reported identically, the second of which is a per-address limit
+  that hosted runners share, so the default value of `tool-version` could be refused for a reason
+  that had nothing to do with the release existing. The consumer workflow's own release probe
+  authenticated for exactly this reason and said so; the action did not. It was left alone a session
+  earlier because the step replayed correctly without a token, which was the right call on the
+  evidence then and wrong on the evidence now: run #31 and run #32 both failed the download path on
+  macOS while the Linux job of the same commit downloaded the same release. The lookup no longer
+  asks the API at all. `https://github.com/OWNER/REPO/releases/latest` answers 302 to
+  `.../releases/tag/<tag>` — the same question with no credential, no quota and no per-address limit,
+  asked of the host the archive is fetched from. A repository with no release lands on
+  `.../releases`, so the 404-versus-refusal ambiguity is gone rather than checked for. The second
+  half of *what would close it* is therefore discharged differently from how it was written:
+  authentication was the intended fix, and removing the credential's need is a stronger one.
+  `ActionDownloadStepTest` asserts that no request goes to `api.github.com` and that the two exit-2
+  situations carry different messages; four sabotages caught. **What is still inference:** which
+  request failed on the macOS runner. The step's exit 2 says a fetch did not complete, not which one,
+  and the archive and the checksum come from `github.com` too. Every failure in the step now names
+  its URL, so the next hosted run settles it — and if it names the archive, this diagnosis is wrong
+  and has to be redone rather than the symptom retried.
 - **DEBT-24 — The action's findings document was one fixed path for the whole job.** Found 2026-10-07
   while fixing the staging directory, **fixed the same day** once the hosted run evidenced it rather
   than hypothesised it. The gate step writes `${{ runner.temp }}/metrics-findings.json` — the same

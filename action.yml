@@ -155,8 +155,9 @@ runs:
         # this step before the download is reached. Clearing first also stops a second run on the
         # same runner from unpacking over a previous release's files.
         #
-        # It sits above the release lookup as well as above the archive, because the lookup now
-        # writes its answer into this directory rather than reading it out of a pipeline.
+        # It sits above the archive and the checksum, which are written here, and above the release
+        # lookup, which is not: clearing unconditionally keeps this step's only side effect in one
+        # place whichever branch is taken.
         rm -rf "$work"
         mkdir -p "$work"
 
@@ -195,6 +196,31 @@ runs:
           done
         }
 
+        # Where GitHub sends a request for "the latest release", retried on the same terms as
+        # `fetch` and for the same reason. The answer is a URL rather than a document, so it arrives
+        # on stdout and cannot go through `fetch`; the loop is otherwise the same shape.
+        #
+        # The `|| status=$?` is load-bearing. Without it, a curl that failed inside a command
+        # substitution ends the script with curl's own exit status under `set -o pipefail`, and the
+        # message the caller below would print is never reached. That shape of bug is what the
+        # hosted consumer run's macOS job reported as a bare `56` with nothing to act on.
+        ask_latest() {
+          attempt=1
+          while true; do
+            status=0
+            destination=$(curl -fsS -o /dev/null -w '%{redirect_url}' "$latest_url") || status=$?
+            if [ "$status" -eq 0 ]; then
+              return 0
+            fi
+            if [ "$status" -eq 22 ] || [ "$attempt" -ge 3 ]; then
+              return 1
+            fi
+            echo "Attempt $attempt to ask $latest_url failed (curl exit $status); retrying" >&2
+            attempt=$((attempt + 1))
+            sleep 2
+          done
+        }
+
         # The tag and the version are two different strings, and the asset is named after the
         # second: the tag is `v2026.1.0`, the archive is `metricstree-cli-2026.1.0.zip`.
         #
@@ -203,27 +229,45 @@ runs:
         # ever published, so the default value of tool-version could not work. The tag is now
         # resolved and then used whole, so the archive named after it is the one actually there.
         #
-        # The answer is fetched to a file and parsed afterwards rather than piped straight into
-        # `sed`, and that is not a style preference. With `set -o pipefail` and `set -e`, a curl that
-        # failed inside the command substitution ended the script with curl's own exit status, so the
-        # check below never ran: the hosted consumer run's macOS job reported a bare `56` -- a receive
-        # error -- and said nothing about what it had been asking for or what to do about it. A file
-        # turns the fetch's status into an ordinary value this step can act on.
+        # It is resolved from GitHub's own redirect, not from the releases API.
+        #
+        # The API call this replaces was unauthenticated, and an unauthenticated limit is per IP
+        # address while hosted runners share theirs. The consumer workflow's own release probe
+        # authenticates for exactly this reason and says so; this step did not. The hosted consumer
+        # run's macOS job then failed on the download path on two consecutive commits while the
+        # same commits' Linux jobs downloaded the same release without trouble, and a request that
+        # is refused by address is the one difference this step can remove.
+        #
+        # `https://github.com/OWNER/REPO/releases/latest` answers 302 to `.../releases/tag/<tag>`.
+        # That is the same question with no credential, no API quota and no per-address limit --
+        # and it is asked of the host the archive is fetched from, so a runner that could download
+        # the release at all can establish which release to download. A repository with no
+        # published release lands on `.../releases` instead, which is how "there is nothing to
+        # resolve" is told apart from "the question could not be asked": the two end this step
+        # with different messages rather than one shared "could not determine the latest release".
+        #
+        # The redirect is read from `%{redirect_url}` on a request that does not follow it, so the
+        # lookup is one small request and no page body. The answer is parsed with parameter
+        # expansion rather than by piping it through `sed`: a tag is the last path segment of the
+        # destination, and a pipeline here would be a second place for the failure above to hide.
         tag="$INPUT_TOOL_VERSION"
         if [ "$tag" = "latest" ]; then
-          latest="$work/latest.json"
-          if ! fetch "https://api.github.com/repos/$MG_REPO/releases/latest" "$latest" \
-               -H "Accept: application/vnd.github+json"; then
-            echo "Error: could not ask $MG_REPO for its latest release." >&2
-            echo "Either no release is published, or the API did not answer." >&2
-            echo "Pin one explicitly with the tool-version input." >&2
+          latest_url="https://github.com/$MG_REPO/releases/latest"
+          destination=""
+          if ! ask_latest; then
+            echo "Error: could not ask $latest_url which release is the latest one." >&2
+            echo "The request did not complete, so nothing was analysed." >&2
+            echo "Pin a version explicitly with the tool-version input." >&2
             exit 2
           fi
-          tag=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$latest" \
-                | head -1)
+          case "$destination" in
+            */releases/tag/*) tag="${destination##*/releases/tag/}" ;;
+            *) tag="" ;;
+          esac
           if [ -z "$tag" ]; then
-            echo "Error: the release answer from $MG_REPO named no tag." >&2
-            echo "Pin one explicitly with the tool-version input." >&2
+            echo "Error: $MG_REPO named no latest release." >&2
+            echo "The request was answered with '$destination', which is not a release page." >&2
+            echo "Pin a version explicitly with the tool-version input." >&2
             exit 2
           fi
           echo "Latest release: $tag"

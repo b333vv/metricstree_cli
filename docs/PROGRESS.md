@@ -1,5 +1,56 @@
 # what has been done
 
+## Session: the action resolves `latest` without the releases API (2026-10-07)
+
+Run #32 is the first hosted run of `61b1b97`. Its Linux job is green end to end. Its macOS job
+failed at step 12, "The downloaded release and the local build agree", with the message the step
+prints when the download run published no status — so the second invocation of the action never
+reached the CLI, and the artifact it staged was 1.41 KB where a complete one is 2.81 KB. Step 11
+itself is the action's own exit 2, the status it uses for "nothing was analysed". This is the same
+place run #31's macOS job died, with a different code: run #31 reported curl's bare `56`, because
+the release lookup was then read out of a pipeline and the step's own message was unreachable. The
+reporting fix landed in `20fd33c`, and the macOS job now says which of its two exit-2 situations it
+is in rather than nothing at all.
+
+**The lookup was the one request in that step that could not be relied on.** It asked
+`api.github.com/repos/$MG_REPO/releases/latest` with no credential. An unauthenticated limit is per
+IP address and hosted runners share theirs, so the default value of `tool-version` can be refused
+for a reason that has nothing to do with the release existing — and the consumer workflow's own
+release probe authenticates for exactly this reason, with a comment saying so. The action, which is
+the component consumers actually use, did not. This is DEBT-23, recorded a session earlier and left
+alone then because the step replayed correctly without a token; two hosted macOS failures on
+consecutive commits, with the Linux job of the same commit resolving the same release, are the
+evidence that it is not a theoretical concern.
+
+**The fix is to stop asking the API.** `https://github.com/OWNER/REPO/releases/latest` answers 302
+to `.../releases/tag/<tag>`, which is the same question with no credential, no API quota and no
+per-address limit, and it is asked of the host the archive is fetched from — so a runner that could
+download the release at all can establish which release to download. A repository with no published
+release lands on `.../releases` instead, which is what lets "there is nothing to resolve" be told
+apart from "the question could not be asked": DEBT-23's second half, the ambiguity between a 404 and
+a refusal, disappears with the API call rather than being papered over with a status check. The
+redirect is read from `%{redirect_url}` on a request that does not follow it, so the lookup is one
+small request and no page body, and the tag is taken with parameter expansion rather than by piping
+the answer through `sed`.
+
+**Verification.** `ActionDownloadStepTest` grows from 5 tests to 7. Its curl stub now refuses
+`api.github.com` outright — the way an exhausted unauthenticated limit does — and records every URL
+it was asked for, so "the lookup does not use the releases API" is an assertion rather than a
+property of the implementation. The second test points the redirect at the release index and asserts
+that the step reports a repository with no release, that it does *not* report a request that failed,
+and that a question which was answered is not retried. Four sabotages, all caught, each failing the
+test that names it: asking the API again, dropping the `|| status=$?` guard on the command
+substitution, accepting any redirect destination as a tag, and giving the two exit-2 situations one
+message. `shellcheck -s bash` over the extracted step is clean. 862 tests, goldens untouched.
+
+**What is not yet confirmed, and what would confirm it.** Which request failed on the macOS runner
+is an inference: the step's exit 2 says a fetch did not complete, and it does not say which. The
+lookup is the only request in that step subject to a per-address limit, and removing it is the one
+change available; but the archive and the checksum are fetched from `github.com` as well, and a
+transport failure there would produce the same exit. Every failure in this step now names the URL it
+could not complete, so the next hosted run settles it either way — and if it names the archive, this
+fix is the wrong one and the diagnosis has to be redone rather than the symptom retried.
+
 ## Session: the baseline comparison asks the rule, not the budget (2026-10-07)
 
 The recheck's A13 left one correctness item open after R03 and R04 were repaired: the baseline's

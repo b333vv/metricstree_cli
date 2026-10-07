@@ -32,18 +32,29 @@ import org.junit.jupiter.api.io.TempDir;
  * bare {@code 56} with nothing to act on.
  *
  * <p>This test runs the step for real, offline. {@code curl} is stubbed to answer the three URLs the
- * step asks for — the release lookup, the archive and the published {@code .sha256} — and
- * {@code unzip} is stubbed to <strong>fail when its argument does not exist</strong>, which is the
- * whole point of one of the assertions: the step must reach {@code unzip} with the archive still on
- * disk and publish a {@code cli-path}. The checksum is not stubbed. It is computed here over the
- * bytes the stub serves, so the step's real {@code shasum} verifies it and the verification path is
- * exercised rather than bypassed. The curl stub can also be told to fail a number of calls with a
- * chosen exit status, which is how the retry and the reporting of a failure are tested.
+ * step asks for — the release lookup, the archive and the published {@code .sha256} — and to
+ * <strong>refuse {@code api.github.com}</strong>, which is both what an exhausted unauthenticated
+ * limit does and a standing assertion that the lookup does not go back to it. {@code unzip} is
+ * stubbed to <strong>fail when its argument does not exist</strong>, which is the whole point of one
+ * of the assertions: the step must reach {@code unzip} with the archive still on disk and publish a
+ * {@code cli-path}. The checksum is not stubbed. It is computed here over the bytes the stub serves,
+ * so the step's real {@code shasum} verifies it and the verification path is exercised rather than
+ * bypassed. The curl stub can also be told to fail a number of calls with a chosen exit status,
+ * which is how the retry and the reporting of a failure are tested, and it records every URL it was
+ * asked for.
  */
 class ActionDownloadStepTest {
 
     /** The tag the stubbed release lookup answers with. Deliberately not a real release. */
     private static final String TAG = "v9.9.9";
+
+    /**
+     * Where GitHub sends a request for {@code .../releases/latest} when a release exists.
+     *
+     * <p>The step reads the tag out of this URL's last path segment. It is a redirect target rather
+     * than a JSON document because the lookup does not use the releases API.
+     */
+    private static final String LATEST = "https://github.com/example/example/releases/tag/" + TAG;
 
     /** What the stub serves as the archive, so the checksum is computed over known bytes. */
     private static final String ARCHIVE_BYTES = "not really a zip, and it does not need to be";
@@ -187,9 +198,77 @@ class ActionDownloadStepTest {
                         + " would cost three attempts and two pauses before saying so");
     }
 
+    @Test
+    @DisplayName("resolving `latest` never asks the releases API, whose limit is per address")
+    void theLookupDoesNotAskTheReleasesApi(@TempDir Path sandbox) throws Exception {
+        Path bin = sandbox.resolve("bin");
+        Files.createDirectories(bin);
+        stub(bin, "curl", curlStub(0, 0));
+        stub(bin, "unzip", unzipStub());
+        Path output = sandbox.resolve("github-output.txt");
+        Files.createFile(output);
+        Path runnerTemp = Files.createDirectories(sandbox.resolve("runner-temp"));
+
+        Process process = start(bin, sandbox, runnerTemp, output, "latest");
+        String log = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exit = process.waitFor();
+
+        // Asserted before the exit code, because this is the assertion that says what went wrong if
+        // the lookup ever goes back to the API: the stub refuses api.github.com the way an
+        // exhausted unauthenticated limit does, so the step would fail with "could not ask".
+        for (String url : curlUrls(sandbox)) {
+            assertTrue(url.startsWith("https://github.com/"),
+                    "the download path asked " + url + ". An unauthenticated releases API call is"
+                            + " limited per IP address and hosted runners share theirs, which is how"
+                            + " the hosted macOS job failed to resolve a release that existed:\n" + log);
+        }
+        assertTrue(curlUrls(sandbox).contains("https://github.com/example/example/releases/latest"),
+                "the lookup never asked GitHub where the latest release is:\n" + log);
+        assertEquals(0, exit, "the download step failed:\n" + log);
+    }
+
+    @Test
+    @DisplayName("a repository with no release is told apart from a request that failed")
+    void noReleaseIsNotARequestThatFailed(@TempDir Path sandbox) throws Exception {
+        Path bin = sandbox.resolve("bin");
+        Files.createDirectories(bin);
+        // GitHub sends `releases/latest` to the release index when nothing is published.
+        stub(bin, "curl", curlStub(0, 0));
+        Path output = sandbox.resolve("github-output.txt");
+        Files.createFile(output);
+        Path runnerTemp = Files.createDirectories(sandbox.resolve("runner-temp"));
+
+        Process process = start(bin, sandbox, runnerTemp, output, "latest",
+                "https://github.com/example/example/releases");
+        String log = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+
+        assertEquals(2, process.waitFor(),
+                "a repository with no release did not end the step as an incomplete run:\n" + log);
+        assertTrue(log.contains("named no latest release"),
+                "the step did not say that there was nothing to resolve:\n" + log);
+        assertFalse(log.contains("could not ask"),
+                "a repository that has published nothing was reported as a request that could not"
+                        + " be made, so the two cannot be told apart -- which is the whole of the"
+                        + " ambiguity this lookup was rewritten to remove:\n" + log);
+        assertEquals(1, curlCalls(sandbox),
+                "a question that was answered was retried, so a repository with no release would"
+                        + " cost three attempts and two pauses before saying so");
+    }
+
     /** Runs the CLI-resolution step as it ships, in a sandbox, and returns the process. */
     private static Process start(Path bin, Path sandbox, Path runnerTemp, Path output,
             String toolVersion) throws IOException {
+        return start(bin, sandbox, runnerTemp, output, toolVersion, LATEST);
+    }
+
+    /**
+     * The same, with the lookup's answer chosen by the caller.
+     *
+     * <p>The answer is what GitHub's redirect points at, so a repository with no published release
+     * is simulated by pointing it at the release index instead of a tag.
+     */
+    private static Process start(Path bin, Path sandbox, Path runnerTemp, Path output,
+            String toolVersion, String latestDestination) throws IOException {
         ProcessBuilder builder =
                 new ProcessBuilder("bash", "-c", ActionSteps.runBlock("Resolve the CLI"));
         builder.redirectErrorStream(true);
@@ -202,7 +281,15 @@ class ActionDownloadStepTest {
         builder.environment().put("GITHUB_OUTPUT", output.toString());
         builder.environment().put("UNZIP_LOG", sandbox.resolve("unzip.log").toString());
         builder.environment().put("CURL_CALLS", sandbox.resolve("curl-calls.txt").toString());
+        builder.environment().put("CURL_URLS", sandbox.resolve("curl-urls.txt").toString());
+        builder.environment().put("CURL_LATEST", latestDestination);
         return builder.start();
+    }
+
+    /** The URLs the stub curl was asked for, in order. */
+    private static java.util.List<String> curlUrls(Path sandbox) throws IOException {
+        Path log = sandbox.resolve("curl-urls.txt");
+        return Files.exists(log) ? Files.readAllLines(log) : java.util.List.of();
     }
 
     /** How many times the stub curl was invoked. */
@@ -245,18 +332,28 @@ class ActionDownloadStepTest {
                 + "  exit " + code + "\n"
                 + "fi\n"
                 + "out=\"\"\n"
+                + "format=\"\"\n"
                 + "url=\"\"\n"
                 + "while [ $# -gt 0 ]; do\n"
                 + "  case \"$1\" in\n"
                 + "    -o) out=\"$2\"; shift 2 ;;\n"
+                + "    -w) format=\"$2\"; shift 2 ;;\n"
                 + "    -H) shift 2 ;;\n"
                 + "    -*) shift ;;\n"
                 + "    *) url=\"$1\"; shift ;;\n"
                 + "  esac\n"
                 + "done\n"
+                + "echo \"$url\" >> \"$CURL_URLS\"\n"
                 + "case \"$url\" in\n"
+                + "  https://api.github.com/*)\n"
+                + "    echo 'stub curl: this step must not need the releases API' >&2\n"
+                + "    exit 22\n"
+                + "    ;;\n"
                 + "  */releases/latest)\n"
-                + "    printf '{\"tag_name\": \"" + TAG + "\"}\\n' > \"$out\"\n"
+                + "    # Where the redirect points, which is what the step reads. CURL_LATEST overrides\n"
+                + "    # it, which is how a repository that has published nothing is simulated: GitHub\n"
+                + "    # sends that request to the release index rather than to a tag.\n"
+                + "    printf '%s\\n' \"${CURL_LATEST:-" + LATEST + "}\"\n"
                 + "    ;;\n"
                 + "  *.zip.sha256)\n"
                 + "    printf '%s  archive\\n' '" + sha + "' > \"$out\"\n"
