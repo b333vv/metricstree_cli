@@ -344,33 +344,69 @@ def _run_pmd(repo: Path, pmd: Path, ruleset: Path | None):
                              check=False).stdout.strip().splitlines()
     try:
         completed = subprocess.run(command, capture_output=True, text=True, check=False, cwd=str(repo))
-    except OSError as error:
+    except OSError:
         return ("failed", [], None, version[0] if version else "")
     if not completed.stdout.strip():
         return ("failed", [], completed.returncode, version[0] if version else "")
     try:
-        findings = json.loads(completed.stdout)
-    except ValueError as error:
+        document = json.loads(completed.stdout)
+    except ValueError:
         return ("failed", [], completed.returncode, version[0] if version else "")
-    # PMD emits a list, except when it has exactly one violation and has been configured to emit
-    # it bare, in which case it emits an object. Iterating an object yields its *keys*, so the
-    # comprehension below then called .get on a string and the whole evaluation died with an
-    # AttributeError -- on a perfectly valid PMD document, at the point where it should have been
-    # counting one finding. The recheck reproduced exactly that.
-    #
-    # Anything else is a document this cannot read, and that is reported rather than raised: an
-    # adapter that crashes takes the evaluation with it, and a harness that cannot say what PMD
-    # said is exactly the harness the comparison exists to avoid needing.
-    if isinstance(findings, dict):
-        findings = [findings]
-    if not isinstance(findings, list):
+    findings = _pmd_findings(document)
+    if findings is None:
+        # A report this cannot read is reported rather than raised: an adapter that crashes takes
+        # the evaluation with it, and a harness that cannot say what PMD said is exactly the
+        # harness the comparison exists to avoid needing.
         return ("failed", [], completed.returncode, version[0] if version else "")
-    simplified = [
-        {"rule": finding.get("rule"), "file": os.path.basename(str(finding.get("file", "")))}
-        for finding in findings
-        if isinstance(finding, dict)
-    ]
-    return ("ok", simplified, completed.returncode, version[0] if version else "")
+    return ("ok", findings, completed.returncode, version[0] if version else "")
+
+
+def _pmd_findings(document) -> list | None:
+    """Read a PMD JSON report, or return ``None`` if it is not one.
+
+    PMD's ``json`` renderer emits a document, and only ever a document. ``JsonRenderer.start``
+    calls ``beginObject`` and ``end`` calls ``endObject`` with no branch between them, so there is
+    no configuration -- no rule count, no report size -- under which a violation arrives bare. The
+    seven fixtures PMD ships for ``JsonRendererTest`` (``pmd-core/src/test/resources/.../json/``)
+    are all documents too: ``empty.json`` is a clean run, ``expected.json`` one violation,
+    ``expected-multiple.json`` two, and the remaining four carry suppressed violations, a
+    processing error and a configuration error.
+
+    Findings live at ``files[].violations[]``, one entry per file, with ``filename`` on the file
+    entry and ``rule`` on each violation.
+
+    Returning ``None`` rather than raising is deliberate, and so is the strictness of every check
+    below. A comparison that cannot be made must not look like one that came out clean: skipping an
+    entry this does not understand would silently drop a finding and understate PMD, and reading a
+    non-document as if it were findings would invent one -- which is what the adapter used to do,
+    turning a clean run (``files: []``) into a single finding with a null rule.
+
+    ``processingErrors`` and ``configurationErrors`` are the report's own statement that it did not
+    finish: some file could not be analysed, or some rule could not be configured. Findings read out
+    of such a report describe a partial run, so the case is recorded as ``failed`` and left out of
+    the comparison. The reason is not carried in the return value, which has no field for it; the
+    status is what refuses the comparison, and re-running the pinned PMD reproduces the reason.
+    """
+    if not isinstance(document, dict):
+        return None
+    if document.get("processingErrors") or document.get("configurationErrors"):
+        return None
+    files = document.get("files")
+    if not isinstance(files, list):
+        return None
+    findings = []
+    for entry in files:
+        if not isinstance(entry, dict):
+            return None
+        filename = entry.get("filename")
+        violations = entry.get("violations")
+        if not isinstance(filename, str) or not isinstance(violations, list):
+            return None
+        for violation in violations:
+            if not isinstance(violation, dict) or not isinstance(violation.get("rule"), str):
+                return None
+            findings.append({"rule": violation["rule"], "file": os.path.basename(filename)})
+    return findings
 
 
 def tool_version(cli: Path) -> str:

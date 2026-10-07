@@ -1,5 +1,67 @@
 # what has been done
 
+## Session: the PMD adapter reads PMD's report instead of guessing at its shape (2026-10-07)
+
+The recheck row said a "PMD-shaped object still raises `AttributeError`". The crash was already
+gone -- an earlier repair had wrapped the offending branch -- but the row was still open, because
+the replacement was a quieter fault of the same kind. The adapter treated *any* JSON object as one
+finding: it wrapped the object in a list and iterated it, so a report became a finding per key. A
+clean run, which is `{"files": [], ...}`, therefore came back as a single finding with a null rule.
+
+Replayed through the audit's own probe, unedited, at `44aaee3`:
+
+```
+pmdAdapterResult = ["ok", [{"rule": null, "file": ""}], 0, "PMD fixture"]
+```
+
+One invented finding, from a report that says PMD found nothing, and `ok` on top of it. Inventing a
+finding out of an empty report is worse than crashing on it, because it is counted.
+
+**The premise the repair rested on was false, and PMD's own source says so.** The old comment
+claimed PMD "emits a list, except when it has exactly one violation and has been configured to emit
+it bare". `JsonRenderer.start` calls `beginObject` and `end` calls `endObject` with no branch
+between them, so there is no configuration -- no rule count, no report size -- under which a
+violation arrives bare. The seven fixtures PMD ships for `JsonRendererTest` are all documents too:
+`empty.json` is a clean run, `expected.json` one violation, `expected-multiple.json` two, and the
+rest carry suppressed violations, a processing error and a configuration error. Findings live at
+`files[].violations[]`, with `rule` on the violation and `filename` on the enclosing file entry.
+
+**The adapter now reads that shape and refuses everything else.** `_pmd_findings` walks
+`files[].violations[]`, takes the basename of each file entry's `filename`, and returns `None` --
+which `_run_pmd` turns into `failed` -- for a bare object, a top-level array, a file entry without a
+`filename`, or a violation without a `rule`. Both directions matter: skipping an entry it does not
+understand would silently drop a finding and understate PMD, and reading a non-document as findings
+is how the null-rule finding appeared. The two accepted guesses, the bare object and the list, are
+gone; both are now `failed`.
+
+**A report that says it did not finish is not a comparison either.** A non-empty `processingErrors`
+or `configurationErrors` is PMD's own statement that some file could not be analysed or some rule
+could not be configured. Findings read out of a partial run describe a partial run, so the case is
+`failed` and left out of the comparison. This is the same refusal the harness already makes for a
+missing or crashed PMD, applied to the case PMD reports about itself. The status is the only thing
+that carries it -- the four-value return has no field for a reason -- and re-running the pinned PMD
+reproduces it.
+
+**Verification.** The same probe, unedited, after the change:
+
+```
+pmdAdapterResult = ["ok", [], 0, "PMD fixture"]
+```
+
+The harness's own suite is 85 tests, green. Five sabotages were then applied to `run.py` one at a
+time, each reverting a single decision, and each was caught by the test written for it: reading a
+bare object as one finding, accepting a top-level array, ignoring the processing/configuration
+errors, skipping a malformed violation instead of refusing it, and reading a clean report as one
+finding. **The first attempt at the array sabotage was itself a no-op** -- the check was inserted
+after the dict guard, so a list returned `None` before reaching it and the suite stayed green. A
+sabotage that cannot be reached proves nothing, which is worth knowing before reading a green run
+as evidence. `evaluation/pmd/README.md` now states the shape and cites the renderer.
+
+**The probe's `splitValidation` reads `KeyError: 'project'`, and that is not a defect.** The probe's
+two cases predate the `project` field added for the A21 project-identity check, and it builds them
+by hand rather than through `load_cases`, which is where the schema is enforced. The probe is a
+record of the revision it names and is not edited; the project-identity row is a separate one.
+
 ## Session: the action's download path is exercised against a real release (2026-10-07)
 
 Two acceptance rows met in one place. A18 asked whether the version a tag carries reaches a

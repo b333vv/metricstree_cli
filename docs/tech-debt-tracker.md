@@ -313,6 +313,20 @@
   inputs disagree with what the runner used — which only means something once the runner stops running
   one fixed command for every case.
 
+- **DEBT-22 — The run record's top-level `pmd` block describes the supply, not the outcome.** Found
+  2026-10-07 while making the PMD adapter read PMD's real report. `run_corpus` writes
+  `"status": "ok" if pmd is not None and Path(pmd).exists() else "unavailable"`, so a supplied PMD
+  that failed on every case still records `ok` at the top level, and its fixed `note` reads "No PMD
+  was supplied, so no comparison is reported" even when one was. The per-case `pmd_status` carries
+  the truth (`not-run`/`ok`/`unavailable`/`failed`), and the summarizer prints its "unavailable"
+  comparison text for any top-level status other than `ok` -- so today a corpus whose PMD never ran
+  reports a comparison the record cannot support, and a supplied PMD reports a note that
+  contradicts its own status. Neither is visible in the committed results, because the dry run
+  supplies no PMD and the top-level status is honestly `unavailable` there. *What would close it:*
+  derive the top-level status from the per-case outcomes and give the note a form that depends on
+  the status, which changes the record's shape and therefore forces a regeneration of
+  `evaluation/results/*.json` in the same change.
+
 ## Resolved Debt Items
 - **DEBT-16 — A `no-longer-matches` resolution published the base's value as the current one.** Found
   2026-10-06 while adding the removed-entity pass (the recheck's A08), **fixed 2026-10-06**.

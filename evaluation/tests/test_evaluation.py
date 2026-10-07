@@ -588,12 +588,20 @@ class RepositoryLeakage(unittest.TestCase):
 
 
 class PmdDocumentShape(unittest.TestCase):
-    """The adapter reads both shapes PMD emits.
+    """The adapter reads PMD's JSON report, which is a document and only a document.
 
-    The recheck fed a valid PMD-shaped object to the adapter and got an AttributeError. Iterating
-    a JSON object yields its keys, so the comprehension called .get on a string -- the evaluation
-    died at the point where it should have counted one finding. PMD emits a bare object for a
-    single violation under some configurations, so this is a real document and not a malformed one.
+    The recheck fed the adapter a report it did not understand and got an AttributeError, which
+    took the whole evaluation with it. The first repair stopped the crash but replaced it with a
+    quieter fault of the same kind: it treated any JSON object as one finding, so a *clean* run --
+    ``{"files": [], ...}`` -- was read as a single violation whose rule was null. Inventing a
+    finding out of an empty report is worse than crashing on it, because it is counted.
+
+    PMD's ``JsonRenderer`` settles the question of which shapes are real. ``start`` calls
+    ``beginObject`` and ``end`` calls ``endObject`` with no branch between them, so every report is
+    a document; the findings are at ``files[].violations[]``, with the rule on the violation and the
+    path on the enclosing file entry. The payloads below are modelled on the fixtures PMD ships for
+    ``JsonRendererTest``, including ``empty.json``, which is a clean run and is exactly the report
+    the previous adapter miscounted.
     """
 
     def _run(self, payload):
@@ -602,7 +610,7 @@ class PmdDocumentShape(unittest.TestCase):
             repo = root / "repo"
             repo.mkdir()
             fake = root / "pmd"
-            # A PMD that answers --version and then prints one chosen document, so the adapter is
+            # A PMD that answers --version and then prints one chosen report, so the adapter is
             # exercised on the bytes rather than on a mock of itself.
             fake.write_text(
                 "#!/bin/sh\n"
@@ -612,23 +620,97 @@ class PmdDocumentShape(unittest.TestCase):
             fake.chmod(0o755)
             return runner._run_pmd(repo, fake, None)
 
-    def test_a_single_finding_object_is_one_finding(self):
-        status, findings, _, _ = self._run(
-            '{"rule": "CyclomaticComplexity", "file": "/x/y/App.java"}')
+    def _document(self, files, **overrides):
+        report = {
+            "formatVersion": 0,
+            "pmdVersion": "7.0.0",
+            "timestamp": "2026-01-01T00:00:00.000+00:00",
+            "files": files,
+            "suppressedViolations": [],
+            "processingErrors": [],
+            "configurationErrors": [],
+        }
+        report.update(overrides)
+        return json.dumps(report)
+
+    def _violation(self, rule):
+        return {"beginline": 1, "begincolumn": 1, "endline": 1, "endcolumn": 1,
+                "description": "blah", "rule": rule, "ruleset": "RuleSet", "priority": 5}
+
+    def test_a_violation_in_a_document_is_one_finding(self):
+        status, findings, _, _ = self._run(self._document(
+            [{"filename": "/x/y/App.java", "violations": [self._violation("CyclomaticComplexity")]}]))
         self.assertEqual("ok", status)
         self.assertEqual(
             [{"rule": "CyclomaticComplexity", "file": "App.java"}], findings)
 
-    def test_a_list_is_read_as_before(self):
+    def test_findings_are_read_in_document_order_across_files(self):
+        status, findings, _, _ = self._run(self._document([
+            {"filename": "/x/App.java",
+             "violations": [self._violation("A"), self._violation("B")]},
+            {"filename": "/y/Bee.java", "violations": [self._violation("C")]},
+        ]))
+        self.assertEqual("ok", status)
+        self.assertEqual(["A", "B", "C"], [f["rule"] for f in findings])
+        self.assertEqual(["App.java", "App.java", "Bee.java"], [f["file"] for f in findings])
+
+    def test_a_clean_document_is_no_findings_and_not_one(self):
+        # The defect that replaced the crash: an empty report read as a single null-rule finding.
+        status, findings, _, _ = self._run(self._document([]))
+        self.assertEqual("ok", status)
+        self.assertEqual([], findings)
+
+    def test_a_document_is_never_read_as_one_finding(self):
+        # The same trap in the shape that produced it: the adapter used to wrap the whole document
+        # in a list and iterate its keys, so a two-file report became one finding with a null rule.
+        status, findings, _, _ = self._run(self._document([
+            {"filename": "/x/App.java", "violations": [self._violation("A")]},
+            {"filename": "/y/Bee.java", "violations": [self._violation("B")]},
+        ]))
+        self.assertEqual("ok", status)
+        self.assertNotEqual(1, len(findings))
+        for finding in findings:
+            self.assertIsInstance(finding["rule"], str,
+                                  "a finding without a rule cannot be compared with anything")
+
+    def test_a_report_that_says_it_did_not_finish_is_not_a_comparison(self):
+        # PMD's own statement that some file could not be analysed. Findings read out of a partial
+        # run understate PMD, so the case is refused rather than compared.
+        status, findings, _, _ = self._run(self._document(
+            [], processingErrors=[{"filename": "App.java", "message": "boom", "detail": ""}]))
+        self.assertEqual("failed", status)
+        self.assertEqual([], findings)
+
+    def test_a_report_with_a_configuration_error_is_not_a_comparison(self):
+        status, findings, _, _ = self._run(self._document(
+            [], configurationErrors=[{"rule": "Foo", "ruleset": "RuleSet", "message": "boom"}]))
+        self.assertEqual("failed", status)
+        self.assertEqual([], findings)
+
+    def test_a_bare_object_is_failed_not_a_finding(self):
+        # The shape the previous adapter accepted as real. No PMD emits it.
+        status, findings, _, _ = self._run('{"rule": "CyclomaticComplexity", "file": "/x/App.java"}')
+        self.assertEqual("failed", status)
+        self.assertEqual([], findings)
+
+    def test_a_top_level_array_is_failed_not_a_finding_list(self):
+        # Also a guess with no PMD behind it: the renderer opens an object before anything else.
         status, findings, _, _ = self._run(
             '[{"rule": "A", "file": "/x/App.java"}, {"rule": "B", "file": "/y/Bee.java"}]')
-        self.assertEqual("ok", status)
-        self.assertEqual(["A", "B"], [f["rule"] for f in findings])
+        self.assertEqual("failed", status)
+        self.assertEqual([], findings)
 
     def test_a_document_that_is_neither_is_failed_not_raised(self):
         status, findings, _, _ = self._run('"a bare string"')
         self.assertEqual("failed", status,
                          "an adapter that crashes takes the evaluation with it")
+        self.assertEqual([], findings)
+
+    def test_a_malformed_file_entry_is_failed_rather_than_skipped(self):
+        # Skipping it would silently drop a finding and understate PMD.
+        status, findings, _, _ = self._run(self._document(
+            [{"filename": "/x/App.java", "violations": [{"description": "no rule here"}]}]))
+        self.assertEqual("failed", status)
         self.assertEqual([], findings)
 
 
