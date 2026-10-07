@@ -1,5 +1,55 @@
 # what has been done
 
+## Session: the action's download path had never run, and could not have (2026-10-07)
+
+Pushing the previous session's work turned `master` red. `action-consumer-test` run #28 failed on
+both platforms at the last step, and the annotations said why in three lines: the second action run
+exited **2**, its artifact upload failed with **409 Conflict**, and the comparison step found **no
+`status` output**. Steps 1-11 all reported success — including the download step itself, which is a
+`continue-on-error` step and therefore reports success even when the action inside it fails. That is
+the whole reason the failure looked like a comparison problem.
+
+**The download step cleared the directory it had just downloaded into.** `archive="$work/$asset"`,
+the archive is fetched into it, the checksum is verified, and only *then* does the step run
+`rm -rf "$work"; mkdir -p "$work"` — before `unzip`ing the file that no longer exists. It has two
+faces and the hosted run hit the first:
+
+- on a fresh runner `$RUNNER_TEMP/metricstree-cli` does not exist yet, so the `curl -o` that
+  downloads the archive fails for want of a directory and the step exits **2** — which is exactly the
+  code the annotation reported;
+- when the directory does exist, the download and the checksum both succeed, `rm -rf` deletes the
+  verified archive, and `unzip` exits **9**. Replaying the step locally, with real `curl` and real
+  `unzip`, produced that one.
+
+The fix is to clear the directory before writing into it, which is where the cleanup belonged. It
+also stops a second run on the same runner from unpacking over a previous release's files. The
+defect shipped in `4fb49ab` (ML-029) and had never executed: every earlier consumer run passed
+`cli-path`, and that input returns from the step before the download is reached. It took running the
+action a second time *without* `cli-path` to reach it — which is what the previous session added the
+step for, and it found a defect on its first outing.
+
+**A job cannot run the action twice under one artifact name.** Artifact names are unique within a
+run, so the second invocation's upload failed with "409 Conflict: an artifact with this name already
+exists" — after its gate had already run and published a verdict. The action now takes an
+`artifact-name` input, defaulting to the name consumers already expect, and the consumer workflow
+passes a distinct one for the second run. `report-path` already differed; the artifact name had not.
+
+**Verification.** The step was replayed locally against the real release with real `curl`, `unzip`
+and `shasum`: exit 0, `cli-path` published, and the unpacked launcher answers
+`java-metrics-cli 2026.3.0`. `ActionDownloadStepTest` then does the same offline — it extracts the
+step's `run:` block from `action.yml` and executes it with `curl` stubbed to answer the three URLs
+the step asks for and `unzip` stubbed to **fail when its argument is missing**, which is the
+assertion. The checksum is not stubbed: it is computed over the bytes the stub serves, so the step's
+real `shasum` verifies it. Two tests, one per face of the defect — the first pre-creates the work
+directory and so reproduces the exit-9 face, the second does not and reproduces the exit-2 face the
+runner reported. Reverting the fix fails both, the second with the same exit code the hosted run
+reported. actionlint is clean over all four workflows.
+
+**What was left alone.** The step resolves `latest` with an unauthenticated call to the releases API.
+That is a real fragility — the limit is per IP and hosted runners share theirs, which is why the
+workflow's own probe authenticates — but it is not what failed here: the replay resolved `v2026.3.0`
+without a token. It is recorded as DEBT-23 rather than changed on suspicion.
+
 ## Session: the action names the right file for the runner's own variables (2026-10-07)
 
 I had written down that `action.yml`'s `GITHUB_STEP_SUMMARY: ${{ github.step_summary }}` was a latent

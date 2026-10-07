@@ -51,6 +51,10 @@ inputs:
     description: 'Path where the gate report file should be saved'
     required: false
     default: 'metrics-gate-report.json'
+  artifact-name:
+    description: 'Name of the uploaded report artifact. Set it when this action runs more than once in a job: two invocations cannot share one artifact name, and the second upload fails with a 409 conflict rather than replacing the first.'
+    required: false
+    default: 'metrics-gate-report'
 
 outputs:
   status:
@@ -168,6 +172,20 @@ runs:
         base="https://github.com/$MG_REPO/releases/download/$tag"
         archive="$work/$asset"
 
+        # A clean directory before anything is written into it.
+        #
+        # This cleanup used to run *after* the download and the checksum verification, which broke
+        # the download path in two ways depending on where it ran. On a runner the directory does not
+        # exist yet, so the `curl -o` above could not write the archive and the step exited 2 for
+        # want of a directory, never reaching the cleanup at all. Where the directory did exist, the
+        # download and the checksum both succeeded and then `rm -rf` deleted the verified archive
+        # before `unzip` was handed it, which exits 9. Neither failure names the cleanup. Nothing
+        # caught it because nothing ran it: every earlier consumer run passed `cli-path`, which
+        # returns from this step before the download is reached. Clearing first also stops a second
+        # run on the same runner from unpacking over a previous release's files.
+        rm -rf "$work"
+        mkdir -p "$work"
+
         echo "Downloading $base/$asset"
         curl -fsSL "$base/$asset" -o "$archive" \
           || { echo "Error: could not download $base/$asset" >&2; exit 2; }
@@ -209,8 +227,6 @@ runs:
         fi
         echo "Checksum verified"
 
-        rm -rf "$work"
-        mkdir -p "$work"
         unzip -q "$archive" -d "$work"
         launcher="$work/metricstree-cli/bin/java-metrics-cli"
         if [ ! -x "$launcher" ]; then
@@ -282,6 +298,10 @@ runs:
       if: always()
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
-        name: metrics-gate-report
+        # Named by input rather than fixed. Artifact names are unique within a run, so a job that
+        # invokes this action twice -- two report paths, two fixtures, one of each policy -- failed
+        # on the second upload with a 409 conflict, after the gate had already run and published
+        # its verdict. The default keeps the name consumers already expect.
+        name: ${{ inputs.artifact-name }}
         path: ${{ runner.temp }}/metrics-gate-reports/
         if-no-files-found: warn

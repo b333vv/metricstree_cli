@@ -327,6 +327,19 @@
   the status, which changes the record's shape and therefore forces a regeneration of
   `evaluation/results/*.json` in the same change.
 
+- **DEBT-23 — The action resolves `latest` with an unauthenticated releases API call.** Found
+  2026-10-07 while fixing the download path. `action.yml`'s "Resolve the CLI" step asks
+  `api.github.com/repos/$MG_REPO/releases/latest` with no credential, and falls back to
+  "could not determine the latest release" (exit 2) on any failure — including a rate limit.
+  Unauthenticated limits are per IP address and hosted runners share theirs, so the default value of
+  `tool-version` can fail for a reason that has nothing to do with the release existing. The
+  consumer workflow's own release probe authenticates for exactly this reason and documents it; the
+  action does not, which is the inconsistency. It is not what broke run #28 — the step was replayed
+  locally without a token and resolved `v2026.3.0` — so it was left alone rather than changed on
+  suspicion. *What would close it:* send `Authorization: Bearer $GITHUB_TOKEN` from
+  `${{ github.token }}`, and distinguish "the API refused me" from "there is no release" in the
+  error, which is the same 404-only discipline the workflow's probe already applies.
+
 ## Resolved Debt Items
 - **DEBT-16 — A `no-longer-matches` resolution published the base's value as the current one.** Found
   2026-10-06 while adding the removed-entity pass (the recheck's A08), **fixed 2026-10-06**.

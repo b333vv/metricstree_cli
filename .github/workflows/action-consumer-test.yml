@@ -368,6 +368,14 @@ jobs:
           enforcement: enforce
           report-format: json
           report-path: metrics-gate-report-downloaded.json
+          # The action uploads its own report artifact, and artifact names are unique within a run:
+          # without this the second invocation failed with "409 Conflict: an artifact with this name
+          # already exists", which failed the step even though the gate itself had succeeded. The
+          # report path differs for the same reason -- the two runs must not overwrite each other's
+          # evidence. `$RUNNER_TEMP/metrics-findings.json` is still shared, so the findings file in
+          # the artifact below belongs to this run, not the one above it; the comparison reads the
+          # reports, which are separate.
+          artifact-name: metrics-gate-report-downloaded
         continue-on-error: true
 
       - name: The downloaded release and the local build agree

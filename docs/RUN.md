@@ -436,6 +436,7 @@ build toolchain in your repository.
 | `profile`, `thresholds`, `exclude-file`, `config` | The legacy policy's settings, still supported. |
 | `report-format` | `json`, `html` or `agent-md`. The findings JSON is produced either way. |
 | `report-path` | Where the report is written. |
+| `artifact-name` | Name of the uploaded report artifact. Defaults to `metrics-gate-report`; set it when the action runs more than once in a job, because artifact names are unique within a run and the second upload fails with a 409 conflict. |
 
 **Outputs:** `status` (`PASSED`, `FAILED`, `INCOMPLETE` or `ERROR`), `exit-code`,
 `blocking-count`, `total-count`, `findings-count` (alias of `total-count`),
