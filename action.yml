@@ -143,6 +143,58 @@ runs:
           exit 0
         fi
 
+        # A clean directory before anything is written into it.
+        #
+        # This cleanup used to run *after* the download and the checksum verification, which broke
+        # the download path in two ways depending on where it ran. On a runner the directory does not
+        # exist yet, so the `curl -o` could not write the archive and the step exited 2 for want of a
+        # directory, never reaching the cleanup at all. Where the directory did exist, the download
+        # and the checksum both succeeded and then `rm -rf` deleted the verified archive before
+        # `unzip` was handed it, which exits 9. Neither failure named the cleanup. Nothing caught it
+        # because nothing ran it: every earlier consumer run passed `cli-path`, which returns from
+        # this step before the download is reached. Clearing first also stops a second run on the
+        # same runner from unpacking over a previous release's files.
+        #
+        # It sits above the release lookup as well as above the archive, because the lookup now
+        # writes its answer into this directory rather than reading it out of a pipeline.
+        rm -rf "$work"
+        mkdir -p "$work"
+
+        # Fetching, retried.
+        #
+        # One attempt is what the hosted consumer run had, and a single transient receive error
+        # turned its macOS job red for a reason nobody could act on: curl exit 56, on a request that
+        # had answered minutes earlier on the same commit.
+        #
+        # A loop here rather than curl's own `--retry`, for the reason the gate itself is a script:
+        # nothing in this repository can observe a retry that happens inside the real curl. The tests
+        # execute this step with a stubbed curl, and a stub cannot emulate the retrying of the binary
+        # it replaces, so `--retry` would be a behaviour only a hosted run could confirm.
+        #
+        # 22 is curl's "the server answered with an error status" -- a 404 for a version that does
+        # not exist, most of the time. That is not transient, so it is reported at once rather than
+        # repeated three times; anything else is a transport failure, which is what a second attempt
+        # can survive.
+        fetch() {
+          url="$1"
+          destination="$2"
+          shift 2
+          attempt=1
+          while true; do
+            status=0
+            curl -fsSL "$@" "$url" -o "$destination" || status=$?
+            if [ "$status" -eq 0 ]; then
+              return 0
+            fi
+            if [ "$status" -eq 22 ] || [ "$attempt" -ge 3 ]; then
+              return 1
+            fi
+            echo "Attempt $attempt to fetch $url failed (curl exit $status); retrying" >&2
+            attempt=$((attempt + 1))
+            sleep 2
+          done
+        }
+
         # The tag and the version are two different strings, and the asset is named after the
         # second: the tag is `v2026.1.0`, the archive is `metricstree-cli-2026.1.0.zip`.
         #
@@ -150,14 +202,27 @@ runs:
         # used to fall through to an asset called `metricstree-cli.zip`, which no release has
         # ever published, so the default value of tool-version could not work. The tag is now
         # resolved and then used whole, so the archive named after it is the one actually there.
+        #
+        # The answer is fetched to a file and parsed afterwards rather than piped straight into
+        # `sed`, and that is not a style preference. With `set -o pipefail` and `set -e`, a curl that
+        # failed inside the command substitution ended the script with curl's own exit status, so the
+        # check below never ran: the hosted consumer run's macOS job reported a bare `56` -- a receive
+        # error -- and said nothing about what it had been asking for or what to do about it. A file
+        # turns the fetch's status into an ordinary value this step can act on.
         tag="$INPUT_TOOL_VERSION"
         if [ "$tag" = "latest" ]; then
-          tag=$(curl -fsSL -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/$MG_REPO/releases/latest" \
-                | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-          if [ -z "$tag" ]; then
-            echo "Error: could not determine the latest release of $MG_REPO." >&2
+          latest="$work/latest.json"
+          if ! fetch "https://api.github.com/repos/$MG_REPO/releases/latest" "$latest" \
+               -H "Accept: application/vnd.github+json"; then
+            echo "Error: could not ask $MG_REPO for its latest release." >&2
             echo "Either no release is published, or the API did not answer." >&2
+            echo "Pin one explicitly with the tool-version input." >&2
+            exit 2
+          fi
+          tag=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$latest" \
+                | head -1)
+          if [ -z "$tag" ]; then
+            echo "Error: the release answer from $MG_REPO named no tag." >&2
             echo "Pin one explicitly with the tool-version input." >&2
             exit 2
           fi
@@ -172,23 +237,12 @@ runs:
         base="https://github.com/$MG_REPO/releases/download/$tag"
         archive="$work/$asset"
 
-        # A clean directory before anything is written into it.
-        #
-        # This cleanup used to run *after* the download and the checksum verification, which broke
-        # the download path in two ways depending on where it ran. On a runner the directory does not
-        # exist yet, so the `curl -o` above could not write the archive and the step exited 2 for
-        # want of a directory, never reaching the cleanup at all. Where the directory did exist, the
-        # download and the checksum both succeeded and then `rm -rf` deleted the verified archive
-        # before `unzip` was handed it, which exits 9. Neither failure names the cleanup. Nothing
-        # caught it because nothing ran it: every earlier consumer run passed `cli-path`, which
-        # returns from this step before the download is reached. Clearing first also stops a second
-        # run on the same runner from unpacking over a previous release's files.
-        rm -rf "$work"
-        mkdir -p "$work"
-
         echo "Downloading $base/$asset"
-        curl -fsSL "$base/$asset" -o "$archive" \
-          || { echo "Error: could not download $base/$asset" >&2; exit 2; }
+        if ! fetch "$base/$asset" "$archive"; then
+          echo "Error: could not download $base/$asset" >&2
+          echo "Nothing was analysed." >&2
+          exit 2
+        fi
 
         # The archive is verified before it is unpacked and long before anything is analysed.
         #
@@ -204,7 +258,7 @@ runs:
           echo "Verifying against the checksum supplied to the action"
         else
           checksum_file="$work/$asset.sha256"
-          if ! curl -fsSL "$base/$asset.sha256" -o "$checksum_file"; then
+          if ! fetch "$base/$asset.sha256" "$checksum_file"; then
             echo "Error: the release $tag has no $asset.sha256 beside the archive." >&2
             echo "Nothing was analysed. Pass the expected SHA-256 as the checksum input." >&2
             exit 2

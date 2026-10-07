@@ -1,5 +1,57 @@
 # what has been done
 
+## Session: the action's download says what failed, and survives one of them (2026-10-07)
+
+The hosted run that verified the staging fix also failed, on one platform, for a reason that turned
+out to be two defects of its own.
+
+**Run #31 on `b937f47` reports Status Failure.** The staging fix is verified where the job got far
+enough to exercise it: ubuntu's `metrics-gate-report-downloaded` is **2.82 KB**, down from 4.2 KB, and
+`metrics-gate-report` is 2.8 KB — the two artifacts now hold the same two near-identical files, one
+run each, which is what the local reconstruction predicted. macOS failed at step 11 with exit code
+**56**, and step 12 said what that cost: "The download run published no status, so the downloaded CLI
+never ran." Its `metrics-gate-report-downloaded` is 1.41 KB — a single file, and that file is the
+*first* invocation's findings document, uploaded under the second invocation's name. That is DEBT-24
+happening rather than hypothesised, and it is fixed separately.
+
+**The exit code was curl's, and the step's own explanation was unreachable.** `tag=$(curl ... | sed ...
+| head -1)` is read out of a pipeline, and with `set -o pipefail` and `set -e` a curl that fails inside
+the command substitution ends the script with curl's own status — so the `if [ -z "$tag" ]` below it,
+which exists to say "could not determine the latest release of ...", never runs. The step died with
+`56`, a receive error, and nothing about what it had been asking for. Reproduced locally with a curl
+stubbed to exit 56: exit 56, no message. The hosted annotation matches, and there is no other
+annotation for that step, which is what made the diagnosis possible without a token.
+
+**The fix fetches to a file, checks the status, and says what failed.** The retry is a loop in the
+script rather than curl's own `--retry`, for the reason the gate itself is a script: nothing in this
+repository can observe a retry that happens inside the real curl, and a stub cannot emulate the
+retrying of the binary it replaces — `--retry` would be a behaviour only a hosted run could confirm.
+The loop does not retry curl's exit 22, "the server answered with an error status", which is what a
+404 for a version that does not exist looks like: that is not transient, and repeating it would cost
+three attempts and two pauses before saying so. Everything else is a transport failure, which is what
+a second attempt can survive. The work directory is now cleared above the lookup as well as above the
+archive, because the lookup writes its answer into it.
+
+**Verification.** `ActionDownloadStepTest` is five tests where it was two. One transient failure is
+survived; a lookup that keeps failing is retried exactly three times and then reported as this step's
+own incomplete-run status with a message naming the request; an HTTP error is attempted once and
+reported. The step was also replayed locally against the real release with real curl: exit 0, the
+published checksum verified, and the unpacked launcher answering `java-metrics-cli 2026.3.0`. Five
+sabotages, all caught — removing the retry, removing the HTTP-error scoping, swallowing the failure,
+and reporting it as a gate failure rather than an incomplete run.
+
+One sabotage had to be redone, and the reason is worth recording. Reverting the lookup to its original
+pipeline form changed the curl invocation's *shape* — no `-o`, so the stub had nothing to write to and
+failed for a reason that had nothing to do with the defect. Four tests went red, and not one of them
+was evidence. The sabotage was replaced with two that keep the invocation's contract and change only
+the behaviour under test. The propagation half — that a failing curl used to become the step's exit
+status — is therefore evidenced by the local reproduction of the pre-fix code rather than by a
+sabotage, and that is a weaker form of evidence than the rest of this entry.
+
+`./gradlew check --rerun-tasks` is green with all 26 tasks executed: 859 tests (514 CLI, 27
+integration, 318 library), zero failures, one skipped. Goldens untouched. actionlint clean over the
+workflows; shellcheck clean over the extracted step.
+
 ## Session: the action's report artifact belongs to one invocation, not to the job (2026-10-07)
 
 The push that carried the download-path fix turned the hosted consumer workflow green, and the

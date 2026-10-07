@@ -24,18 +24,21 @@ import org.junit.jupiter.api.io.TempDir;
  * and it is reached by no other test: {@code GitHubActionConsumerTest} drives {@code scripts/}
  * directly with {@code cli-path} already set, which returns before the download, and the hosted
  * consumer workflow only exercises it on a push that touches {@code action.yml}. So a defect in that
- * shell is invisible to {@code ./gradlew check} — and one shipped: the step cleared
+ * shell is invisible to {@code ./gradlew check} — and two shipped. The step cleared
  * {@code $RUNNER_TEMP/metricstree-cli} <em>after</em> downloading the archive into it, so the
- * {@code unzip} on the next line could never find the file. It failed as an unzip error, which is
- * nowhere near the download, and it had never once run.
+ * {@code unzip} on the next line could never find the file; and it read the release lookup out of a
+ * pipeline, so under {@code set -o pipefail} a curl that failed ended the script with curl's own exit
+ * status and the step's own error message was never reached. The hosted run reported the second as a
+ * bare {@code 56} with nothing to act on.
  *
  * <p>This test runs the step for real, offline. {@code curl} is stubbed to answer the three URLs the
  * step asks for — the release lookup, the archive and the published {@code .sha256} — and
  * {@code unzip} is stubbed to <strong>fail when its argument does not exist</strong>, which is the
- * whole point: the assertion is that the step reaches {@code unzip} with the archive still on disk
- * and publishes a {@code cli-path}. The checksum is not stubbed. It is computed here over the bytes
- * the stub serves, so the step's real {@code shasum} verifies it and the verification path is
- * exercised rather than bypassed.
+ * whole point of one of the assertions: the step must reach {@code unzip} with the archive still on
+ * disk and publish a {@code cli-path}. The checksum is not stubbed. It is computed here over the
+ * bytes the stub serves, so the step's real {@code shasum} verifies it and the verification path is
+ * exercised rather than bypassed. The curl stub can also be told to fail a number of calls with a
+ * chosen exit status, which is how the retry and the reporting of a failure are tested.
  */
 class ActionDownloadStepTest {
 
@@ -45,14 +48,19 @@ class ActionDownloadStepTest {
     /** What the stub serves as the archive, so the checksum is computed over known bytes. */
     private static final String ARCHIVE_BYTES = "not really a zip, and it does not need to be";
 
+    /** curl's "the server answered with an error status". Not retried, by design. */
+    private static final int HTTP_ERROR = 22;
+
+    /** curl's "failure receiving network data" — the code the hosted macOS job reported. */
+    private static final int RECEIVE_ERROR = 56;
+
     @Test
     @DisplayName("the download step reaches unzip with the archive still on disk")
     void theArchiveSurvivesToUnzip(@TempDir Path sandbox) throws Exception {
         Path bin = sandbox.resolve("bin");
         Files.createDirectories(bin);
-        stub(bin, "curl", curlStub());
+        stub(bin, "curl", curlStub(0, 0));
         stub(bin, "unzip", unzipStub());
-        Path unzipLog = sandbox.resolve("unzip.log");
         Path output = sandbox.resolve("github-output.txt");
         Files.createFile(output);
 
@@ -61,32 +69,20 @@ class ActionDownloadStepTest {
                 "the extracted script does not look like the CLI-resolution step; the extraction is "
                         + "reading the wrong thing and the rest of this test would be vacuous");
 
-        Path runnerTemp = sandbox.resolve("runner-temp");
-        Files.createDirectories(runnerTemp);
+        Path runnerTemp = Files.createDirectories(sandbox.resolve("runner-temp"));
         // The directory the step clears, already populated: a second run on the same runner finds a
         // previous release here, which is what makes the cleanup worth having.
-        Path work = runnerTemp.resolve("metricstree-cli");
-        Files.createDirectories(work);
+        Path work = Files.createDirectories(runnerTemp.resolve("metricstree-cli"));
         Files.writeString(work.resolve("left-over.zip"), "a previous release");
 
-        ProcessBuilder builder = new ProcessBuilder("bash", "-c", script);
-        builder.redirectErrorStream(true);
-        builder.environment().put("PATH", bin + ":" + System.getenv("PATH"));
-        builder.environment().put("RUNNER_TEMP", runnerTemp.toString());
-        builder.environment().put("INPUT_CLI_PATH", "");
-        builder.environment().put("INPUT_TOOL_VERSION", "latest");
-        builder.environment().put("INPUT_CHECKSUM", "");
-        builder.environment().put("MG_REPO", "example/example");
-        builder.environment().put("GITHUB_OUTPUT", output.toString());
-        builder.environment().put("UNZIP_LOG", unzipLog.toString());
-        Process process = builder.start();
+        Process process = start(bin, sandbox, runnerTemp, output, "latest");
         String log = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertEquals(0, process.waitFor(), "the download step failed:\n" + log);
+        Path unzipLog = sandbox.resolve("unzip.log");
         assertTrue(Files.exists(unzipLog),
                 "the step never reached unzip, so nothing was unpacked:\n" + log);
-        assertEquals(1, Files.readAllLines(unzipLog).size(),
-                "unzip ran more than once:\n" + log);
+        assertEquals(1, Files.readAllLines(unzipLog).size(), "unzip ran more than once:\n" + log);
 
         String published = Files.readString(output);
         assertTrue(published.contains("cli-path="),
@@ -109,24 +105,13 @@ class ActionDownloadStepTest {
     void theAssetIsNamedAfterTheVersion(@TempDir Path sandbox) throws Exception {
         Path bin = sandbox.resolve("bin");
         Files.createDirectories(bin);
-        stub(bin, "curl", curlStub());
+        stub(bin, "curl", curlStub(0, 0));
         stub(bin, "unzip", unzipStub());
         Path output = sandbox.resolve("github-output.txt");
         Files.createFile(output);
+        Path runnerTemp = Files.createDirectories(sandbox.resolve("runner-temp"));
 
-        Path runnerTemp = sandbox.resolve("runner-temp");
-        Files.createDirectories(runnerTemp);
-        ProcessBuilder builder = new ProcessBuilder("bash", "-c", ActionSteps.runBlock("Resolve the CLI"));
-        builder.redirectErrorStream(true);
-        builder.environment().put("PATH", bin + ":" + System.getenv("PATH"));
-        builder.environment().put("RUNNER_TEMP", runnerTemp.toString());
-        builder.environment().put("INPUT_CLI_PATH", "");
-        builder.environment().put("INPUT_TOOL_VERSION", TAG);
-        builder.environment().put("INPUT_CHECKSUM", "");
-        builder.environment().put("MG_REPO", "example/example");
-        builder.environment().put("GITHUB_OUTPUT", output.toString());
-        builder.environment().put("UNZIP_LOG", sandbox.resolve("unzip.log").toString());
-        Process process = builder.start();
+        Process process = start(bin, sandbox, runnerTemp, output, TAG);
         String log = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertEquals(0, process.waitFor(), "a pinned tag failed to resolve:\n" + log);
@@ -136,16 +121,94 @@ class ActionDownloadStepTest {
                 "the archive was not addressed by version:\n" + log);
     }
 
-    /**
-     * The {@code run:} block of the CLI-resolution step, dedented.
-     *
-     * <p>Extracted from the file rather than copied, so the test executes the shell that ships. The
-     * extraction itself lives in {@link ActionSteps} because the report-staging step needs the same
-     * reading of the same file, and two copies of a regex over a file neither test owns is two
-     * places for the reading to be wrong in the same silent way.
-     */
-    private static String resolveCliStep() throws IOException {
-        return ActionSteps.runBlock("Resolve the CLI");
+    @Test
+    @DisplayName("a lookup that keeps failing is retried, and then reported as this step's own error")
+    void aFailedLookupIsRetriedAndReported(@TempDir Path sandbox) throws Exception {
+        Path bin = sandbox.resolve("bin");
+        Files.createDirectories(bin);
+        stub(bin, "curl", curlStub(Integer.MAX_VALUE, RECEIVE_ERROR));
+        Path output = sandbox.resolve("github-output.txt");
+        Files.createFile(output);
+        Path runnerTemp = Files.createDirectories(sandbox.resolve("runner-temp"));
+
+        Process process = start(bin, sandbox, runnerTemp, output, "latest");
+        String log = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+
+        assertEquals(2, process.waitFor(),
+                "a lookup that could not be answered has to end as this step's own incomplete-run"
+                        + " status. The hosted consumer run's macOS job got curl's " + RECEIVE_ERROR
+                        + " instead, which says nothing about what failed:\n" + log);
+        assertTrue(log.contains("retrying"),
+                "the fetch was not retried, so one transient failure still fails the gate:\n" + log);
+        assertTrue(log.contains("could not ask"),
+                "the step did not say which request it could not complete:\n" + log);
+        assertEquals(3, curlCalls(sandbox), "the retry has to be bounded, not open-ended");
+    }
+
+    @Test
+    @DisplayName("one transient failure is survived")
+    void oneTransientFailureIsSurvived(@TempDir Path sandbox) throws Exception {
+        Path bin = sandbox.resolve("bin");
+        Files.createDirectories(bin);
+        // The first call fails the way the hosted run's did; every call after it answers.
+        stub(bin, "curl", curlStub(1, RECEIVE_ERROR));
+        stub(bin, "unzip", unzipStub());
+        Path output = sandbox.resolve("github-output.txt");
+        Files.createFile(output);
+        Path runnerTemp = Files.createDirectories(sandbox.resolve("runner-temp"));
+
+        Process process = start(bin, sandbox, runnerTemp, output, "latest");
+        String log = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+
+        assertEquals(0, process.waitFor(),
+                "a single transient failure failed the step, which is the whole of the hosted"
+                        + " run's macOS job:\n" + log);
+        assertTrue(log.contains("retrying"), "the retry did not happen:\n" + log);
+        assertTrue(Files.readString(output).contains("cli-path="),
+                "the step recovered but published no cli-path:\n" + log);
+    }
+
+    @Test
+    @DisplayName("an HTTP error is reported at once, because it is not a transient failure")
+    void anHttpErrorIsNotRetried(@TempDir Path sandbox) throws Exception {
+        Path bin = sandbox.resolve("bin");
+        Files.createDirectories(bin);
+        stub(bin, "curl", curlStub(Integer.MAX_VALUE, HTTP_ERROR));
+        Path output = sandbox.resolve("github-output.txt");
+        Files.createFile(output);
+        Path runnerTemp = Files.createDirectories(sandbox.resolve("runner-temp"));
+
+        Process process = start(bin, sandbox, runnerTemp, output, "latest");
+        String log = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+
+        assertEquals(2, process.waitFor(), "an unanswered lookup did not fail the step:\n" + log);
+        assertEquals(1, curlCalls(sandbox),
+                "a 404 for a version that does not exist was retried, so a pinned wrong version"
+                        + " would cost three attempts and two pauses before saying so");
+    }
+
+    /** Runs the CLI-resolution step as it ships, in a sandbox, and returns the process. */
+    private static Process start(Path bin, Path sandbox, Path runnerTemp, Path output,
+            String toolVersion) throws IOException {
+        ProcessBuilder builder =
+                new ProcessBuilder("bash", "-c", ActionSteps.runBlock("Resolve the CLI"));
+        builder.redirectErrorStream(true);
+        builder.environment().put("PATH", bin + ":" + System.getenv("PATH"));
+        builder.environment().put("RUNNER_TEMP", runnerTemp.toString());
+        builder.environment().put("INPUT_CLI_PATH", "");
+        builder.environment().put("INPUT_TOOL_VERSION", toolVersion);
+        builder.environment().put("INPUT_CHECKSUM", "");
+        builder.environment().put("MG_REPO", "example/example");
+        builder.environment().put("GITHUB_OUTPUT", output.toString());
+        builder.environment().put("UNZIP_LOG", sandbox.resolve("unzip.log").toString());
+        builder.environment().put("CURL_CALLS", sandbox.resolve("curl-calls.txt").toString());
+        return builder.start();
+    }
+
+    /** How many times the stub curl was invoked. */
+    private static int curlCalls(Path sandbox) throws IOException {
+        Path counter = sandbox.resolve("curl-calls.txt");
+        return Files.exists(counter) ? Integer.parseInt(Files.readString(counter).trim()) : 0;
     }
 
     private static void stub(Path bin, String name, String body) throws IOException {
@@ -164,11 +227,23 @@ class ActionDownloadStepTest {
      * <p>The archive is not a real zip: {@code unzip} is stubbed, and what is under test is whether
      * the archive is still there when it is called. Serving an invalid archive keeps the fixture
      * honest about that.
+     *
+     * <p>{@code failures} is how many of the first calls fail, with {@code code}. Every call is
+     * counted into the file named by {@code CURL_CALLS}, so a test can tell a retry from a single
+     * attempt — which is the only way to observe the retry, since a stub cannot emulate the retrying
+     * of the binary it replaces.
      */
-    private static String curlStub() throws Exception {
+    private static String curlStub(int failures, int code) throws Exception {
         String sha = HexFormat.of().formatHex(
                 MessageDigest.getInstance("SHA-256").digest(ARCHIVE_BYTES.getBytes(StandardCharsets.UTF_8)));
         return "#!/bin/sh\n"
+                + "calls=$(cat \"$CURL_CALLS\" 2>/dev/null || echo 0)\n"
+                + "calls=$((calls + 1))\n"
+                + "echo \"$calls\" > \"$CURL_CALLS\"\n"
+                + "if [ \"$calls\" -le " + failures + " ]; then\n"
+                + "  echo 'stub curl: refusing to answer (simulated failure)' >&2\n"
+                + "  exit " + code + "\n"
+                + "fi\n"
                 + "out=\"\"\n"
                 + "url=\"\"\n"
                 + "while [ $# -gt 0 ]; do\n"
@@ -181,7 +256,7 @@ class ActionDownloadStepTest {
                 + "done\n"
                 + "case \"$url\" in\n"
                 + "  */releases/latest)\n"
-                + "    printf '{\"tag_name\": \"" + TAG + "\"}\\n'\n"
+                + "    printf '{\"tag_name\": \"" + TAG + "\"}\\n' > \"$out\"\n"
                 + "    ;;\n"
                 + "  *.zip.sha256)\n"
                 + "    printf '%s  archive\\n' '" + sha + "' > \"$out\"\n"
