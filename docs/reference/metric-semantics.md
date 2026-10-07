@@ -9,6 +9,13 @@ The machine-readable form of this table is `org.b333vv.metric.library.core.Metri
 `MetricSemanticContractTest` asserts that the two agree in the ways that matter. This document is the
 part a person reads; the type is the part a program branches on.
 
+Each entry carries a **semantic version**, and the maintainability policy digest hashes the version
+of every metric a rule reads. That is what makes a formula change a visible policy change: a rule
+saying `CC >= 16` is a different rule the moment the count of decision points changes, and without
+the version in the digest a stored baseline would silently be compared against a number computed a
+different way. Bumping a version here therefore invalidates every stored findings baseline, which is
+the contract's behaviour for any policy change and not an accident.
+
 ## Why this file exists
 
 The failure this prevents is specific and quiet. A rule says "ATFD ≥ 5". A maintainer reads a finding

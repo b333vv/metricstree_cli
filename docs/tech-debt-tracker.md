@@ -344,6 +344,25 @@
   consulted, and the only candidate for a per-entry reason is the disposition text the report already
   derives from the accepted values, so there is nothing to store that is not already derivable.
 
+- **DEBT-26 — The semantic registry covers the rule inputs and no legacy metric code.** Found
+  2026-10-07 while closing the recheck's A14 semantic-version item. ML-012 step 1 asked for a table
+  covering "every proposed catalog input **and legacy threshold code**"; both
+  `docs/reference/metric-semantics.md` and the registry behind it describe the seven codes a
+  maintainability rule may name, and `MetricSemanticContractTest` pins that boundary deliberately
+  (`assertEquals(null, MetricSemantics.of(MetricCode.CBO))`). The other ~90 `MetricCode` constants —
+  what a legacy thresholds or growth file may name — have no entry, so nothing states what those
+  names measure here, which is the failure the registry was built to prevent one code at a time.
+  This changes no digest and no verdict today: the findings baseline is a maintainability-only
+  format, so a legacy code never reaches the digest, and every metric a maintainability rule *can*
+  name is registered — `RuleConfigLoaderTest
+  .everyMetricTheCatalogueNamesHasARegisteredSemanticVersion` now fails at the rule if that stops
+  being true. *What would close it:* an entry per legacy code, or an explicit statement that a code
+  has none. That also forces a decision this gap has been hiding: `MetricSemantics.experimental()` is
+  read by nothing outside its own tests — the blocking decision comes from the rule's `maturity` and
+  `allowsBlocking()` — so either that flag becomes load-bearing or it is removed, and neither is a
+  mechanical choice. Left open rather than bundled into A14's digest fix, which is what makes the
+  coverage inert rather than dangerous.
+
 ## Resolved Debt Items
 - **DEBT-23 — The action resolved `latest` with an unauthenticated releases API call.** Found
   2026-10-07 while fixing the download path, **fixed the same day** once the hosted runs stopped

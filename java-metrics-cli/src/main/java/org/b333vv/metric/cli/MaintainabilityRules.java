@@ -2,6 +2,7 @@ package org.b333vv.metric.cli;
 
 import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricRequirements;
+import org.b333vv.metric.library.core.MetricSemantics;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,11 +11,13 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.Function;
 
 /**
  * The shipped rule catalogue, loaded once from the packaged resource and validated on load.
@@ -35,7 +38,9 @@ import java.util.TreeMap;
  * <p>{@link #digest()} hashes the sorted normalised rule data, so two catalogues that mean the same
  * thing have the same digest regardless of key order in the file, and changing a threshold or a role
  * changes it. Titles and descriptions are excluded — they are prose, and rewording a description
- * should not invalidate every stored baseline.
+ * should not invalidate every stored baseline. The metrics a rule reads are included at the semantic
+ * version of the formula behind each one, because a rule's threshold is only as stable as the
+ * measurement it is compared against.
  */
 final class MaintainabilityRules {
 
@@ -227,13 +232,31 @@ final class MaintainabilityRules {
      *
      * <p>Sorted, so the order rules appear in cannot change the answer, and restricted to what changes
      * behaviour: identity, version, level, mode, severity, maturity, roles, required scope, worsening
-     * predicate, and every condition bound. Titles and descriptions are excluded — they are prose, and
-     * rewording a description should not invalidate every stored baseline.
+     * predicate, every condition bound, and the semantic version of every metric the rule reads.
+     * Titles and descriptions are excluded — they are prose, and rewording a description should not
+     * invalidate every stored baseline.
      */
     static String digestOf(List<MaintainabilityRule> rules) {
+        return sha256(digestMaterial(rules, MaintainabilityRules::recordedSemanticVersion));
+    }
+
+    /**
+     * The text the digest is taken over, with each metric's semantic version supplied by the caller.
+     *
+     * <p>Split out so the invalidation boundary can be asserted directly instead of only through a
+     * hash, which cannot be read back. A test hands this a rule set and a different answer for one
+     * metric's version and sees the material change, which is the behaviour the digest exists for;
+     * comparing a hash against a remembered hash would only re-run the same code.
+     *
+     * @param rules            the rules to describe
+     * @param semanticVersions the semantic version of a metric, or {@code null} when the metric has
+     *                         no registered semantics
+     */
+    static String digestMaterial(List<MaintainabilityRule> rules,
+            Function<MetricCode, String> semanticVersions) {
         StringBuilder material = new StringBuilder("catalog-v1\n");
         List<MaintainabilityRule> sorted = new ArrayList<>(rules);
-        sorted.sort(java.util.Comparator.comparing(MaintainabilityRule::id));
+        sorted.sort(Comparator.comparing(MaintainabilityRule::id));
         for (MaintainabilityRule rule : sorted) {
             material.append(rule.id()).append('\0')
                     .append(rule.version()).append('\0')
@@ -244,25 +267,61 @@ final class MaintainabilityRules {
                     .append(rule.requiredScope().name()).append('\0')
                     .append(rule.worsening().name()).append('\0');
             rule.worseningBudgets().entrySet().stream()
-                    .sorted(java.util.Map.Entry.comparingByKey(
-                            java.util.Comparator.comparing(Enum::name)))
+                    .sorted(Map.Entry.comparingByKey(Comparator.comparing(Enum::name)))
                     .forEach(entry -> material.append("budget:").append(entry.getKey().name())
                             .append('=').append(entry.getValue()).append('\0'));
             rule.applicableRoles().stream().map(EntityRole::id).sorted()
                     .forEach(role -> material.append("role:").append(role).append('\0'));
             // TreeMap so conditions hash in a fixed order rather than in map iteration order.
             Map<MetricCode, MaintainabilityRule.MetricBounds> sortedConditions = new TreeMap<>(
-                    java.util.Comparator.comparing(Enum::name));
+                    Comparator.comparing(Enum::name));
             sortedConditions.putAll(rule.conditions());
             sortedConditions.forEach((metric, bounds) -> material
                     .append(metric.name()).append(':')
                     .append(bounds.min() == null ? "" : bounds.min()).append(':')
                     .append(bounds.max() == null ? "" : bounds.max()).append('\0'));
+            // The metrics this rule reads, at the version of the formula behind each name.
+            //
+            // A catalogue names a metric; the library decides what that name measures. A rule that
+            // says "CC >= 16" means one thing while CC counts each decision point and another thing
+            // the moment the count changes, and nothing in the rule's own data records which of the
+            // two a stored baseline was accepted against -- so without this, a formula change is a
+            // silent policy change that keeps its digest. This is the audit's A14: the contract has
+            // always required "metric semantic versions" in the digest, and the registry that carries
+            // them existed but was consulted by no production code at all.
+            //
+            // Only the metrics this rule reads, not every registered metric: an unrelated formula
+            // change is not a change to this policy, and invalidating every stored baseline for one
+            // would teach people to regenerate them without reading the diff.
+            //
+            // A metric with no registered semantics is recorded as unversioned rather than skipped,
+            // so that registering one later -- which is a claim that the formula is now identified --
+            // is visible as the policy change it is.
+            java.util.Set<MetricCode> inputs = new java.util.TreeSet<>(
+                    Comparator.comparing(Enum::name));
+            inputs.addAll(rule.conditions().keySet());
+            inputs.addAll(rule.worseningBudgets().keySet());
+            for (MetricCode metric : inputs) {
+                String version = semanticVersions.apply(metric);
+                material.append("semantics:").append(metric.name()).append('=')
+                        .append(version == null ? "unversioned" : version).append('\0');
+            }
             material.append('\n');
         }
+        return material.toString();
+    }
+
+    /** The semantic version the library records for {@code code}, or null when it records none. */
+    private static String recordedSemanticVersion(MetricCode code) {
+        MetricSemantics.Semantics semantics = MetricSemantics.of(code);
+        return semantics == null ? null : semantics.semanticVersion();
+    }
+
+    /** The digest of the material, lowercase hex. Package-private so a test can read it back. */
+    static String sha256(String material) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(material.toString().getBytes(StandardCharsets.UTF_8)));
+                    .digest(material.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable in this JVM", exception);
         }

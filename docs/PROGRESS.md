@@ -1,5 +1,67 @@
 # what has been done
 
+## Session: the policy digest covers the metrics, not only the rules (2026-10-07)
+
+A14 is the recheck row "policy digest misses behavior changes and includes cosmetic changes". Its
+prescription was to "hash effective roles/limits, semantic versions and scope, exclude cosmetic
+reasons, and test these invalidation boundaries". Three of the four were already done at HEAD and
+the row is a snapshot, so each was checked rather than assumed: roles and per-rule overrides are
+folded in by `RuleConfigLoader.digest`, the analysis scope by `MaintainabilitySettings
+.withAnalysisScope` (from both `GateCommand` and `DetectCommand`, before any early return), and a
+suppression's reason text is deliberately excluded while its rule, entity and expiry are hashed.
+**Metric semantic versions were the missing one**, and they were missing in a way that made the
+whole registry inert: `MetricSemantics` carries a `semanticVersion` per metric, its own javadoc says
+that version "is what a future policy digest hashes", the findings contract has always required
+"metric semantic versions" in the digest — and no production code consulted `MetricSemantics` at all.
+Only its own tests did.
+
+**What the digest hashed, and what that missed.** `MaintainabilityRules.digestOf` hashed each rule's
+identity, level, mode, severity, maturity, roles, required scope, worsening predicate and every
+condition bound. All of those are properties of the *rule*. None is a property of the *measurement*:
+a rule saying `CC >= 16` is a different policy the moment the count of decision points changes, and
+nothing in the rule's data records which count a stored baseline was accepted against. So a formula
+change was a silent policy change that kept its digest, which is precisely the failure the baseline
+format exists to prevent — it would have compared a project's accepted debt against a number
+computed a different way and reported the difference as the project's.
+
+**The fix, and the boundary it draws.** `digestOf` now records, for every metric a rule reads, the
+semantic version the library registers for it. Two choices are deliberate. **Only the metrics that
+rule reads** — a rule's inputs are the union of its condition bounds and its worsening budgets — not
+every registered metric: one unrelated formula change invalidating every stored baseline in every
+project would teach people to regenerate baselines without reading the diff, which is how a safety
+mechanism stops being one. And **a metric with no registered semantics is recorded as `unversioned`
+rather than skipped**, so that registering one later is visible as the policy change it is.
+
+**The seam is the test.** `digestOf` now delegates to a package-private `digestMaterial(rules,
+semanticVersions)` that takes the version lookup as a parameter, because the registry is static: a
+test that read it would move both sides together and pass whatever the version was. With the lookup
+injected, the invalidation boundary is asserted directly — the same rules, one metric's version
+changed, a different material — instead of by comparing a hash against a remembered hash, which only
+re-runs the same code. Three tests: the boundary itself; a second assertion that the digest a run
+publishes is the one taken over the registry's versions, without which the boundary could hold while
+the production path hashed a constant (the state A14 found the registry in); and a precision test
+using `MT-M001`, which reads `CC` alone, to pin "an unrelated metric's change is not this policy's
+change". A fourth test asserts that every metric the catalogue names has a registered semantic
+version, so a future rule on an undescribed metric fails at the rule rather than hashing `unversioned`
+forever. Three sabotages, all caught, each failing the test that names it: dropping the versions from
+the material, hashing a constant instead of the registry, and hashing every registered metric.
+
+**Compatibility.** Every stored findings baseline becomes stale, because the digest it records is no
+longer the digest this build computes. That is the contract's own behaviour for a policy change —
+"digest/version mismatch requires explicit regeneration; report an actionable usage error, not silent
+reacceptance" — and the existing error already says how. No golden and no committed evaluation result
+carries a policy digest, so nothing else moved; the audit captures under `docs/plans/` do carry one
+and are records of the revisions they name, so they are left as they are. 521 CLI tests, 85
+evaluation tests, goldens untouched.
+
+**What is still open in A14, and why it is not a repair.** The row's other item is that ML-012's
+registry covers the seven maintainability rule inputs and no legacy metric code, while ML-012 step 1
+asked for "every proposed catalog input and legacy threshold code". That is a coverage gap and not a
+defect, and the digest fix is what makes it inert: nothing a legacy thresholds file can name reaches
+the digest, the findings baseline being a maintainability-only format, and every metric a
+maintainability rule *can* name is registered — which the new test now enforces. Recorded as DEBT-26
+with what would close it.
+
 ## Session: the action resolves `latest` without the releases API (2026-10-07)
 
 Run #32 is the first hosted run of `61b1b97`. Its Linux job is green end to end. Its macOS job
@@ -41,7 +103,7 @@ that the step reports a repository with no release, that it does *not* report a 
 and that a question which was answered is not retried. Four sabotages, all caught, each failing the
 test that names it: asking the API again, dropping the `|| status=$?` guard on the command
 substitution, accepting any redirect destination as a tag, and giving the two exit-2 situations one
-message. `shellcheck -s bash` over the extracted step is clean. 862 tests, goldens untouched.
+message. `shellcheck -s bash` over the extracted step is clean. 864 tests, goldens untouched.
 
 **What is not yet confirmed, and what would confirm it.** Which request failed on the macOS runner
 is an inference: the step's exit 2 says a fetch did not complete, and it does not say which. The

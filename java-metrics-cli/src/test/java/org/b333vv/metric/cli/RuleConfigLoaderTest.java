@@ -4,6 +4,7 @@ import org.b333vv.metric.library.core.MetricCode;
 import org.b333vv.metric.library.core.MetricDefinitions;
 import org.b333vv.metric.library.core.MetricLevel;
 import org.b333vv.metric.library.core.MetricRequirements;
+import org.b333vv.metric.library.core.MetricSemantics;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -11,13 +12,16 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -143,6 +147,101 @@ class RuleConfigLoaderTest {
         assertEquals(MaintainabilityRules.digestOf(List.of(base)),
                 MaintainabilityRules.digestOf(List.of(reworded)),
                 "prose is not policy; rewording a title must not invalidate a stored baseline");
+    }
+
+    /**
+     * A metric whose formula changed is a policy change, and the digest says so.
+     *
+     * <p>The version is injected rather than read from the registry, because the registry is static:
+     * a test that read it would move both sides together and pass whatever the version was. What is
+     * asserted here is the boundary — the same rules, one metric's semantics changed, a different
+     * digest — which is the property a stored baseline depends on. The contract has always required
+     * metric semantic versions in the digest; this is the audit's A14, where they were required and
+     * absent.
+     */
+    @Test
+    void aMetricWhoseFormulaChangedChangesTheDigest() {
+        List<MaintainabilityRule> catalog = MaintainabilityRules.catalog();
+
+        String recorded = MaintainabilityRules.digestMaterial(catalog,
+                metric -> semanticsVersion(metric, null));
+        String rebumped = MaintainabilityRules.digestMaterial(catalog,
+                metric -> semanticsVersion(metric, "9.9.9"));
+
+        assertNotEquals(recorded, rebumped,
+                "every metric's semantic version could be changed without the digest moving, so a"
+                        + " baseline would survive the formula it was accepted against changing");
+
+        // And the digest a run actually publishes is the one taken over the registry's versions.
+        // Without this, the boundary above could hold while the production path hashed a constant,
+        // which is the state A14 found the registry in: present, asserted, and consulted by nothing.
+        assertEquals(
+                MaintainabilityRules.sha256(MaintainabilityRules.digestMaterial(catalog,
+                        metric -> semanticsVersion(metric, null))),
+                MaintainabilityRules.digestOf(catalog),
+                "the published digest is not the one taken over the metrics' registered semantic"
+                        + " versions, so the registry is still not what the policy identity rests on");
+    }
+
+    /**
+     * Only the metrics a rule reads are part of that rule's policy.
+     *
+     * <p>The alternative — hashing every registered metric — is safe in the direction that matters
+     * and useless in the direction people feel: one unrelated formula change would invalidate every
+     * stored baseline in every project, and a digest that moves for reasons nobody can act on is a
+     * digest people regenerate without reading. `MT-M001` is specified against `CC` alone, so it is
+     * the fixture that can tell the two designs apart.
+     */
+    @Test
+    void aMetricTheRuleDoesNotReadIsNotPartOfItsPolicy() {
+        MaintainabilityRule onlyCyclomaticComplexity =
+                MaintainabilityRules.byId("MT-M001").orElseThrow();
+
+        String base = MaintainabilityRules.digestMaterial(List.of(onlyCyclomaticComplexity),
+                metric -> semanticsVersion(metric, null));
+        String readMetricBumped = MaintainabilityRules.digestMaterial(List.of(onlyCyclomaticComplexity),
+                metric -> "CC".equals(metric.name()) ? "9.9.9" : semanticsVersion(metric, null));
+        String unreadMetricBumped = MaintainabilityRules.digestMaterial(List.of(onlyCyclomaticComplexity),
+                metric -> "MND".equals(metric.name()) ? "9.9.9" : semanticsVersion(metric, null));
+
+        assertNotEquals(base, readMetricBumped,
+                "the metric this rule is specified against changed and the policy did not");
+        assertEquals(base, unreadMetricBumped,
+                "a metric MT-M001 never reads changed its formula and the policy moved, so every"
+                        + " unrelated formula change would invalidate every stored baseline");
+    }
+
+    /** The recorded version of {@code code}, or {@code replacement} where one is given. */
+    private static String semanticsVersion(MetricCode code, String replacement) {
+        MetricSemantics.Semantics semantics = MetricSemantics.of(code);
+        if (semantics == null) {
+            return null;
+        }
+        return replacement == null ? semantics.semanticVersion() : replacement;
+    }
+
+    /**
+     * Every metric the catalogue names has a registered semantic version.
+     *
+     * <p>This is what makes the digest's coverage complete rather than incidental. A rule added on a
+     * metric nobody has described would be hashed as unversioned, so the one input a threshold is
+     * most sensitive to — what the number actually measures — would be the one thing the policy
+     * identity did not record. It fails at the rule, not at the digest, because the rule is what
+     * introduced the unnamed measurement.
+     */
+    @Test
+    void everyMetricTheCatalogueNamesHasARegisteredSemanticVersion() {
+        for (MaintainabilityRule rule : MaintainabilityRules.catalog()) {
+            Set<MetricCode> inputs = new TreeSet<>(Comparator.comparing(Enum::name));
+            inputs.addAll(rule.conditions().keySet());
+            inputs.addAll(rule.worseningBudgets().keySet());
+            for (MetricCode metric : inputs) {
+                assertNotNull(MetricSemantics.of(metric),
+                        rule.id() + " is specified against " + metric + ", which has no entry in"
+                                + " MetricSemantics, so the policy digest cannot record what that"
+                                + " name measures");
+            }
+        }
     }
 
 
