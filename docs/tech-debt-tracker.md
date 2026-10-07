@@ -340,6 +340,19 @@
   `${{ github.token }}`, and distinguish "the API refused me" from "there is no release" in the
   error, which is the same 404-only discipline the workflow's probe already applies.
 
+- **DEBT-24 — The action's findings document is one fixed path for the whole job.** Found 2026-10-07
+  while fixing the staging directory (the report half of the same problem, which is fixed). The gate
+  step writes `${{ runner.temp }}/metrics-findings.json` — the same path on every invocation, and the
+  path published as the `findings-path` output — and the staging step uploads whatever it finds there.
+  An invocation whose gate failed before writing that document therefore stages the *previous*
+  invocation's, under its own artifact name: the same "the second invocation inherits what the first
+  left behind" defect as the staging directory, in the other file. The hosted consumer run does not
+  evidence it — both of its invocations wrote a findings document — so it is recorded rather than
+  changed on suspicion. *What would close it:* remove the file before invoking the gate, so that its
+  presence means this run wrote it, and test the failed-gate case alongside the staged-report ones in
+  `ActionReportStagingStepTest`. Making the path unique per invocation would close it too, but it
+  changes a published output for every existing consumer, which is the larger change of the two.
+
 ## Resolved Debt Items
 - **DEBT-16 — A `no-longer-matches` resolution published the base's value as the current one.** Found
   2026-10-06 while adding the removed-entity pass (the recheck's A08), **fixed 2026-10-06**.

@@ -279,15 +279,30 @@ runs:
       run: |
         # Uploaded on every outcome, not only on failure. A run that reported INCOMPLETE and left no
         # evidence is the case where a person most needs to see what was actually checked.
+        #
+        # The directory is cleared before anything is staged into it, and before the "nothing to
+        # stage" return below. It is one fixed path under $RUNNER_TEMP, so a job that invokes this
+        # action twice stages into the same place twice -- and the second invocation then uploaded
+        # the first invocation's report under its own artifact name. The hosted consumer run showed
+        # it as a size before anyone read it as a bug: its second artifact was 4.2 KB where the first
+        # was 2.8 KB, which is one report from each run rather than two from one. Clearing first is
+        # also what makes the return below true. An invocation that produced no report must publish
+        # an empty artifact; leaving the previous invocation's evidence behind would have it
+        # published under a name that claims it is this run's.
+        : "${RUNNER_TEMP:?RUNNER_TEMP must be set; this step clears and recreates a directory under it}"
+        rm -rf "$RUNNER_TEMP/metrics-gate-reports"
+        mkdir -p "$RUNNER_TEMP/metrics-gate-reports"
+        # Spelled as the environment variable rather than as `runner.temp` so that this block is
+        # valid shell: the tests execute it, and an expression the runner expands first is not shell.
+        # The two name the same directory.
         reports=""
         [ -f "$INPUT_REPORT_PATH" ] && reports="$reports $INPUT_REPORT_PATH"
-        [ -f "${{ runner.temp }}/metrics-findings.json" ] && \
-          reports="$reports ${{ runner.temp }}/metrics-findings.json"
+        [ -f "$RUNNER_TEMP/metrics-findings.json" ] && \
+          reports="$reports $RUNNER_TEMP/metrics-findings.json"
         if [ -z "$reports" ]; then
           echo "No report was produced; there is nothing to upload." >&2
           exit 0
         fi
-        mkdir -p "$RUNNER_TEMP/metrics-gate-reports"
         for report in $reports; do
           cp "$report" "$RUNNER_TEMP/metrics-gate-reports/$(basename "$report")"
         done

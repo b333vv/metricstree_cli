@@ -11,10 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,9 +39,6 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class ActionDownloadStepTest {
 
-    private static final Path ACTION =
-            Path.of(System.getProperty("docsRepoRoot", ".")).resolve("action.yml");
-
     /** The tag the stubbed release lookup answers with. Deliberately not a real release. */
     private static final String TAG = "v9.9.9";
 
@@ -62,7 +56,7 @@ class ActionDownloadStepTest {
         Path output = sandbox.resolve("github-output.txt");
         Files.createFile(output);
 
-        String script = resolveCliStep();
+        String script = ActionSteps.runBlock("Resolve the CLI");
         assertTrue(script.contains("cli-path=") && script.contains("Checksum verified"),
                 "the extracted script does not look like the CLI-resolution step; the extraction is "
                         + "reading the wrong thing and the rest of this test would be vacuous");
@@ -122,7 +116,7 @@ class ActionDownloadStepTest {
 
         Path runnerTemp = sandbox.resolve("runner-temp");
         Files.createDirectories(runnerTemp);
-        ProcessBuilder builder = new ProcessBuilder("bash", "-c", resolveCliStep());
+        ProcessBuilder builder = new ProcessBuilder("bash", "-c", ActionSteps.runBlock("Resolve the CLI"));
         builder.redirectErrorStream(true);
         builder.environment().put("PATH", bin + ":" + System.getenv("PATH"));
         builder.environment().put("RUNNER_TEMP", runnerTemp.toString());
@@ -145,51 +139,13 @@ class ActionDownloadStepTest {
     /**
      * The {@code run:} block of the CLI-resolution step, dedented.
      *
-     * <p>Extracted from the file rather than copied, so the test executes the shell that ships. A
-     * copy would drift, and the drift would be invisible: the test would keep passing over a script
-     * nobody runs. The indentation is the action-metadata convention — {@code runs.steps} is a list
-     * whose items start at four spaces, a step's keys sit at six, and the block scalar's body at
-     * eight.
+     * <p>Extracted from the file rather than copied, so the test executes the shell that ships. The
+     * extraction itself lives in {@link ActionSteps} because the report-staging step needs the same
+     * reading of the same file, and two copies of a regex over a file neither test owns is two
+     * places for the reading to be wrong in the same silent way.
      */
     private static String resolveCliStep() throws IOException {
-        assertTrue(Files.isRegularFile(ACTION),
-                "action.yml must be readable at " + ACTION.toAbsolutePath()
-                        + " — the test is pointed at the repository root by docsRepoRoot");
-        List<String> lines = Files.readAllLines(ACTION);
-        Pattern start = Pattern.compile("^ {4}- name: Resolve the CLI\\s*$");
-        int from = -1;
-        for (int i = 0; i < lines.size(); i++) {
-            if (start.matcher(lines.get(i)).matches()) {
-                from = i;
-                break;
-            }
-        }
-        assertTrue(from >= 0, "no 'Resolve the CLI' step in " + ACTION);
-
-        StringBuilder script = new StringBuilder();
-        boolean inRun = false;
-        for (int i = from + 1; i < lines.size(); i++) {
-            String line = lines.get(i);
-            if (line.matches("^ {4}- name: .*")) {
-                break;
-            }
-            if (line.matches("^ {6}run: \\|\\s*$")) {
-                inRun = true;
-                continue;
-            }
-            if (!inRun) {
-                continue;
-            }
-            if (line.isBlank()) {
-                script.append('\n');
-                continue;
-            }
-            if (!line.startsWith("        ")) {
-                break;
-            }
-            script.append(line.substring(8)).append('\n');
-        }
-        return script.toString();
+        return ActionSteps.runBlock("Resolve the CLI");
     }
 
     private static void stub(Path bin, String name, String body) throws IOException {

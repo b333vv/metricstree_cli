@@ -1,5 +1,70 @@
 # what has been done
 
+## Session: the action's report artifact belongs to one invocation, not to the job (2026-10-07)
+
+The push that carried the download-path fix turned the hosted consumer workflow green, and the
+evidence it published is the acceptance the recheck's A19 row was waiting for. It also published a
+number that did not add up, and that number was a defect.
+
+**The hosted runs.** `action-consumer-test` **#30** on `e85f946` reports **Status Success** on both
+platforms. Its four errors are the fixture's own gate exits — step 8 and step 11, exit 1 on each
+platform — and those two steps are `continue-on-error` precisely so that the assertions which read
+their outputs (steps 9 and 12) can explain a wrong verdict instead of dying with it. Step 11 is the
+invocation that downloads the release, so a failing gate there is the intended outcome: it means the
+downloaded CLI reached the same verdict as the locally built one on the same fixture, which is what
+step 12 compares. **#29** on `e0832b5` reports **Failure** with ten errors, reproducing #28 exactly —
+step 11 exit 2, a `409 Conflict` on the artifact upload, and step 12's "The download run published no
+status, so the downloaded CLI never ran." That is the control: `e0832b5` does not carry the fix.
+
+**The release.** `release` #5 ran on the annotated tag `v2026.3.0` (commit `a2a0e52`) and reports
+**Status Success**. The release carries exactly two assets, and both were downloaded here rather than
+read off a page: `metricstree-cli-2026.3.0.zip` is 15,705,600 bytes with SHA-256 `ff43dbb7…`, the
+published `.sha256` names the archive and that same digest, and the digest computed over the
+downloaded bytes matches both it and the one GitHub prints on the release page. The unpacked
+distribution carries `java-metrics-cli-2026.3.0.jar` and `java-metrics-lib-2026.3.0.jar` — the
+`-PmetricsVersion` stamp — and its launcher answers `java-metrics-cli 2026.3.0`. That is A18's "a
+hosted release run on a real `v*` tag is still the only way to confirm the stamp reaches a
+downloadable artifact", and it settles it: the stamp reaches the asset, the asset is downloadable,
+and the checksum beside it describes it.
+
+**A size that did not add up.** #30 uploaded `metrics-gate-report` at 2.8 KB and
+`metrics-gate-report-downloaded` at 4.2 KB. Rebuilding both from one fixture explains the gap exactly.
+The two reports are byte-identical apart from `toolVersion` (`2026.0.0` for the local build, `2026.3.0`
+for the release) and each is 5505 bytes; a zip of one report and its findings document is 2932 bytes,
+which is the first artifact; running the action's staging step twice over the same `$RUNNER_TEMP`
+leaves three files rather than two and zips to 4439 bytes, which is the second. The step copies the
+report and the findings into one fixed directory and never cleared it, so the second invocation
+uploaded the first invocation's report under its own artifact name.
+
+This is the same defect the `artifact-name` input fixed one step earlier, in a different place: the
+action was written for one invocation per job, and the second invocation inherited what the first left
+behind. There it was a 409, which fails loudly. Here it publishes a document that is real, readable,
+and not this run's — so a consumer reading the downloaded run's evidence is also handed the local
+run's, with nothing in either file saying so.
+
+**The fix.** Clear the directory before staging into it, and clear it *before* the "nothing to stage"
+return. The ordering is the substance: an invocation that produced no report must publish an empty
+artifact, and clearing after that return would leave the previous invocation's evidence to be
+uploaded under a name claiming it as this run's. The block also spells the directory as `$RUNNER_TEMP`
+rather than as `${{ runner.temp }}`, so that it is valid shell — the tests execute it, and an
+expression the runner expands before shell sees it is not shell — and asserts `RUNNER_TEMP` is set,
+because an `rm -rf` on an unset variable is not a risk to leave to chance.
+
+**`ActionReportStagingStepTest` runs that shell as it ships.** Two tests: the second invocation stages
+its own report and not the first invocation's, and an invocation that produced nothing leaves nothing
+staged. Three sabotages, all caught. Removing the cleanup fails both. Moving it after the early return
+fails **only the second** — which is why the second test exists, and it is the check that the ordering,
+rather than the cleanup, is what the code is being held to. Spelling the block with a runner
+expression fails both with a bad substitution. The extraction of a step's `run:` block moved into
+`ActionSteps`, shared with `ActionDownloadStepTest`: two copies of a regex over a file neither test
+owns is two places for the reading to be wrong in the same silent way.
+
+**Recorded, not fixed.** `$RUNNER_TEMP/metrics-findings.json` is still one fixed path for the whole
+job, so an invocation whose gate wrote no findings document would stage the previous invocation's —
+the same class of problem as the one fixed here, in the other file, and not yet evidenced by any run.
+It is DEBT-24. The `latest` resolution and the `v2.2.1` publisher pin remain DEBT-23 and a deliberate
+deferral respectively.
+
 ## Session: the action's download path had never run, and could not have (2026-10-07)
 
 Pushing the previous session's work turned `master` red. `action-consumer-test` run #28 failed on
