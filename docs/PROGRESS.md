@@ -105,13 +105,27 @@ test that names it: asking the API again, dropping the `|| status=$?` guard on t
 substitution, accepting any redirect destination as a tag, and giving the two exit-2 situations one
 message. `shellcheck -s bash` over the extracted step is clean. 864 tests, goldens untouched.
 
-**What is not yet confirmed, and what would confirm it.** Which request failed on the macOS runner
-is an inference: the step's exit 2 says a fetch did not complete, and it does not say which. The
-lookup is the only request in that step subject to a per-address limit, and removing it is the one
-change available; but the archive and the checksum are fetched from `github.com` as well, and a
-transport failure there would produce the same exit. Every failure in this step now names the URL it
-could not complete, so the next hosted run settles it either way — and if it names the archive, this
-fix is the wrong one and the diagnosis has to be redone rather than the symptom retried.
+**Confirmed by the next hosted run, not by its log.** Run #33 on `d48bc0c` is green on both
+platforms, and its macOS job staged a `metrics-gate-report-downloaded` of 2886 bytes where run #32's
+macOS job staged 1443 — the same size as the Linux job's, on a complete report, with step 12
+comparing the released and locally built CLIs successfully. So the lookup rewrite is what the macOS
+failure needed. What remains is the residual possibility that the archive fetch failed transiently
+and happened to succeed this time; that is unlikely, since #31 and #32 both failed the download path
+on macOS on consecutive commits while their Linux jobs succeeded, and the lookup was the only request
+there subject to a per-address limit. Reading the failing URL back is not possible: GitHub's job-logs
+endpoint answers "Must have admin rights to Repository" for this repository without a credential, so
+the evidence is the outcome rather than the message. The alternative to that reasoning is a second
+hosted run, not more analysis.
+
+**And what checking the hosted runs turned up.** Neither of the two commits pushed before this one
+has a workflow run at all: the API reports `total_count: 0` for `56fc177` and for `919cd9d`, while
+`d48bc0c` — pushed between them and touching `action.yml` — has one. That is not a coincidence of
+timing. `./gradlew check` appears in exactly one workflow, `release.yml`, on a `v*` tag; the
+push-triggered workflows are path-filtered to `action.yml`/`scripts/**` and `evaluation/**`, and
+everything else builds with `:java-metrics-cli:installDist`, which runs nothing. So a push that
+changes only Java sources is verified by nobody but whoever pushed it, and a red suite is first seen
+when someone tags a release. Recorded as DEBT-27 rather than repaired: adding that job is a CI-cost
+decision for the repository owner, not a defect with one correct fix.
 
 ## Session: the baseline comparison asks the rule, not the budget (2026-10-07)
 

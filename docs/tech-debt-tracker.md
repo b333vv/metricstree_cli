@@ -363,6 +363,20 @@
   mechanical choice. Left open rather than bundled into A14's digest fix, which is what makes the
   coverage inert rather than dangerous.
 
+- **DEBT-27 — No workflow runs the test suite except a release.** Found 2026-10-07 while checking
+  the hosted runs of the two commits above. `./gradlew check` appears in exactly one workflow,
+  `release.yml`, and there only on a `v*` tag. Every other workflow builds with
+  `:java-metrics-cli:installDist` — which compiles and runs nothing — and the two push-triggered ones
+  are path-filtered (`action-consumer-test.yml` on `action.yml` and `scripts/**`, `evaluation.yml` on
+  `evaluation/**`), so a push that changes only Java sources starts no run at all. Confirmed against
+  the API rather than by reading: `56fc177` and `919cd9d` have `total_count: 0` workflow runs, while
+  `d48bc0c` — pushed between them and touching `action.yml` — has one. The consequence is that a
+  failing test reaches master unremarked and is first seen when someone tags a release, which is the
+  one moment a red suite is most expensive. *What would close it:* a job that runs `./gradlew check`
+  on push and on pull requests. It is recorded rather than added because it is a CI-cost decision
+  rather than a repair — every push to master would start a full Gradle build — and that decision
+  belongs to the repository owner.
+
 ## Resolved Debt Items
 - **DEBT-23 — The action resolved `latest` with an unauthenticated releases API call.** Found
   2026-10-07 while fixing the download path, **fixed the same day** once the hosted runs stopped
@@ -382,11 +396,17 @@
   half of *what would close it* is therefore discharged differently from how it was written:
   authentication was the intended fix, and removing the credential's need is a stronger one.
   `ActionDownloadStepTest` asserts that no request goes to `api.github.com` and that the two exit-2
-  situations carry different messages; four sabotages caught. **What is still inference:** which
-  request failed on the macOS runner. The step's exit 2 says a fetch did not complete, not which one,
-  and the archive and the checksum come from `github.com` too. Every failure in the step now names
-  its URL, so the next hosted run settles it — and if it names the archive, this diagnosis is wrong
-  and has to be redone rather than the symptom retried.
+  situations carry different messages; four sabotages caught. **Confirmed hosted:** the next run,
+  #33 on `d48bc0c`, is green on both platforms, and its macOS job staged a `metrics-gate-report-downloaded`
+  of 2886 bytes where run #32's macOS job staged 1443 — the same size as the Linux job's, on a
+  complete report, with step 12 comparing the released and locally built CLIs successfully. That
+  settles it by outcome rather than by message: GitHub's job-logs endpoint answers "Must have admin
+  rights to Repository" for this repository without a credential, so the URL the failing fetch named
+  cannot be read back. What that leaves is the residual possibility that the archive fetch failed
+  transiently and happened to succeed on #33 — unlikely, since #31 and #32 both failed the download
+  path on macOS on consecutive commits while their Linux jobs succeeded, and the lookup was the only
+  request there subject to a per-address limit. The alternative to that reasoning is a second hosted
+  run, not more analysis.
 - **DEBT-24 — The action's findings document was one fixed path for the whole job.** Found 2026-10-07
   while fixing the staging directory, **fixed the same day** once the hosted run evidenced it rather
   than hypothesised it. The gate step writes `${{ runner.temp }}/metrics-findings.json` — the same
