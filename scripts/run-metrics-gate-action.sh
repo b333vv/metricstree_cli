@@ -27,6 +27,21 @@ endgroup() { printf '::endgroup::\n' >&2; }
 : "${MG_MODE:=committed}"
 : "${MG_OUTPUT_DIR:=$PWD}"
 
+# The findings document is removed before anything else can fail, so that finding it afterwards means
+# this run wrote it.
+#
+# It is one fixed path for the whole job, and the action uploads whatever is at it. A second
+# invocation in the same job whose gate never got as far as writing one therefore published the
+# *first* invocation's document under its own artifact name. That is not hypothetical: the hosted
+# consumer run did it on macOS, whose second artifact came out at 1.41 KB where a complete one is
+# 2.82 KB — one file, and the file belonged to the run above it.
+#
+# Removing it rather than writing an empty document, deliberately. The check at the end of this
+# script treats an absent document as "this run cannot report its result" and exits 2; an empty file
+# would have to be told apart from a document that is genuinely empty of findings, and that is a
+# distinction nothing here needs.
+rm -f "$MG_FINDINGS"
+
 # ---------------------------------------------------------------------------- the base ref
 
 resolve_base() {

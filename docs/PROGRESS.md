@@ -1,5 +1,40 @@
 # what has been done
 
+## Session: the action's findings document is this run's, or there is none (2026-10-07)
+
+Run #31's macOS job failed for two reasons, and the second one is the reason its artifact was small.
+The job's `metrics-gate-report-downloaded` is **1.41 KB** where a complete one is 2.82 KB, and the
+difference is a file: the artifact held the *first* invocation's findings document, published under
+the second invocation's name. The second invocation's CLI never resolved, so its gate never ran and
+wrote nothing — and the staging step, which runs `if: always()`, found the fixed path still populated
+by the run above it and staged that.
+
+This was DEBT-24, recorded a session earlier as a hypothesis on the strength of reading the code and
+explicitly not fixed on suspicion. The hosted run turned it into an observation, which is the whole
+difference: the defect was real, and it had already published a document to a consumer that was not
+the run it claimed to be.
+
+**The fix removes the document before anything else can fail.** `rm -f "$MG_FINDINGS"` sits at the top
+of the gate script, above the base-ref resolution, so finding the document afterwards means this run
+wrote it. Removing rather than writing an empty one, deliberately: the script's own end-of-run check
+treats an absent document as "this run cannot report its result" and exits 2, and an empty file would
+have to be told apart from a document that is genuinely empty of findings.
+
+**A comment in the consumer workflow stated the intent rather than the behaviour.** It said the
+findings file in the second artifact "belongs to this run, not the one above it" — true of a run that
+wrote one, and false of the run that did not, which is exactly the run whose evidence a reader most
+needs to be able to trust. The comment is now true because the code is.
+
+**Verification.** A new `FindingsDocument` group in `GitHubActionConsumerTest` seeds the fixed path
+with a previous run's document, forces a base ref that cannot be resolved so the gate never runs, and
+fails if the document survives. Dropping the removal fails exactly that test and nothing else. That
+assertion is the same observable the hosted run published as a size: an artifact holding someone
+else's evidence.
+
+**DEBT-23 is annotated rather than closed.** The retry added in the previous session does not cover a
+403 or a 429, which is what an unauthenticated rate limit looks like, and the message still cannot
+tell "no release is published" from "the API would not answer me". The authentication remains the fix.
+
 ## Session: the action's download says what failed, and survives one of them (2026-10-07)
 
 The hosted run that verified the staging fix also failed, on one platform, for a reason that turned

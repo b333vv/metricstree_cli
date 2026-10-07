@@ -670,4 +670,41 @@ class GitHubActionConsumerTest {
                     "the published version is the one inside the report it describes");
         }
     }
+
+    @Nested
+    @DisplayName("The findings document")
+    class FindingsDocument {
+
+        /**
+         * A run that never wrote one must not leave a previous run's in its place.
+         *
+         * <p>The document lives at one fixed path for the whole job and the action uploads whatever
+         * is at it, so an invocation whose gate failed before writing one published the invocation
+         * before it. The hosted consumer run did exactly that on macOS: its second artifact was
+         * 1.41 KB where a complete one is 2.82 KB — a single file, and the file was the first run's.
+         * A consumer reading that artifact is reading the wrong run's evidence, with nothing in the
+         * document saying so.
+         */
+        @Test
+        @DisplayName("belongs to this run, not to the one before it")
+        void aRunThatWritesNothingLeavesNothing() throws Exception {
+            Path repo = consumerRepository(2);
+            Path findings = repo.resolve("metrics-findings.json");
+            // What an earlier invocation in the same job left behind. A real document rather than a
+            // placeholder: the upload step cannot tell one from the other, and neither can a reader.
+            Files.writeString(findings, "{\"summary\":{\"total\":0},\"from\":\"an earlier run\"}");
+            Map<String, String> environment = new LinkedHashMap<>(maintainability());
+            // A base ref that cannot be resolved, so this run stops before the gate can write a
+            // document of its own. That is the shape of the hosted failure: the CLI never ran.
+            environment.put("MG_BASE_OVERRIDE", "refs/heads/does-not-exist");
+
+            Result result = runAction(repo, environment);
+
+            assertEquals(2, result.exitCode(), result.output());
+            assertFalse(Files.exists(findings),
+                    "the run left the previous invocation's findings document at the fixed path, so"
+                            + " the action's upload step would have published it as this run's"
+                            + " evidence");
+        }
+    }
 }
