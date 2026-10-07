@@ -400,6 +400,13 @@ archive and the checksum manifest; `archiveChecksum` produces the archive's own 
 are built by `.github/workflows/release.yml` on a `v*` tag, across Ubuntu and macOS on JDK 17 and 21.
 Creating and pushing the tag is deliberately a human step.
 
+**Releasing a tag again.** A tag whose run failed does not need a second tag. Run the `release`
+workflow by hand and give it the tag -- `v2026.3.0`, say. The manual run checks out
+`refs/tags/<version>`, so it builds that tag's code; and it uses the workflow as it stands on the
+branch you dispatched from, so a fix to the workflow itself takes effect on the retry. The tag must
+already exist: a version that names nothing stops the run before anything is built, rather than
+publishing under a name nothing points at.
+
 **Supported platforms: macOS and Linux.** Windows is not supported and is not verified. It was
 removed from the CI matrix as a deliberate decision rather than because it passed — see DEBT-15 in
 [`tech-debt-tracker.md`](tech-debt-tracker.md) for what that costs and what would bring it back. The

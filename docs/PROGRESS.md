@@ -1,5 +1,67 @@
 # what has been done
 
+## Session: a tag that failed can be released again without a second tag (2026-10-07)
+
+The release workflow could only be started by pushing a tag, which made a failed run cost a tag.
+Three runs of it have happened -- one per tag, `v2026.2.0`, `v2026.2.1`, `v2026.2.1-debug` -- and
+none produced a release. The only way to try again was to tag again, so an afternoon of debugging the
+Windows job left three tags behind for one version.
+
+**GitHub's own "Re-run all jobs" does not close that gap.** A re-run replays the workflow file *as it
+was on the ref the run used*, so the fix you are trying to apply, which is a change to `release.yml`
+itself, is exactly the thing a re-run cannot pick up. `release.yml` now also runs on
+`workflow_dispatch`, taking a required `version` input that names an existing tag.
+
+**The tag is the input, not a choice of ref.** The "Use workflow from" box lists branches, so a tag
+cannot be picked there; and if it could, the two halves of the answer -- which code, which version --
+would be free to disagree. There is one answer. `VERSION` is the tag on both triggers
+(`inputs.version || github.ref_name`), the checkouts ask for `refs/tags/$VERSION`, and the release is
+attached to it. A manual run therefore builds the *tag's* code with the *branch's* workflow file,
+which is the combination that retries a release rather than repeating one.
+
+**A mistyped version fails before anything is built.** The checkout is what enforces that the tag
+exists, so a version that names nothing stops the run in `verify` instead of creating a tag from
+whatever `github.sha` happened to be.
+
+**Publish stays tied to a tag.** The guard became
+`github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')`: a push releases
+the tag it pushed, a manual run releases the tag it named, and the input is required, so both admit
+the same thing. `tag_name` is now stated rather than inferred -- on a manual run `github.ref` is the
+branch, and the action's documented default ("Defaults to github.GITHUB_REF") would have created a
+release named after it.
+
+**One release per tag at a time.** Manual runs made a race reachable that could not happen before: a
+dispatch and a push for the same tag can be in flight together and both attach assets to the same
+release. A workflow-level `concurrency` group keyed on the version serialises them, and deliberately
+does not cancel -- a run that has already attached half the assets is worse cancelled than finished.
+
+**Verification.** actionlint 1.7.12 (installed for this) passes on the file, and the clean pass was
+made to mean something by sabotaging it four times first. Each sabotage replaced one context with one
+that key does not allow, and each was caught with the allowed list spelled out:
+
+| Where | Sabotage | actionlint's allowed list |
+|---|---|---|
+| `concurrency.group` | `env.VERSION` | `github, inputs, vars` |
+| `env.VERSION` | `steps.pick.outputs.tag` | `github, inputs, secrets, vars` |
+| `steps.with.ref` | `jobs.other.outputs.sha` | `env, github, inputs, job, matrix, needs, runner, secrets, steps, strategy, vars` |
+| `jobs.publish.if` | `env.VERSION` | `github, inputs, needs, vars` |
+
+That is what makes the clean run evidence for the four expressions this change introduces rather than
+a tool that was never looking -- `inputs` in `env` and in `concurrency`, `env` in `steps.with`, and
+`github.event_name` in a job `if` are each confirmed against the key's own list. A structural
+assertion over the parsed YAML then checks the edit landed where it was meant to: the input is
+required and a string, `VERSION` and the concurrency group hold the one expression, **both** checkouts
+pin `refs/tags/${{ env.VERSION }}`, and the publish step names the tag. `docs/RUN.md` gained the
+paragraph a reader needs, and `DocumentationTest` re-runs its link and example-config checks against
+it under `--rerun-tasks`.
+
+**What this does not prove.** No run has been dispatched. The trigger itself can only be exercised on
+GitHub, so the expressions above are verified as *permitted and shaped as intended*, not as observed
+to resolve. The first dispatch is the evidence for the rest.
+
+`./gradlew check` green at **849 tests, 0 failures, 1 skipped** -- unchanged, no Java or Python was
+touched.
+
 ## Session: the agreement rate counts a problem once, as its contract says (2026-10-07)
 
 The remaining item on A21's rate contract, and the third false claim this audit has caught in a

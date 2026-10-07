@@ -2,7 +2,9 @@
 #
 # This workflow builds and uploads. It does not create tags and it does not publish to a package
 # registry: a release is a decision someone makes, and a workflow that could trigger itself on its
-# own output would make that decision for them.
+# own output would make that decision for them. Both triggers name a tag that must already exist --
+# the push trigger is that tag, and a manual run checks it out before it builds anything -- so a
+# release attaches to a tag rather than bringing one into being.
 name: release
 
 on:
@@ -11,6 +13,25 @@ on:
     # train everyone to ignore the notifications.
     tags:
       - 'v*'
+  # A tag that has already been pushed, released again on demand.
+  #
+  # Re-running the failed run is not enough for this. GitHub replays a re-run with the workflow file
+  # as it was on the ref the original run used, so a fix to this file -- which is usually what a
+  # failed release run needs -- would not be picked up. A manual run uses this file as it stands on
+  # the branch it is dispatched from, against a tag that already exists. That combination retries a
+  # release instead of repeating it.
+  #
+  # The tag is an input rather than a choice of ref. The "Use workflow from" box lists branches, so
+  # a tag cannot be picked there; and picking a ref while separately typing a version would be two
+  # answers to one question, free to disagree. There is one answer here, and the checkouts use it.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: >-
+          Tag to release, e.g. v2026.3.0. It must already exist: the run checks out
+          refs/tags/<version>.
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -22,7 +43,19 @@ env:
   #
   # Workflow level, because a job that forgot its own copy would build the right thing under the
   # wrong version -- which is the exact defect this variable exists to remove.
-  VERSION: ${{ github.ref_name }}
+  #
+  # A tag push names the tag; a manual run supplies it. `inputs` is empty when the event is a push,
+  # so one expression covers both, and in both cases the value is the *tag* rather than the bare
+  # version: the checkouts ask for `refs/tags/$VERSION` and the release is attached to it.
+  VERSION: ${{ inputs.version || github.ref_name }}
+
+# One release per tag at a time. A tag could only ever start one run before manual runs existed;
+# now a dispatch and a push can be in flight together, and both would attach assets to the same
+# release. Not cancelling: a run that has already attached half the assets is worse cancelled than
+# finished, so the second one waits its turn instead.
+concurrency:
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   # Two jobs with two different jobs to do, on purpose. This one proves the tag builds and passes
@@ -59,6 +92,14 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          # The tag the version names, not the branch a manual run was dispatched from. Building the
+          # branch and stamping it with a tag would put two different sources under one version
+          # string, and `--version` would answer for both.
+          #
+          # It also has to be a real tag: a version typed by hand that names nothing fails here,
+          # before any artifact exists to publish under it.
+          ref: refs/tags/${{ env.VERSION }}
 
       - name: Set up Java ${{ matrix.java }}
         uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
@@ -87,6 +128,10 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          # The tag, for the same reason the verify job checks it out: the code and the version are
+          # one answer, and this job is the one that decides what the artifacts are named.
+          ref: refs/tags/${{ env.VERSION }}
 
       - name: Set up Java
         uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
@@ -131,7 +176,12 @@ jobs:
     needs: package
     # Only after every matrix job passed: a release with one platform's artifacts missing is worse
     # than no release, because it looks complete.
-    if: startsWith(github.ref, 'refs/tags/v')
+    #
+    # A push releases the tag it pushed. A manual run releases the tag it named, and that input is
+    # required, so this admits the same thing either way: a release attached to a tag. A manual run
+    # cannot release a branch by accident, because the checkouts above refuse a version that is not
+    # a tag, and they run before this job does.
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -155,5 +205,9 @@ jobs:
         # compatible with v2.
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
+          # Stated rather than inferred. On a tag push the action would take this from github.ref; on
+          # a manual run github.ref is the branch the run was dispatched from, and inferring it there
+          # would create a release named after that branch.
+          tag_name: ${{ env.VERSION }}
           files: artifacts/**
           fail_on_unmatched_files: true
