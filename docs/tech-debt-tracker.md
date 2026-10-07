@@ -346,6 +346,23 @@
   retried, and the message still cannot tell "no release is published" from "the API would not answer
   me". The authentication is still the fix.
 
+- **DEBT-25 — A baseline entry that matched nothing is never reported, and the check for it is wrong
+  anyway.** Found 2026-10-07 while closing the recheck's A13 compound-predicate item.
+  `FindingBaselineFilter.staleEntries` is called from its tests and from nowhere else, so the promise
+  in `FindingBaseline`'s own documentation — an entry whose entity or rule no longer matches anything
+  is retained "so the project can see debt it accepted that is no longer there" — is not kept: nothing
+  a person runs ever prints it. Wiring it up as it stands would be worse than leaving it, because it
+  compares entries against the exact fingerprints of the current run only, while the filter
+  deliberately follows an exact move through `Finding.previousFingerprint`. An entity that was moved
+  and *did* match its accepted debt would therefore be reported as stale. *What would close it:* make
+  the check consider every fingerprint the run could have matched — the current one and, for a
+  finding the correspondence paired with a base counterpart, the previous one — then report the
+  remaining entries on a gate run that used a baseline, on stderr beside the export's own summary, and
+  test it through the gate rather than through the filter. The same row's "entry reason" is a separate
+  matter and not a defect: the format carries `schemaVersion` and per-rule `ruleVersions`, both
+  consulted, and the only candidate for a per-entry reason is the disposition text the report already
+  derives from the accepted values, so there is nothing to store that is not already derivable.
+
 ## Resolved Debt Items
 - **DEBT-24 — The action's findings document was one fixed path for the whole job.** Found 2026-10-07
   while fixing the staging directory, **fixed the same day** once the hosted run evidenced it rather

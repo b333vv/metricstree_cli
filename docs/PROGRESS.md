@@ -1,5 +1,60 @@
 # what has been done
 
+## Session: the baseline comparison asks the rule, not the budget (2026-10-07)
+
+The recheck's A13 left one correctness item open after R03 and R04 were repaired: the baseline's
+"has this grown?" test compared each budgeted metric on its own against its budget, where the Git
+comparison runs the rule's own predicate. Two things the rule states were therefore ignored, and
+three of the five shipped rules are affected by one of them.
+
+**A compound predicate was not honoured.** `MT-M003` fires on a method that is long and branchy and
+calls it worse only if it grew while the branching held or grew too — `RISES_BY_WHILE_OTHERS_HOLD`.
+The baseline read the length budget alone, so a method taken from LOC 61 to 85 while its branching
+fell from CC 11 to 4 was reported as worse than the values the project accepted, and blocked, where
+the same change against the base revision is not a worsening at all. A method that got longer and
+simpler is not harder to hold in mind, and the rule says so. `MT-C001` and `MT-C002` carry the same
+predicate.
+
+**The direction a rule gives a metric was ignored.** `FindingDeltaEvaluator.toward` reads the sign
+from the rule's own bounds, because a metric bounded above is worsened by *falling* — a class becomes
+less cohesive as TCC falls toward the rule's maximum of 0.33. The baseline comparison used
+`measured - accepted`, so for such a rule a fall read as an improvement and a real deterioration went
+unreported. No shipped rule budgets a metric bounded above, so this half is latent in v1 and reachable
+through a project's own configuration.
+
+**The fix is delegation, not a second implementation.** `FindingDeltaEvaluator.isSignificantlyWorse`
+now has an overload over two maps of measured values, and the evaluation-based form delegates to it.
+`FindingBaselineFilter.worsensAcceptedValues` calls that overload with the accepted values as one side
+and the finding's measured values as the other. A baseline holds values rather than an evaluation,
+which is why the split was needed — and the split is the whole point: the alternative, a second
+implementation of "is this worse" beside the first, is how the two came to disagree.
+
+**Verification.** Two tests in `FindingBaselineTest`, both of which fail against the previous
+implementation. One takes `MT-M003` from the shipped catalogue and a method that grew and simplified;
+the other needs a rule the catalogue cannot express — every budgeted metric in v1 is bounded below, so
+a comparison that assumed rising is worse would pass every shipped rule — and builds a synthetic one
+whose budget is on `TCC`, bounded above. Two sabotages, both caught: restoring the budget-only
+comparison fails both tests, and swapping the two sides fails the direction test and the existing
+cumulative-growth tests.
+
+**The audit replay is unchanged, and that is not evidence the fix works.** Running
+`replay_additional.py` before and after gives 18 observations, none differing after normalising the
+40-hex SHAs and the temporary paths. Its baseline cases use `MT-M001`, which is `RISES_BY`, so it
+covers the shape that did not change and no case exercises a compound rule. It is a regression signal
+— nothing the replay covers moved — and the tests above are the evidence.
+
+**What is still open in A13, and why it is not a one-liner.** The recheck row also names
+`staleEntries` as unused, and it is: the class documents that an entry matching nothing is kept so the
+project can see debt it accepted that is no longer there, and nothing calls it outside its tests.
+Wiring it up as it stands would be wrong, because it compares entries against the exact fingerprints of
+this run only — and the filter deliberately follows an exact move through `previousFingerprint`, so a
+moved entity that *was* matched would be reported as stale. It needs the definition corrected first,
+and then a place to report it. The row's other two items are in a different state than the row says:
+the format has `schemaVersion` and per-rule `ruleVersions`, both consulted, so what it lacks is a
+per-entry free-text reason — and there is no source of truth for one, since the disposition reason the
+report prints is derived from the accepted values themselves. That is a format decision rather than a
+repair. Both are recorded as DEBT-25.
+
 ## Session: the action's findings document is this run's, or there is none (2026-10-07)
 
 Run #31's macOS job failed for two reasons, and the second one is the reason its artifact was small.

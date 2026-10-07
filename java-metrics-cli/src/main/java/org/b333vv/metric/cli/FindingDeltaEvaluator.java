@@ -159,9 +159,24 @@ final class FindingDeltaEvaluator {
      * is the one thing this class refuses to do.
      */
     boolean isSignificantlyWorse(MaintainabilityRule rule, RuleEvaluation base, RuleEvaluation current) {
-        Map<org.b333vv.metric.library.core.MetricCode, Double> before = values(base);
-        Map<org.b333vv.metric.library.core.MetricCode, Double> after = values(current);
+        return isSignificantlyWorse(rule, values(base), values(current));
+    }
 
+    /**
+     * The same predicate, over two sets of measured values rather than two evaluations.
+     *
+     * <p>Split out so that the baseline comparison can put the same question to the rule that the Git
+     * comparison puts to it. A baseline holds the values a project accepted, not an evaluation, and
+     * the alternative — a second implementation of "is this worse" beside this one — is how the two
+     * came to disagree. The baseline compared each budgeted metric on its own, which ignores two
+     * things the rule states: the kind of predicate it declares, so a rule reading "worse only if
+     * this rose while the others held" was compared without ever looking at the others, and the
+     * direction its bounds give a metric, so a rule whose budgeted metric is bounded above had a fall
+     * read as an improvement.
+     */
+    boolean isSignificantlyWorse(MaintainabilityRule rule,
+            Map<org.b333vv.metric.library.core.MetricCode, Double> before,
+            Map<org.b333vv.metric.library.core.MetricCode, Double> after) {
         return switch (rule.worsening()) {
             case NONE -> false;
             case RISES_BY -> risesBy(rule, before, after);

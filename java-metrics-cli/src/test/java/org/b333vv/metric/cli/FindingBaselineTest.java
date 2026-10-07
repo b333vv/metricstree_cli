@@ -10,8 +10,10 @@ import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.b333vv.metric.library.core.MetricCode;
+import org.b333vv.metric.library.core.MetricRequirements;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -59,6 +61,58 @@ class FindingBaselineTest {
 
     private static FindingBaselineFilter filterFor(FindingBaseline baseline) {
         return new FindingBaselineFilter(baseline, new FindingDeltaEvaluator());
+    }
+
+    /** MT-M003: the shipped rule whose worsening predicate is compound. */
+    private static MaintainabilityRule largeMethodWithBranching() {
+        return MaintainabilityRules.catalog().stream()
+                .filter(rule -> rule.id().equals("MT-M003")).findFirst().orElseThrow();
+    }
+
+    /**
+     * A rule whose worsening budget is on a metric bounded above, which no shipped rule has.
+     *
+     * <p>Built here rather than taken from the catalogue because the catalogue cannot express this
+     * case: every budgeted metric in v1 is bounded by a minimum, so a rise is always the worsening
+     * direction and a comparison that assumed so would pass every shipped rule. TCC is bounded by a
+     * maximum — a class becomes less cohesive as its value falls — so this rule is the only way to
+     * hold the direction to account.
+     */
+    private static MaintainabilityRule cohesion() {
+        return new MaintainabilityRule("MT-T001", 1, "Test cohesion rule",
+                "A synthetic rule whose budgeted metric is bounded above.",
+                MaintainabilityRule.RuleLevel.CLASS,
+                Map.of(MetricCode.TCC, MaintainabilityRule.MetricBounds.atMost(0.33)),
+                Set.of(EntityRole.PRODUCTION),
+                RuleMaturity.CANDIDATE, RuleMode.WARN, RuleSeverity.WARNING,
+                "docs/rules/mt-t001.md", MetricRequirements.Scope.SYNTAX_LOCAL,
+                MaintainabilityRule.Worsening.RISES_BY, Map.of(MetricCode.TCC, 0.1));
+    }
+
+    private static FindingBaseline baselineOf(String ruleId, int version,
+            Map<String, FindingBaseline.Entry> entries) {
+        return new FindingBaseline(FindingBaseline.SCHEMA_VERSION, DIGEST,
+                Map.of(ruleId, version), entries);
+    }
+
+    private static FindingBaseline.Entry accepted(String ruleId, int version, EntityKey key,
+            Map<MetricCode, Double> values) {
+        return new FindingBaseline.Entry(FindingFingerprint.of(ruleId, version, key), ruleId, key,
+                values);
+    }
+
+    /** A finding for any rule, with one piece of current-only evidence per metric. */
+    private static Finding match(String ruleId, int version, EntityKey key,
+            Map<MetricCode, Double> measured) {
+        List<FindingEvidence> evidence = measured.entrySet().stream()
+                .map(value -> FindingEvidence.currentOnly(value.getKey(), value.getValue(),
+                        value.getKey().name()))
+                .toList();
+        return new Finding(ruleId, version, key, "Test rule",
+                "A rule built for the baseline comparison tests.", FindingLocation.of(key.path(), 42),
+                null, RuleSeverity.WARNING, RuleMaturity.CANDIDATE, EvaluationStatus.COMPLETE_MATCH,
+                FindingLifecycle.EXISTING, evidence, List.of(), "inspect", "docs/rules/mt-t001.md",
+                EntityRole.PRODUCTION, FindingDisposition.EXISTING, "not-worsened");
     }
 
     @Nested
@@ -281,6 +335,59 @@ class FindingBaselineTest {
             assertFalse(filterFor(baseline(Map.of(fingerprintOf(KEY), entry(KEY, 18.0))))
                     .worsensAcceptedValues(noValue, complexity()),
                     "an unevaluable predicate is not evidence of no change");
+        }
+
+        /**
+         * The rule's predicate, not a comparison of one metric against one budget.
+         *
+         * <p>MT-M003 fires on a method that is both long and branchy, and calls it worse only if it
+         * grew while the branching held or grew too. A method that got longer and simpler has not
+         * become harder to hold in mind, and the rule says so — but the baseline compared the length
+         * budget alone and called it worse, so the same change was a worsening against the stored
+         * evidence and not a worsening against the base revision.
+         */
+        @Test
+        @DisplayName("is the rule's own predicate, so a compound one is honoured")
+        void compoundPredicateIsHonoured() {
+            MaintainabilityRule rule = largeMethodWithBranching();
+            FindingBaselineFilter filter = filterFor(baselineOf(rule.id(), rule.version(), Map.of(
+                    FindingFingerprint.of(rule.id(), rule.version(), KEY),
+                    accepted(rule.id(), rule.version(), KEY,
+                            Map.of(MetricCode.LOC, 61.0, MetricCode.CC, 11.0)))));
+
+            Finding longerAndSimpler = match(rule.id(), rule.version(), KEY,
+                    Map.of(MetricCode.LOC, 85.0, MetricCode.CC, 4.0));
+
+            assertFalse(filter.worsensAcceptedValues(longerAndSimpler, rule),
+                    "LOC rose by 24 against a budget of 20, but the branching that made the method"
+                            + " hard to hold in mind fell by 7. The rule says that is not a"
+                            + " worsening, and the stored evidence has to ask the rule rather than"
+                            + " compare the length on its own");
+        }
+
+        /**
+         * The direction comes from the rule's bound, so a metric bounded above is worsened by falling.
+         *
+         * <p>No shipped rule budgets such a metric, which is why the rule here is synthetic: it is the
+         * only way to hold the direction to account, and a comparison that assumed every budgeted
+         * metric rises toward worse would pass every shipped rule while reading a cohesion loss as an
+         * improvement.
+         */
+        @Test
+        @DisplayName("follows the rule's own direction, not the assumption that rising is worse")
+        void directionComesFromTheRule() {
+            MaintainabilityRule rule = cohesion();
+            FindingBaselineFilter filter = filterFor(baselineOf(rule.id(), rule.version(), Map.of(
+                    FindingFingerprint.of(rule.id(), rule.version(), KEY),
+                    accepted(rule.id(), rule.version(), KEY, Map.of(MetricCode.TCC, 0.5)))));
+
+            Finding lessCohesive = match(rule.id(), rule.version(), KEY, Map.of(MetricCode.TCC, 0.35));
+
+            assertTrue(filter.worsensAcceptedValues(lessCohesive, rule),
+                    "TCC fell from 0.5 to 0.35, past a budget of 0.1 and toward the rule's own"
+                            + " maximum of 0.33. A class becoming less cohesive is the worsening this"
+                            + " rule describes, and a comparison that read the fall as an improvement"
+                            + " would let it happen under accepted debt forever");
         }
     }
 

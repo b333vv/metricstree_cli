@@ -78,9 +78,17 @@ final class FindingBaselineFilter {
     /**
      * Whether a finding is significantly worse than the values its baseline entry accepted.
      *
-     * <p>Compared per metric against the rule's own worsening budgets, so a rule that says "CC may
-     * rise by 5" gets exactly that, and a rule with no worsening predicate is never worsened by a
-     * baseline comparison it did not ask for.
+     * <p>The question is the rule's, not this class's. It is put to
+     * {@link FindingDeltaEvaluator#isSignificantlyWorse(MaintainabilityRule, java.util.Map,
+     * java.util.Map)}, which is the same predicate the Git comparison runs, so a rule that declares a
+     * compound predicate gets one and a rule whose budgeted metric is bounded above gets its
+     * direction. This used to compare each budgeted metric on its own against its budget, which
+     * answered a question no rule had asked: three of the five shipped rules say "worse only if this
+     * rose while the others held", and the budget-only check called a method worse for growing when
+     * the growth was explained by the metric beside it improving.
+     *
+     * <p>A rule with no worsening predicate is never worsened by a baseline comparison it did not ask
+     * for, and a rule the baseline never accepted is not compared at all.
      */
     boolean worsensAcceptedValues(Finding finding, MaintainabilityRule rule) {
         if (baseline == null) {
@@ -91,20 +99,7 @@ final class FindingBaselineFilter {
         if (entry == null || entry.acceptedValues().isEmpty()) {
             return false;
         }
-        Map<MetricCode, Double> now = currentValues(finding);
-        for (Map.Entry<MetricCode, Double> budget : rule.worseningBudgets().entrySet()) {
-            Double accepted = entry.acceptedValues().get(budget.getKey());
-            Double measured = now.get(budget.getKey());
-            // A missing side is not "not worsened": the predicate cannot be evaluated, and reporting
-            // it as unchanged would be a claim about the code rather than about what was measured.
-            if (accepted == null || measured == null) {
-                return false;
-            }
-            if (measured - accepted >= budget.getValue()) {
-                return true;
-            }
-        }
-        return false;
+        return worsening.isSignificantlyWorse(rule, entry.acceptedValues(), currentValues(finding));
     }
 
     /** The measured values of a finding, by metric. */
