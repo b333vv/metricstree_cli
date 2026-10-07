@@ -1,5 +1,45 @@
 # what has been done
 
+## Session: the action names the right file for the runner's own variables (2026-10-07)
+
+I had written down that `action.yml`'s `GITHUB_STEP_SUMMARY: ${{ github.step_summary }}` was a latent
+bug, on the grounds that `github` has no `step_summary` property. **That was wrong**, and reading the
+runner's source is what settled it: `GitHubContext` carries an allow-list of the properties that
+become environment variables, and `step_summary` is on it — alongside `output`, `env`, `path` and
+`state` — with `GetRuntimeEnvironmentVariables` mapping each to `GITHUB_<NAME>`. GitHub's public
+contexts page does not list them, which is presumably how the belief formed.
+
+**Neither line can do anything, and the reason is an ordering.** `ScriptHandler.RunAsync` merges the
+step's `env:` block into the step environment and *then* copies every `IEnvironmentContextData`
+context over it, so `github.output` and `github.step_summary` overwrite whatever the metadata said.
+A wrong expression in that block is therefore invisible: it changes nothing, and no run can fail
+because of it. The integration test could not have noticed either — it drives the script directly and
+supplies `GITHUB_OUTPUT` and `GITHUB_STEP_SUMMARY` itself, in both places.
+
+**One of the two lines was still wrong.** The gate step set `GITHUB_OUTPUT: ${{ steps.run-gate.outputs }}`
+— this step's own outputs object, which is empty at the moment the block is evaluated — while the
+sibling CLI-resolution step two hundred lines up set the correct `${{ github.output }}`. A typo, held
+harmless only by the overwrite. It now reads `${{ github.output }}`, and the comment above the two
+lines says why they exist at all: to state which file each name must point at, given that the wrong
+answer here is silent.
+
+**`ActionMetadataTest` is the durable part**, because this is the class of mistake a run cannot
+catch. It parses `action.yml` rather than scanning its text, so the explanatory comment can mention
+the variables without tripping the check, and it holds three rules: the metadata parses and the gate
+step is among the steps found; every declaration of a runner-owned variable names the file the runner
+made and nothing else; and no step reads its own outputs object. Six sabotages, all caught — the
+original wrong expression, a literal path, pointing `GITHUB_STEP_SUMMARY` at `runner.temp`, and
+dropping either declaration. **Two of those sabotages were themselves wrong before they were right**:
+one used `str.replace(..., 1)` and hit the *other* step's identical line, and the presence floor
+originally counted both variables together, so removing one still left a count of two. A sabotage
+that does not reach the code under test reads exactly like a test that does not work.
+
+**One caveat, recorded in the test's own javadoc.** Gradle does not track `action.yml` as an input of
+the `test` task, so editing it alone leaves the task UP-TO-DATE and the test does not execute — a
+green `./gradlew check` after such an edit means it did not run. `DocumentationTest` has the same
+limitation with the documents it reads. `--rerun` is the answer, and it is what the sabotage runs
+above needed.
+
 ## Session: the PMD adapter reads PMD's report instead of guessing at its shape (2026-10-07)
 
 The recheck row said a "PMD-shaped object still raises `AttributeError`". The crash was already

@@ -240,7 +240,14 @@ runs:
         MG_EXCLUDE_FILE: ${{ inputs.exclude-file }}
         MG_POLICY: ${{ inputs.policy }}
         MG_ENFORCEMENT: ${{ inputs.enforcement }}
-        GITHUB_OUTPUT: ${{ steps.run-gate.outputs }}
+        # Both of these are the runner's, not the action's, and the lines cannot change where the
+        # script writes: the runner creates one file per step and exposes its path as
+        # github.output / github.step_summary, and ScriptHandler copies the github context into the
+        # step environment *after* merging this block, so its value wins. They are written to say
+        # which file each name must point at, because the wrong expression here is invisible --
+        # `${{ steps.run-gate.outputs }}` names this step's own outputs object, which is empty at
+        # the moment this block is evaluated, and only the overwrite keeps that from mattering.
+        GITHUB_OUTPUT: ${{ github.output }}
         GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
       run: |
         "${{ github.action_path }}/scripts/run-metrics-gate-action.sh"
